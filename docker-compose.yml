@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          memory: 2g
