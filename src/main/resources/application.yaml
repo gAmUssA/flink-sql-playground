@@ -1,0 +1,23 @@
+server:
+  port: 9090
+
+spring:
+  application:
+    name: flink-sql-fiddle
+  datasource:
+    url: jdbc:h2:mem:fiddledb
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create
+
+flink:
+  parallelism: 1
+  network-memory: 8m
+  managed-memory: 32m
+
+logging:
+  level:
+    com.flinksqlfiddle: DEBUG
+    org.apache.flink: WARN
+    org.hibernate: WARN

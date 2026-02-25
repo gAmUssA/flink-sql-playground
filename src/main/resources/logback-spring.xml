@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%clr(%d{HH:mm:ss.SSS}){faint} %clr(%-5level){highlight} %clr([%-15.15thread]){magenta} %clr(%-36.36logger{36}){cyan} : %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- App package at DEBUG -->
+    <logger name="com.flinksqlfiddle" level="DEBUG"/>
+
+    <!-- Suppress noisy frameworks -->
+    <logger name="org.apache.flink" level="WARN"/>
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.apache.calcite" level="WARN"/>
+    <logger name="org.apache.pekko" level="WARN"/>
+
+    <!-- Suppress Flink MiniCluster lifecycle noise (harmless in embedded mode) -->
+    <logger name="org.apache.flink.runtime.security.token" level="ERROR"/>
+    <logger name="org.apache.flink.runtime.webmonitor" level="ERROR"/>
+    <logger name="org.apache.flink.streaming.api.operators.collect" level="ERROR"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

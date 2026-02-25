@@ -1,0 +1,23 @@
+# Build output
+build/
+.gradle/
+
+# IDE files
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+*.swp
+*.swo
+*~
+
+# Compiled classes
+*.class
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
