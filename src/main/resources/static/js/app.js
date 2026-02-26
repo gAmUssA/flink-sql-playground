@@ -522,4 +522,11 @@ document.addEventListener('DOMContentLoaded', () => {
             statusMode.textContent = modeSelect.value === 'STREAMING' ? 'Streaming' : 'Batch';
         });
     }
+
+    // Tour button (on-demand)
+    const tourBtn = document.getElementById('tour-btn');
+    if (tourBtn) tourBtn.addEventListener('click', startTour);
+
+    // First-visit auto-start
+    checkFirstVisitTour();
 });
