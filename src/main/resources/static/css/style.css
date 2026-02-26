@@ -231,19 +231,31 @@ main {
 .btn-secondary.running { animation: pulse-running 1.5s ease-in-out infinite; }
 
 #mode-select, #example-select {
-    padding: 4px 8px;
+    padding: 6px 28px 6px 10px;
+    height: 32px;
     background: var(--bg-elevated);
     color: var(--text-primary);
     font-family: var(--font-sans);
-    font-size: 12px;
+    font-size: 13px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
+    cursor: pointer;
     transition: border-color var(--transition);
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a0a0a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+}
+
+#mode-select:hover, #example-select:hover {
+    border-color: #444c56;
 }
 
 #mode-select:focus, #example-select:focus {
     border-color: var(--accent-blue);
     outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
 }
 
 #status-text {
@@ -256,14 +268,33 @@ main {
 /* === Resize Handle === */
 
 .resize-handle {
-    flex: 0 0 4px;
+    flex: 0 0 5px;
     background: var(--bg-elevated);
     cursor: row-resize;
     transition: background-color var(--transition);
+    position: relative;
+}
+
+.resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 32px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    opacity: 0;
+    transition: opacity var(--transition);
 }
 
 .resize-handle:hover {
     background: var(--border);
+}
+
+.resize-handle:hover::after {
+    opacity: 1;
 }
 
 body.resizing {
@@ -288,7 +319,7 @@ body.resizing .resize-handle {
     font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 600;
-    padding: 3px 10px;
+    padding: 6px 12px;
     background: var(--bg-elevated);
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -318,18 +349,22 @@ body.resizing .resize-handle {
 .results-table th {
     background: var(--bg-elevated);
     color: var(--text-secondary);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 600;
-    padding: 4px 8px;
+    padding: 8px 12px;
     text-align: left;
-    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--border);
     position: sticky;
     top: 0;
+    z-index: 1;
 }
 
 .results-table td {
-    padding: 3px 8px;
+    padding: 6px 12px;
+    height: 32px;
     border-bottom: 1px solid var(--border-subtle);
     color: var(--text-primary);
 }
@@ -338,18 +373,29 @@ body.resizing .resize-handle {
     background: var(--bg-raised);
 }
 
-/* Changelog row colors (muted semantic) */
+.results-table tbody tr:hover td {
+    background: var(--bg-hover);
+}
+
+/* Changelog row colors (muted semantic + left-border accent) */
 .row-insert td { color: var(--color-insert); }
+.row-insert td:first-child { border-left: 3px solid var(--border-insert); }
+
 .row-update-after td { color: var(--color-update-after); }
+.row-update-after td:first-child { border-left: 3px solid var(--border-update-after); }
+
 .row-update-before td { color: var(--color-update-before); }
+.row-update-before td:first-child { border-left: 3px solid var(--border-update-before); }
+
 .row-delete td { color: var(--color-delete); }
+.row-delete td:first-child { border-left: 3px solid var(--border-delete); }
 
 /* Metadata bar */
 .results-meta {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 11px;
     color: var(--text-muted);
-    padding: 3px 10px;
+    padding: 6px 12px;
     background: var(--bg-raised);
     border-top: 1px solid var(--border);
 }
@@ -376,7 +422,8 @@ body.resizing .resize-handle {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 3px 8px;
+    padding: 6px 10px;
+    height: 32px;
     background: var(--bg-elevated);
     border-bottom: 1px solid var(--border);
 }
@@ -463,7 +510,9 @@ body.resizing .resize-handle {
 
 .schema-columns {
     display: none;
-    padding: 0 10px 4px 24px;
+    padding: 0 10px 4px 20px;
+    margin-left: 12px;
+    border-left: 1px solid var(--border-subtle);
 }
 
 .schema-table-item.expanded .schema-columns {
@@ -478,7 +527,15 @@ body.resizing .resize-handle {
 }
 
 .schema-column-type {
+    display: inline-block;
+    padding: 0 5px;
+    margin-left: 4px;
+    font-size: 10px;
     color: var(--text-muted);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    vertical-align: middle;
 }
 
 /* === Animations === */
@@ -505,5 +562,63 @@ body.resizing .resize-handle {
 #mode-select:focus-visible,
 #example-select:focus-visible {
     outline: 2px solid var(--accent-blue);
-    outline-offset: 2px;
+    outline-offset: 1px;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+}
+
+/* === Status Bar === */
+
+.status-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 12px;
+    height: 24px;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.status-bar-item {
+    white-space: nowrap;
+}
+
+.status-bar-right {
+    margin-left: auto;
+}
+
+/* === Custom Scrollbars === */
+
+#results-container::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+#results-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#results-container::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+#results-container::-webkit-scrollbar-thumb:hover {
+    background: #444c56;
+}
+
+.schema-browser-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.schema-browser-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.schema-browser-content::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
 }

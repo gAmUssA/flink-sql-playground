@@ -1,15 +1,4 @@
-## ADDED Requirements
-
-### Requirement: Design token system via CSS custom properties
-The application SHALL define all visual constants (colors, spacing, borders, radii, transitions) as CSS custom properties on `:root`. No hardcoded color or spacing values SHALL appear outside the `:root` block.
-
-#### Scenario: Token consistency
-- **WHEN** a developer inspects any styled element
-- **THEN** all color, border, spacing, and transition values reference CSS custom properties (e.g., `var(--bg-base)`, `var(--text-primary)`)
-
-#### Scenario: Theme adjustment
-- **WHEN** a developer changes a single custom property value in `:root`
-- **THEN** all elements using that token update consistently
+## MODIFIED Requirements
 
 ### Requirement: Near-black surface palette
 The application SHALL use a blue-gray tinted dark color palette for all surfaces:
@@ -40,20 +29,6 @@ The monospace stack SHALL prioritize developer-focused fonts: `'SF Mono', 'Casca
 #### Scenario: Code and data render in monospace
 - **WHEN** a user views the SQL editors or results table data cells
 - **THEN** the content SHALL render in the monospace font stack
-
-### Requirement: High-contrast text hierarchy
-The application SHALL use high-contrast text against the near-black backgrounds:
-- Primary text: approximately `#e5e5e5` (headings, active content, button labels)
-- Secondary text: approximately `#a0a0a0` (panel labels, metadata)
-- Muted text: approximately `#666666` (status text, inactive elements)
-
-#### Scenario: Primary text is highly readable
-- **WHEN** a user reads result table data or button labels
-- **THEN** the text SHALL appear bright and clearly legible against the near-black background
-
-#### Scenario: Muted text is subdued but readable
-- **WHEN** a user reads status text or panel labels
-- **THEN** the text SHALL appear noticeably dimmer than primary text but still legible
 
 ### Requirement: Flat surfaces with subtle depth
 The application SHALL use subtle box-shadows (`--shadow-sm`) on the header for depth. All other separation SHALL come from: (a) background color differences between surface levels, and/or (b) 1px borders using visible border tokens (`#30363d`).
@@ -115,14 +90,6 @@ The mode selector and example selector SHALL use `appearance: none` with a custo
 #### Scenario: Select shows custom chevron
 - **WHEN** a user views a select element
 - **THEN** a custom down-arrow SVG SHALL replace the native browser dropdown indicator
-
-### Requirement: Information-dense results table
-The results table SHALL use compact styling: monospace font, tight cell padding (3px 8px), minimal grid lines (bottom borders only or very subtle full grid), and subtle alternating row backgrounds. Column headers SHALL be visually distinct but not heavy.
-
-#### Scenario: Results table feels data-dense
-- **WHEN** a user views query results
-- **THEN** the table SHALL display data compactly with monospace font
-- **AND** more rows SHALL be visible compared to the current styling
 
 ### Requirement: Refined header branding
 The page header SHALL display an inline SVG brand icon alongside "Flink SQL Fiddle" in sans-serif. The header SHALL be 44px tall with a raised surface background, a subtle bottom shadow for depth, and `z-index: 10`.

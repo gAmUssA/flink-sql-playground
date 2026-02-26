@@ -109,6 +109,9 @@ function renderResults(result) {
     }
     meta.textContent = text;
     container.appendChild(meta);
+
+    const statusRows = document.getElementById('status-rows');
+    if (statusRows) statusRows.textContent = `${result.rowCount} row${result.rowCount !== 1 ? 's' : ''}`;
 }
 
 // --- Session Management ---
@@ -125,6 +128,8 @@ async function createSession() {
         const data = await response.json();
         sessionId = data.sessionId;
         setStatus('Session ready');
+        const sessionEl = document.getElementById('status-session');
+        if (sessionEl) sessionEl.textContent = 'Session: ' + sessionId.substring(0, 8);
     } catch (err) {
         setStatus('Error: ' + err.message);
     }
@@ -422,4 +427,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('build-schema-btn').addEventListener('click', buildSchema);
     document.getElementById('run-query-btn').addEventListener('click', runQuery);
     document.getElementById('share-btn').addEventListener('click', shareFiddle);
+
+    // Sync status bar mode indicator
+    const modeSelect = document.getElementById('mode-select');
+    const statusMode = document.getElementById('status-mode');
+    if (modeSelect && statusMode) {
+        statusMode.textContent = modeSelect.value === 'STREAMING' ? 'Streaming' : 'Batch';
+        modeSelect.addEventListener('change', () => {
+            statusMode.textContent = modeSelect.value === 'STREAMING' ? 'Streaming' : 'Batch';
+        });
+    }
 });
