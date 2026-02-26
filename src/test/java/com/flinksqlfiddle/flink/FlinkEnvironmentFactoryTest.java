@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class FlinkEnvironmentFactoryTest {
 
     private final FlinkEnvironmentFactory factory = new FlinkEnvironmentFactory(
-            new FlinkProperties(1, "8m", "32m", 5)
+            new FlinkProperties(1, "8m", "32m", 5, null)
     );
 
     @Test

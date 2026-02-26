@@ -18,7 +18,6 @@ import java.util.UUID;
 public class SessionManager {
 
     private static final Logger log = LoggerFactory.getLogger(SessionManager.class);
-    private static final Duration IDLE_TIMEOUT = Duration.ofMinutes(15);
 
     private final Cache<String, FlinkSession> sessions;
     private final FlinkEnvironmentFactory environmentFactory;
@@ -33,7 +32,7 @@ public class SessionManager {
         this.environmentFactory = environmentFactory;
         this.maxSessions = flinkProperties.maxSessions();
         this.sessions = Caffeine.newBuilder()
-                .expireAfterAccess(IDLE_TIMEOUT)
+                .expireAfterAccess(flinkProperties.sessionIdleTimeout())
                 .maximumSize(maxSessions + 1) // safety net only; we enforce limit explicitly
                 .ticker(ticker)
                 .executor(Runnable::run) // synchronous removal — session.close() is non-blocking

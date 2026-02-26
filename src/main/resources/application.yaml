@@ -16,6 +16,7 @@ flink:
   network-memory: 8m
   managed-memory: 32m
   max-sessions: 3
+  session-idle-timeout: 5m
 
 logging:
   level:
