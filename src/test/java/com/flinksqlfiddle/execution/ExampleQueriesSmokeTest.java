@@ -208,6 +208,175 @@ class ExampleQueriesSmokeTest {
         assertTrue(result.getRowCount() > 0, "Expected at least one cumulate-window row");
     }
 
+    // --- Realistic Orders (Faker, BATCH) ---
+
+    @Test
+    void fakerRealisticOrders() {
+        FlinkSession session = new FlinkSession("smoke-faker", factory);
+
+        executeDdl(session, ExecutionMode.BATCH, """
+                CREATE TEMPORARY TABLE fake_orders (
+                    customer_name STRING,
+                    product STRING,
+                    amount DOUBLE,
+                    city STRING
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '50',
+                    'fields.customer_name.expression' = '#{Name.fullName}',
+                    'fields.product.expression' = '#{Commerce.productName}',
+                    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+                    'fields.city.expression' = '#{Address.city}'
+                )
+                """);
+
+        QueryResult result = service.execute(session, ExecutionMode.BATCH, """
+                SELECT
+                    customer_name,
+                    product,
+                    ROUND(amount, 2) AS amount,
+                    city
+                FROM fake_orders
+                ORDER BY amount DESC
+                """);
+
+        assertEquals(List.of("customer_name", "product", "amount", "city"), result.getColumnNames());
+        assertEquals(50, result.getRowCount());
+        result.getRowKinds().forEach(kind -> assertEquals("+I", kind));
+    }
+
+    // --- Multi-table Faker DDL (BATCH) ---
+
+    @Test
+    void fakerMultiTableDdl() {
+        FlinkSession session = new FlinkSession("smoke-faker-multi", factory);
+
+        executeDdl(session, ExecutionMode.BATCH, """
+                CREATE TEMPORARY TABLE customers (
+                    customer_id INT,
+                    name STRING
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '10',
+                    'fields.customer_id.expression' = '#{Number.randomDigit}',
+                    'fields.name.expression' = '#{Name.fullName}'
+                );
+
+                CREATE TEMPORARY TABLE products (
+                    product_name STRING,
+                    price DOUBLE
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '10',
+                    'fields.product_name.expression' = '#{Commerce.productName}',
+                    'fields.price.expression' = '#{Number.randomDouble ''2'',''1'',''100''}'
+                )
+                """);
+
+        QueryResult customers = service.execute(session, ExecutionMode.BATCH,
+                "SELECT * FROM customers");
+        assertEquals(List.of("customer_id", "name"), customers.getColumnNames());
+        assertEquals(10, customers.getRowCount());
+
+        QueryResult products = service.execute(session, ExecutionMode.BATCH,
+                "SELECT * FROM products");
+        assertEquals(List.of("product_name", "price"), products.getColumnNames());
+        assertEquals(10, products.getRowCount());
+    }
+
+    // --- E-Commerce Streaming (Faker, multi-table join) ---
+    // Uses narrow ID ranges (1-5) so that bounded 20-row sources guarantee join matches.
+
+    @Test
+    void fakerEcommerceStreaming() {
+        FlinkSession session = new FlinkSession("smoke-faker-ecom", factory);
+
+        executeDdl(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE products (
+                    product_id STRING,
+                    `name` STRING,
+                    brand STRING,
+                    vendor STRING,
+                    department STRING,
+                    PRIMARY KEY (product_id) NOT ENFORCED
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '20',
+                    'fields.product_id.expression' = '#{Number.numberBetween ''1'',''5''}',
+                    'fields.name.expression' = '#{Commerce.productName}',
+                    'fields.brand.expression' = '#{Commerce.brand}',
+                    'fields.vendor.expression' = '#{Commerce.vendor}',
+                    'fields.department.expression' = '#{Commerce.department}'
+                );
+
+                CREATE TEMPORARY TABLE customers (
+                    customer_id INT,
+                    `name` STRING,
+                    address STRING,
+                    postcode STRING,
+                    city STRING,
+                    email STRING,
+                    PRIMARY KEY (customer_id) NOT ENFORCED
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '20',
+                    'fields.customer_id.expression' = '#{Number.numberBetween ''1'',''5''}',
+                    'fields.name.expression' = '#{Name.fullName}',
+                    'fields.address.expression' = '#{Address.streetAddress}',
+                    'fields.postcode.expression' = '#{Address.postcode}',
+                    'fields.city.expression' = '#{Address.city}',
+                    'fields.email.expression' = '#{Internet.emailAddress}'
+                );
+
+                CREATE TEMPORARY TABLE orders (
+                    order_id STRING,
+                    customer_id INT,
+                    product_id STRING,
+                    price DOUBLE
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '20',
+                    'fields.order_id.expression' = '#{Internet.UUID}',
+                    'fields.customer_id.expression' = '#{Number.numberBetween ''1'',''5''}',
+                    'fields.product_id.expression' = '#{Number.numberBetween ''1'',''5''}',
+                    'fields.price.expression' = '#{Number.randomDouble ''2'',''10'',''100''}'
+                );
+
+                CREATE TEMPORARY TABLE clicks (
+                    click_id STRING,
+                    user_id INT,
+                    url STRING,
+                    user_agent STRING,
+                    view_time INT
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '20',
+                    'fields.click_id.expression' = '#{Internet.UUID}',
+                    'fields.user_id.expression' = '#{Number.numberBetween ''1'',''100''}',
+                    'fields.url.expression' = '#{regexify ''https://www[.]acme[.]com/product/[a-z]{5}-[a-z]{5}''}',
+                    'fields.user_agent.expression' = '#{Internet.userAgent}',
+                    'fields.view_time.expression' = '#{Number.numberBetween ''10'',''120''}'
+                )
+                """);
+
+        QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
+                SELECT
+                    o.order_id,
+                    c.`name` AS customer_name,
+                    c.city,
+                    p.`name` AS product_name,
+                    p.department,
+                    ROUND(o.price, 2) AS price
+                FROM orders o
+                JOIN customers c ON o.customer_id = c.customer_id
+                JOIN products p ON o.product_id = p.product_id
+                """);
+
+        assertTrue(result.getColumnNames().containsAll(
+                List.of("order_id", "customer_name", "city", "product_name", "department", "price")));
+        assertTrue(result.getRowCount() > 0, "Expected at least one joined row");
+    }
+
     // --- Interval Join (STREAMING) ---
 
     @Test

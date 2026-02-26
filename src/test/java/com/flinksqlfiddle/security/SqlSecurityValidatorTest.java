@@ -65,6 +65,12 @@ class SqlSecurityValidatorTest {
     }
 
     @Test
+    void allowFakerConnector() {
+        assertDoesNotThrow(() ->
+                validator.validate("CREATE TABLE t (name STRING) WITH ('connector' = 'faker', 'fields.name.expression' = '#{Name.full_name}')"));
+    }
+
+    @Test
     void allowBlackholeConnector() {
         assertDoesNotThrow(() ->
                 validator.validate("CREATE TABLE t (id INT) WITH ('connector' = 'blackhole')"));
