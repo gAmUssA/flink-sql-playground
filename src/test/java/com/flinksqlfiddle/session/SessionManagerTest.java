@@ -17,7 +17,7 @@ class SessionManagerTest {
 
     @BeforeEach
     void setUp() {
-        FlinkProperties props = new FlinkProperties(1, "8m", "32m", 5);
+        FlinkProperties props = new FlinkProperties(1, "8m", "32m", 5, null);
         FlinkEnvironmentFactory factory = new FlinkEnvironmentFactory(props);
         fakeTime = new AtomicLong(System.nanoTime());
         Ticker ticker = fakeTime::get;

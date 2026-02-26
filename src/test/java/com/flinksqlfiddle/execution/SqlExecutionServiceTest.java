@@ -21,7 +21,7 @@ class SqlExecutionServiceTest {
     @BeforeEach
     void setUp() {
         factory = new FlinkEnvironmentFactory(
-                new FlinkProperties(1, "8m", "32m", 5)
+                new FlinkProperties(1, "8m", "32m", 5, null)
         );
         service = new SqlExecutionService(new SqlSecurityValidator());
     }
