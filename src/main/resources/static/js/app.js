@@ -53,6 +53,9 @@ require(['vs/editor/editor.main'], function () {
 function renderResults(result) {
     const container = document.getElementById('results-container');
     container.innerHTML = '';
+    container.classList.remove('fade-in');
+    void container.offsetWidth;
+    container.classList.add('fade-in');
 
     if (!result.columns || result.columns.length === 0) {
         container.textContent = 'Statement executed successfully.';
@@ -140,6 +143,7 @@ async function executeSql() {
     const mode = document.getElementById('mode-select').value;
 
     runBtn.disabled = true;
+    runBtn.classList.add('running');
     setStatus('Executing...');
     resultsContainer.textContent = '';
 
@@ -192,6 +196,7 @@ async function executeSql() {
         setStatus('Execution error');
     } finally {
         runBtn.disabled = false;
+        runBtn.classList.remove('running');
     }
 }
 
@@ -276,11 +281,44 @@ function populateExamples() {
     });
 }
 
+// --- Resize Handle ---
+
+function initResizeHandle() {
+    const handle = document.querySelector('.resize-handle');
+    const results = document.querySelector('.results');
+    let startY, startHeight;
+
+    handle.addEventListener('mousedown', (e) => {
+        startY = e.clientY;
+        startHeight = results.getBoundingClientRect().height;
+        document.body.classList.add('resizing');
+
+        function onMouseMove(e) {
+            const delta = startY - e.clientY;
+            const newHeight = Math.min(
+                Math.max(60, startHeight + delta),
+                window.innerHeight - 200
+            );
+            results.style.flexBasis = newHeight + 'px';
+        }
+
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.body.classList.remove('resizing');
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+}
+
 // --- Event Listeners ---
 
 document.addEventListener('DOMContentLoaded', () => {
     populateExamples();
     createSession();
+    initResizeHandle();
     document.getElementById('run-btn').addEventListener('click', executeSql);
     document.getElementById('share-btn').addEventListener('click', shareFiddle);
 });
