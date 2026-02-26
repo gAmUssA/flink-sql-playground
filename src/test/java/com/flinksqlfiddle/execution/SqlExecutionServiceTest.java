@@ -179,6 +179,42 @@ class SqlExecutionServiceTest {
     }
 
     @Test
+    void makeIdempotentPrependsDropForCreateTable() {
+        String sql = "CREATE TABLE orders (id INT) WITH ('connector' = 'datagen')";
+        String result = SqlExecutionService.makeIdempotent(sql);
+        assertTrue(result.startsWith("DROP TABLE IF EXISTS orders;\n"));
+        assertTrue(result.endsWith(sql));
+    }
+
+    @Test
+    void makeIdempotentHandlesBacktickQuotedNames() {
+        String sql = "CREATE TABLE `my-table` (id INT) WITH ('connector' = 'datagen')";
+        String result = SqlExecutionService.makeIdempotent(sql);
+        assertTrue(result.startsWith("DROP TABLE IF EXISTS `my-table`;\n"));
+    }
+
+    @Test
+    void makeIdempotentHandlesTemporaryTable() {
+        String sql = "CREATE TEMPORARY TABLE temp_orders (id INT) WITH ('connector' = 'datagen')";
+        String result = SqlExecutionService.makeIdempotent(sql);
+        assertTrue(result.startsWith("DROP TABLE IF EXISTS temp_orders;\n"));
+    }
+
+    @Test
+    void makeIdempotentHandlesIfNotExists() {
+        String sql = "CREATE TABLE IF NOT EXISTS orders (id INT) WITH ('connector' = 'datagen')";
+        String result = SqlExecutionService.makeIdempotent(sql);
+        assertTrue(result.startsWith("DROP TABLE IF EXISTS orders;\n"));
+    }
+
+    @Test
+    void makeIdempotentPassesThroughNonCreateStatements() {
+        assertEquals("SELECT * FROM t", SqlExecutionService.makeIdempotent("SELECT * FROM t"));
+        assertEquals("DROP TABLE t", SqlExecutionService.makeIdempotent("DROP TABLE t"));
+        assertEquals("CREATE VIEW v AS SELECT 1", SqlExecutionService.makeIdempotent("CREATE VIEW v AS SELECT 1"));
+    }
+
+    @Test
     void isDdlDetectsStatements() {
         assertTrue(SqlExecutionService.isDdl("CREATE TABLE t (id INT) WITH ('connector' = 'datagen')"));
         assertTrue(SqlExecutionService.isDdl("CREATE TEMPORARY TABLE t (id INT) WITH ('connector' = 'datagen')"));

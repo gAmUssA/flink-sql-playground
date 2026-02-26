@@ -12,19 +12,35 @@
     </header>
 
     <main>
-        <section class="editors">
-            <div class="editor-panel">
-                <h2>Schema (DDL)</h2>
-                <div id="schema-editor" class="editor-container"></div>
+        <div class="main-content">
+            <aside id="schema-browser" class="schema-browser">
+                <div class="schema-browser-header">
+                    <span class="schema-browser-title">Tables</span>
+                    <button id="schema-browser-toggle" class="schema-browser-toggle" title="Toggle schema browser">&lsaquo;</button>
+                </div>
+                <div id="schema-browser-content" class="schema-browser-content">
+                    <div id="schema-browser-empty" class="schema-browser-empty">No tables. Use Build Schema to create tables.</div>
+                    <div id="schema-browser-list"></div>
+                </div>
+            </aside>
+
+            <div class="editors-wrapper">
+                <section class="editors">
+                    <div class="editor-panel">
+                        <h2>Schema (DDL)</h2>
+                        <div id="schema-editor" class="editor-container"></div>
+                    </div>
+                    <div class="editor-panel">
+                        <h2>Query</h2>
+                        <div id="query-editor" class="editor-container"></div>
+                    </div>
+                </section>
             </div>
-            <div class="editor-panel">
-                <h2>Query</h2>
-                <div id="query-editor" class="editor-container"></div>
-            </div>
-        </section>
+        </div>
 
         <div class="controls">
-            <button id="run-btn">Run</button>
+            <button id="build-schema-btn" class="btn-secondary">Build Schema</button>
+            <button id="run-query-btn" class="btn-primary">Run Query</button>
             <select id="mode-select">
                 <option value="STREAMING" selected>Streaming</option>
                 <option value="BATCH">Batch</option>

@@ -77,6 +77,19 @@ main {
     overflow: hidden;
 }
 
+.main-content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.editors-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
 .editors {
     display: flex;
     flex: 1;
@@ -124,7 +137,7 @@ main {
     border-bottom: 1px solid var(--border);
 }
 
-#run-btn {
+.btn-primary {
     padding: 5px 14px;
     background: var(--accent-blue);
     color: var(--text-primary);
@@ -137,23 +150,27 @@ main {
     transition: background-color var(--transition);
 }
 
-#run-btn:hover {
-    background: var(--accent-blue-hover);
-}
+.btn-primary:hover { background: var(--accent-blue-hover); }
+.btn-primary:active { background: var(--accent-blue-active); }
+.btn-primary:disabled { background: var(--bg-elevated); color: var(--text-muted); cursor: not-allowed; }
+.btn-primary.running { animation: pulse-running 1.5s ease-in-out infinite; }
 
-#run-btn:active {
-    background: var(--accent-blue-active);
-}
-
-#run-btn:disabled {
+.btn-secondary {
+    padding: 5px 14px;
     background: var(--bg-elevated);
-    color: var(--text-muted);
-    cursor: not-allowed;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background-color var(--transition);
 }
 
-#run-btn.running {
-    animation: pulse-running 1.5s ease-in-out infinite;
-}
+.btn-secondary:hover { background: var(--border); }
+.btn-secondary:disabled { color: var(--text-muted); cursor: not-allowed; }
+.btn-secondary.running { animation: pulse-running 1.5s ease-in-out infinite; }
 
 #share-btn {
     padding: 5px 14px;
@@ -295,6 +312,133 @@ body.resizing .resize-handle {
     border-top: 1px solid var(--border);
 }
 
+/* === Schema Browser === */
+
+.schema-browser {
+    width: 200px;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-raised);
+    border-right: 1px solid var(--border);
+    transition: width var(--transition), min-width var(--transition);
+    overflow: hidden;
+}
+
+.schema-browser.collapsed {
+    width: 32px;
+    min-width: 32px;
+}
+
+.schema-browser-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 8px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+}
+
+.schema-browser-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    white-space: nowrap;
+}
+
+.collapsed .schema-browser-title {
+    display: none;
+}
+
+.schema-browser-toggle {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.schema-browser-toggle:hover {
+    color: var(--text-primary);
+}
+
+.collapsed .schema-browser-toggle {
+    transform: rotate(180deg);
+}
+
+.schema-browser-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+}
+
+.collapsed .schema-browser-content {
+    display: none;
+}
+
+.schema-browser-empty {
+    padding: 12px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.schema-table-item {
+    cursor: pointer;
+    user-select: none;
+}
+
+.schema-table-name {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-primary);
+    transition: background-color var(--transition);
+}
+
+.schema-table-name:hover {
+    background: var(--bg-elevated);
+}
+
+.schema-table-arrow {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform var(--transition);
+}
+
+.schema-table-item.expanded .schema-table-arrow {
+    transform: rotate(90deg);
+}
+
+.schema-columns {
+    display: none;
+    padding: 0 10px 4px 24px;
+}
+
+.schema-table-item.expanded .schema-columns {
+    display: block;
+}
+
+.schema-column {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 1px 0;
+    color: var(--text-secondary);
+}
+
+.schema-column-type {
+    color: var(--text-muted);
+}
+
 /* === Animations === */
 
 @keyframes pulse-running {
@@ -313,7 +457,8 @@ body.resizing .resize-handle {
 
 /* === Focus Rings === */
 
-#run-btn:focus-visible,
+#build-schema-btn:focus-visible,
+#run-query-btn:focus-visible,
 #share-btn:focus-visible,
 #mode-select:focus-visible,
 #example-select:focus-visible {
