@@ -245,6 +245,82 @@ JOIN customers c ON o.customer_id = c.customer_id
 JOIN products p ON o.product_id = p.product_id;`
     },
     {
+        title: "Brewmaster Monitoring (Faker)",
+        mode: "STREAMING",
+        schema: `-- Brewery tank inventory (dimension, upsert)
+CREATE TEMPORARY TABLE tanks (
+    tank_id         INT,
+    tank_name       STRING,
+    tank_type       STRING,
+    capacity_liters INT,
+    location        STRING,
+    PRIMARY KEY (tank_id) NOT ENFORCED
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '1',
+    'fields.tank_id.expression' = '#{Number.numberBetween ''1'',''10''}',
+    'fields.tank_name.expression' = '#{regexify ''(Alpha|Bravo|Charlie|Delta|Echo)-(0[1-9]|10)''}',
+    'fields.tank_type.expression' = '#{Options.option ''FERMENTER'',''BRITE_TANK'',''MASH_TUN'',''KETTLE''}',
+    'fields.capacity_liters.expression' = '#{Number.numberBetween ''500'',''5000''}',
+    'fields.location.expression' = '#{Options.option ''Building A - East'',''Building A - West'',''Building B - Cellar'',''Outdoor Yard''}'
+);
+
+-- Beer recipes (dimension, upsert)
+CREATE TEMPORARY TABLE recipes (
+    recipe_id   INT,
+    beer_name   STRING,
+    style       STRING,
+    target_ibu  INT,
+    target_abv  DOUBLE,
+    PRIMARY KEY (recipe_id) NOT ENFORCED
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '1',
+    'fields.recipe_id.expression' = '#{Number.numberBetween ''1'',''10''}',
+    'fields.beer_name.expression' = '#{Beer.name}',
+    'fields.style.expression' = '#{Beer.style}',
+    'fields.target_ibu.expression' = '#{Number.numberBetween ''10'',''100''}',
+    'fields.target_abv.expression' = '#{Number.randomDouble ''1'',''3'',''12''}'
+);
+
+-- IoT sensor readings from tanks (the core stream!)
+CREATE TEMPORARY TABLE sensor_readings (
+    reading_id      STRING,
+    tank_id         INT,
+    recipe_id       INT,
+    temperature_c   DOUBLE,
+    pressure_psi    DOUBLE,
+    ph_level        DOUBLE,
+    event_time      AS PROCTIME()
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '100',
+    'fields.reading_id.expression' = '#{Internet.UUID}',
+    'fields.tank_id.expression' = '#{Number.numberBetween ''1'',''10''}',
+    'fields.recipe_id.expression' = '#{Number.numberBetween ''1'',''10''}',
+    'fields.temperature_c.expression' = '#{Number.randomDouble ''2'',''2'',''25''}',
+    'fields.pressure_psi.expression' = '#{Number.randomDouble ''2'',''5'',''30''}',
+    'fields.ph_level.expression' = '#{Number.randomDouble ''2'',''3'',''6''}'
+);`,
+        query: `-- Real-time tank dashboard: 5-second tumbling windows
+SELECT
+    t.tank_name,
+    t.tank_type,
+    r.beer_name,
+    r.style,
+    COUNT(*)                            AS readings,
+    ROUND(AVG(s.temperature_c), 2)      AS avg_temp_c,
+    ROUND(AVG(s.pressure_psi), 2)       AS avg_pressure,
+    ROUND(AVG(s.ph_level), 2)           AS avg_ph
+FROM sensor_readings s
+JOIN tanks t ON s.tank_id = t.tank_id
+JOIN recipes r ON s.recipe_id = r.recipe_id
+GROUP BY
+    t.tank_name, t.tank_type,
+    r.beer_name, r.style,
+    TUMBLE(s.event_time, INTERVAL '5' SECOND);`
+    },
+    {
         title: "Batch vs Streaming",
         mode: "STREAMING",
         schema: `-- Run this in both BATCH and STREAMING modes to see the difference!

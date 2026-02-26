@@ -377,6 +377,102 @@ class ExampleQueriesSmokeTest {
         assertTrue(result.getRowCount() > 0, "Expected at least one joined row");
     }
 
+    // --- Brewmaster Monitoring (Faker, STREAMING) ---
+    // Uses bounded rows + deterministic event time so windows fire in tests.
+
+    @Test
+    void fakerBrewmasterMonitoring() {
+        FlinkSession session = new FlinkSession("smoke-brew", factory);
+
+        executeDdl(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE tanks (
+                    tank_id     INT,
+                    tank_name   STRING,
+                    tank_type   STRING,
+                    capacity_liters INT,
+                    location    STRING,
+                    PRIMARY KEY (tank_id) NOT ENFORCED
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '10',
+                    'fields.tank_id.expression' = '#{Number.numberBetween ''1'',''5''}',
+                    'fields.tank_name.expression' = '#{regexify ''(Alpha|Bravo|Charlie)-(0[1-9])''}',
+                    'fields.tank_type.expression' = '#{Options.option ''FERMENTER'',''BRITE_TANK''}',
+                    'fields.capacity_liters.expression' = '#{Number.numberBetween ''500'',''5000''}',
+                    'fields.location.expression' = '#{Options.option ''Building A'',''Building B''}'
+                );
+
+                CREATE TEMPORARY TABLE recipes (
+                    recipe_id   INT,
+                    beer_name   STRING,
+                    style       STRING,
+                    target_ibu  INT,
+                    target_abv  DOUBLE,
+                    PRIMARY KEY (recipe_id) NOT ENFORCED
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '10',
+                    'fields.recipe_id.expression' = '#{Number.numberBetween ''1'',''5''}',
+                    'fields.beer_name.expression' = '#{Beer.name}',
+                    'fields.style.expression' = '#{Beer.style}',
+                    'fields.target_ibu.expression' = '#{Number.numberBetween ''10'',''100''}',
+                    'fields.target_abv.expression' = '#{Number.randomDouble ''1'',''3'',''12''}'
+                );
+
+                CREATE TEMPORARY TABLE sensor_readings (
+                    reading_id      STRING,
+                    tank_id         INT,
+                    recipe_id       INT,
+                    temperature_c   DOUBLE,
+                    pressure_psi    DOUBLE,
+                    ph_level        DOUBLE,
+                    ts_offset       INT,
+                    event_time AS TIMESTAMPADD(SECOND, ts_offset, TIMESTAMP '2024-01-01 00:00:00'),
+                    WATERMARK FOR event_time AS event_time - INTERVAL '1' SECOND
+                ) WITH (
+                    'connector' = 'datagen',
+                    'number-of-rows' = '20',
+                    'fields.reading_id.length' = '8',
+                    'fields.tank_id.min' = '1',
+                    'fields.tank_id.max' = '5',
+                    'fields.recipe_id.min' = '1',
+                    'fields.recipe_id.max' = '5',
+                    'fields.temperature_c.min' = '2',
+                    'fields.temperature_c.max' = '25',
+                    'fields.pressure_psi.min' = '5',
+                    'fields.pressure_psi.max' = '30',
+                    'fields.ph_level.min' = '3',
+                    'fields.ph_level.max' = '6',
+                    'fields.ts_offset.kind' = 'sequence',
+                    'fields.ts_offset.start' = '0',
+                    'fields.ts_offset.end' = '19'
+                )
+                """);
+
+        QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
+                SELECT
+                    t.tank_name,
+                    t.tank_type,
+                    r.beer_name,
+                    r.style,
+                    COUNT(*)                        AS readings,
+                    ROUND(AVG(s.temperature_c), 2)  AS avg_temp_c,
+                    ROUND(AVG(s.pressure_psi), 2)   AS avg_pressure,
+                    ROUND(AVG(s.ph_level), 2)       AS avg_ph
+                FROM sensor_readings s
+                JOIN tanks t ON s.tank_id = t.tank_id
+                JOIN recipes r ON s.recipe_id = r.recipe_id
+                GROUP BY
+                    t.tank_name, t.tank_type,
+                    r.beer_name, r.style,
+                    TUMBLE(s.event_time, INTERVAL '10' SECOND)
+                """);
+
+        assertTrue(result.getColumnNames().containsAll(
+                List.of("tank_name", "beer_name", "readings", "avg_temp_c")));
+        assertTrue(result.getRowCount() > 0, "Expected at least one windowed row");
+    }
+
     // --- Interval Join (STREAMING) ---
 
     @Test
