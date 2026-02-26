@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: ${SUPABASE_DB_URL}?prepareThreshold=0
+    username: ${SUPABASE_DB_USER}
+    password: ${SUPABASE_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: '0'
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 0

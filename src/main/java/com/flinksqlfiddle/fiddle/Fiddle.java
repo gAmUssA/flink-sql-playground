@@ -8,9 +8,10 @@ import java.time.Instant;
 public class Fiddle {
 
     @Id
+    @Column(name = "short_code")
     private String shortCode;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
+    @Column(name = "schema_ddl", columnDefinition = "TEXT", nullable = false)
     private String schema;
 
     @Column(columnDefinition = "TEXT", nullable = false)
@@ -19,7 +20,7 @@ public class Fiddle {
     @Column(nullable = false)
     private String mode;
 
-    @Column(nullable = false)
+    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     protected Fiddle() {

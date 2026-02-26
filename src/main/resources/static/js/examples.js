@@ -62,16 +62,16 @@ GROUP BY
     'fields.user_id.max' = '3',
     'fields.page.length' = '5'
 );`,
-        query: `-- Count clicks in 30s windows that slide every 10s
+        query: `-- Count clicks in 15s windows that slide every 5s
 SELECT
     user_id,
-    HOP_START(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND) AS window_start,
-    HOP_END(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND) AS window_end,
+    HOP_START(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND) AS window_start,
+    HOP_END(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND) AS window_end,
     COUNT(*) AS click_count
 FROM clicks
 GROUP BY
     user_id,
-    HOP(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND);`
+    HOP(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND);`
     },
     {
         title: "Cumulate Window",
@@ -85,11 +85,11 @@ GROUP BY
     'fields.page_id.min' = '1',
     'fields.page_id.max' = '3'
 );`,
-        query: `-- Progressive aggregation: expand window every 5s up to 30s
+        query: `-- Progressive aggregation: expand window every 2s up to 10s
 SELECT page_id, window_start, window_end,
     COUNT(*) AS view_count
 FROM TABLE(
-    CUMULATE(TABLE page_views, DESCRIPTOR(view_time), INTERVAL '5' SECOND, INTERVAL '30' SECOND)
+    CUMULATE(TABLE page_views, DESCRIPTOR(view_time), INTERVAL '2' SECOND, INTERVAL '10' SECOND)
 )
 GROUP BY page_id, window_start, window_end;`
     },

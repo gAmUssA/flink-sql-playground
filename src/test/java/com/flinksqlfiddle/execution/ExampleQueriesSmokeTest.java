@@ -154,13 +154,13 @@ class ExampleQueriesSmokeTest {
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
                 SELECT
                     user_id,
-                    HOP_START(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND) AS window_start,
-                    HOP_END(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND) AS window_end,
+                    HOP_START(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND) AS window_start,
+                    HOP_END(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND) AS window_end,
                     COUNT(*) AS click_count
                 FROM clicks
                 GROUP BY
                     user_id,
-                    HOP(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND)
+                    HOP(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND)
                 """);
 
         assertTrue(result.getColumnNames().containsAll(
@@ -198,7 +198,7 @@ class ExampleQueriesSmokeTest {
                     window_end,
                     COUNT(*) AS view_count
                 FROM TABLE(
-                    CUMULATE(TABLE page_views, DESCRIPTOR(view_time), INTERVAL '5' SECOND, INTERVAL '30' SECOND)
+                    CUMULATE(TABLE page_views, DESCRIPTOR(view_time), INTERVAL '2' SECOND, INTERVAL '10' SECOND)
                 )
                 GROUP BY page_id, window_start, window_end
                 """);
