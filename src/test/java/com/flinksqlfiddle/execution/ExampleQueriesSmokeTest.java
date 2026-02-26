@@ -15,6 +15,12 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Smoke tests for every UI example query in examples.js.
  * Uses the session-based execution path — the same code path the real app uses.
+ *
+ * Streaming adaptations for testability:
+ * - 'rows-per-second' → 'number-of-rows' (bounded source so tests terminate)
+ * - PROCTIME() → event-time with watermarks (so windows fire when source finishes)
+ * - Window intervals shrunk for fast execution
+ * - CUMULATE uses TVF syntax (the only syntax Flink supports for it)
  */
 class ExampleQueriesSmokeTest {
 
@@ -86,28 +92,33 @@ class ExampleQueriesSmokeTest {
                 CREATE TEMPORARY TABLE sensor_readings (
                     sensor_id INT,
                     temperature DOUBLE,
-                    event_time AS PROCTIME()
+                    ts_offset INT,
+                    event_time AS TIMESTAMPADD(SECOND, ts_offset, TIMESTAMP '2024-01-01 00:00:00'),
+                    WATERMARK FOR event_time AS event_time - INTERVAL '1' SECOND
                 ) WITH (
                     'connector' = 'datagen',
                     'number-of-rows' = '20',
                     'fields.sensor_id.min' = '1',
                     'fields.sensor_id.max' = '3',
                     'fields.temperature.min' = '18',
-                    'fields.temperature.max' = '35'
+                    'fields.temperature.max' = '35',
+                    'fields.ts_offset.kind' = 'sequence',
+                    'fields.ts_offset.start' = '0',
+                    'fields.ts_offset.end' = '19'
                 )
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
                 SELECT
                     sensor_id,
-                    TUMBLE_START(event_time, INTERVAL '2' SECOND) AS window_start,
-                    TUMBLE_END(event_time, INTERVAL '2' SECOND) AS window_end,
+                    TUMBLE_START(event_time, INTERVAL '10' SECOND) AS window_start,
+                    TUMBLE_END(event_time, INTERVAL '10' SECOND) AS window_end,
                     COUNT(*) AS reading_count,
                     ROUND(AVG(temperature), 1) AS avg_temp
                 FROM sensor_readings
                 GROUP BY
                     sensor_id,
-                    TUMBLE(event_time, INTERVAL '2' SECOND)
+                    TUMBLE(event_time, INTERVAL '10' SECOND)
                 """);
 
         assertTrue(result.getColumnNames().containsAll(
@@ -125,26 +136,31 @@ class ExampleQueriesSmokeTest {
                 CREATE TEMPORARY TABLE clicks (
                     user_id INT,
                     page STRING,
-                    click_time AS PROCTIME()
+                    ts_offset INT,
+                    click_time AS TIMESTAMPADD(SECOND, ts_offset, TIMESTAMP '2024-01-01 00:00:00'),
+                    WATERMARK FOR click_time AS click_time - INTERVAL '1' SECOND
                 ) WITH (
                     'connector' = 'datagen',
                     'number-of-rows' = '20',
                     'fields.user_id.min' = '1',
                     'fields.user_id.max' = '3',
-                    'fields.page.length' = '5'
+                    'fields.page.length' = '5',
+                    'fields.ts_offset.kind' = 'sequence',
+                    'fields.ts_offset.start' = '0',
+                    'fields.ts_offset.end' = '19'
                 )
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
                 SELECT
                     user_id,
-                    HOP_START(click_time, INTERVAL '2' SECOND, INTERVAL '4' SECOND) AS window_start,
-                    HOP_END(click_time, INTERVAL '2' SECOND, INTERVAL '4' SECOND) AS window_end,
+                    HOP_START(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND) AS window_start,
+                    HOP_END(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND) AS window_end,
                     COUNT(*) AS click_count
                 FROM clicks
                 GROUP BY
                     user_id,
-                    HOP(click_time, INTERVAL '2' SECOND, INTERVAL '4' SECOND)
+                    HOP(click_time, INTERVAL '10' SECOND, INTERVAL '30' SECOND)
                 """);
 
         assertTrue(result.getColumnNames().containsAll(
@@ -161,25 +177,30 @@ class ExampleQueriesSmokeTest {
         executeDdl(session, ExecutionMode.STREAMING, """
                 CREATE TEMPORARY TABLE page_views (
                     page_id INT,
-                    view_time AS PROCTIME()
+                    ts_offset INT,
+                    view_time AS TIMESTAMPADD(SECOND, ts_offset, TIMESTAMP '2024-01-01 00:00:00'),
+                    WATERMARK FOR view_time AS view_time - INTERVAL '1' SECOND
                 ) WITH (
                     'connector' = 'datagen',
                     'number-of-rows' = '20',
                     'fields.page_id.min' = '1',
-                    'fields.page_id.max' = '3'
+                    'fields.page_id.max' = '3',
+                    'fields.ts_offset.kind' = 'sequence',
+                    'fields.ts_offset.start' = '0',
+                    'fields.ts_offset.end' = '19'
                 )
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
                 SELECT
                     page_id,
-                    CUMULATE_START(view_time, INTERVAL '2' SECOND, INTERVAL '4' SECOND) AS window_start,
-                    CUMULATE_END(view_time, INTERVAL '2' SECOND, INTERVAL '4' SECOND) AS window_end,
+                    window_start,
+                    window_end,
                     COUNT(*) AS view_count
-                FROM page_views
-                GROUP BY
-                    page_id,
-                    CUMULATE(view_time, INTERVAL '2' SECOND, INTERVAL '4' SECOND)
+                FROM TABLE(
+                    CUMULATE(TABLE page_views, DESCRIPTOR(view_time), INTERVAL '5' SECOND, INTERVAL '30' SECOND)
+                )
+                GROUP BY page_id, window_start, window_end
                 """);
 
         assertTrue(result.getColumnNames().containsAll(
@@ -250,7 +271,7 @@ class ExampleQueriesSmokeTest {
         executeDdl(session, ExecutionMode.BATCH, """
                 CREATE TEMPORARY TABLE events (
                     category INT,
-                    value INT
+                    `value` INT
                 ) WITH (
                     'connector' = 'datagen',
                     'number-of-rows' = '20',
@@ -265,7 +286,7 @@ class ExampleQueriesSmokeTest {
                 SELECT
                     category,
                     COUNT(*) AS event_count,
-                    SUM(value) AS total_value
+                    SUM(`value`) AS total_value
                 FROM events
                 GROUP BY category
                 """);
@@ -284,7 +305,7 @@ class ExampleQueriesSmokeTest {
         executeDdl(session, ExecutionMode.STREAMING, """
                 CREATE TEMPORARY TABLE events (
                     category INT,
-                    value INT
+                    `value` INT
                 ) WITH (
                     'connector' = 'datagen',
                     'number-of-rows' = '20',
@@ -299,7 +320,7 @@ class ExampleQueriesSmokeTest {
                 SELECT
                     category,
                     COUNT(*) AS event_count,
-                    SUM(value) AS total_value
+                    SUM(`value`) AS total_value
                 FROM events
                 GROUP BY category
                 """);

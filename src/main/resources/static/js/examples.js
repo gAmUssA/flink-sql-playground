@@ -146,21 +146,21 @@ WHERE o.product_id = s.order_ref
 -- STREAMING: returns a changelog with +I, -U, +U operations
 CREATE TEMPORARY TABLE events (
     category INT,
-    value INT
+    \`val\` INT
 ) WITH (
     'connector' = 'datagen',
     'number-of-rows' = '20',
     'fields.category.min' = '1',
     'fields.category.max' = '3',
-    'fields.value.min' = '1',
-    'fields.value.max' = '100'
+    'fields.val.min' = '1',
+    'fields.val.max' = '100'
 );`,
         query: `-- Try toggling between Batch and Streaming mode!
 -- Batch shows final results; Streaming shows the changelog
 SELECT
     category,
     COUNT(*) AS event_count,
-    SUM(value) AS total_value
+    SUM(\`val\`) AS total_value
 FROM events
 GROUP BY category;`
     }

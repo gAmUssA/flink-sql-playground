@@ -1,10 +1,13 @@
 package com.flinksqlfiddle.execution;
 
+import com.flinksqlfiddle.api.dto.ColumnInfo;
+import com.flinksqlfiddle.api.dto.TableInfo;
 import com.flinksqlfiddle.security.SecurityConstants;
 import com.flinksqlfiddle.security.SqlSecurityValidator;
 import com.flinksqlfiddle.session.FlinkSession;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.TableResult;
+import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.util.CloseableIterator;
@@ -19,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
@@ -28,6 +32,10 @@ public class SqlExecutionService {
 
     private static final Pattern DDL_PATTERN = Pattern.compile(
             "^\\s*(CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)|DROP\\s+(TABLE|VIEW))\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
+            "^\\s*CREATE\\s+(?:TEMPORARY\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(`[^`]+`|\\S+)",
             Pattern.CASE_INSENSITIVE);
 
     private static final Map<RowKind, String> ROW_KIND_LABELS = Map.of(
@@ -73,6 +81,35 @@ public class SqlExecutionService {
         return executeOnSessionThread(session, tEnv, sql);
     }
 
+    public List<TableInfo> listTables(FlinkSession session) {
+        return session.runOnPlannerThread(() -> {
+            TableEnvironment tEnv = session.getStreamEnv();
+            String[] tableNames = tEnv.listTables();
+            List<TableInfo> tables = new ArrayList<>();
+            for (String tableName : tableNames) {
+                ResolvedSchema schema = tEnv.from(tableName).getResolvedSchema();
+                List<ColumnInfo> columns = schema.getColumns().stream()
+                        .map(col -> new ColumnInfo(col.getName(), col.getDataType().toString()))
+                        .toList();
+                tables.add(new TableInfo(tableName, columns));
+            }
+            return tables;
+        });
+    }
+
+    /**
+     * For CREATE TABLE statements, prepends DROP TABLE IF EXISTS to make re-execution safe.
+     * Non-CREATE statements pass through unchanged.
+     */
+    static String makeIdempotent(String sql) {
+        Matcher matcher = CREATE_TABLE_PATTERN.matcher(sql);
+        if (!matcher.find()) {
+            return sql;
+        }
+        String tableName = matcher.group(1);
+        return "DROP TABLE IF EXISTS " + tableName + ";\n" + sql;
+    }
+
     static boolean isDdl(String sql) {
         return DDL_PATTERN.matcher(sql).find();
     }
@@ -96,7 +133,15 @@ public class SqlExecutionService {
 
     private QueryResult executeDdlOnBothEnvironments(FlinkSession session, String sql) {
         long startTime = System.currentTimeMillis();
+        String idempotentSql = makeIdempotent(sql);
         session.runOnPlannerThread(() -> {
+            // If makeIdempotent prepended a DROP, execute it separately first
+            if (!idempotentSql.equals(sql)) {
+                String dropStmt = idempotentSql.substring(0, idempotentSql.indexOf(";\n"));
+                log.debug("Executing idempotent DROP: {}", dropStmt);
+                session.getBatchEnv().executeSql(dropStmt);
+                session.getStreamEnv().executeSql(dropStmt);
+            }
             session.getBatchEnv().executeSql(sql);
             session.getStreamEnv().executeSql(sql);
             return null;

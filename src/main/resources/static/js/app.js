@@ -130,44 +130,70 @@ async function createSession() {
     }
 }
 
-// --- SQL Execution ---
+// --- Build Schema ---
 
-async function executeSql() {
+async function buildSchema() {
     if (!sessionId) {
         setStatus('No active session');
         return;
     }
 
-    const runBtn = document.getElementById('run-btn');
+    const btn = document.getElementById('build-schema-btn');
+    const mode = document.getElementById('mode-select').value;
+
+    btn.disabled = true;
+    btn.classList.add('running');
+    setStatus('Building schema...');
+
+    try {
+        const schema = schemaEditor.getValue().trim();
+        if (!schema) {
+            setStatus('No schema to build');
+            return;
+        }
+
+        const statements = schema.split(';').map(s => s.trim()).filter(s => s.length > 0);
+        for (const stmt of statements) {
+            const res = await fetch(`/api/sessions/${sessionId}/execute`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sql: stmt, mode: mode })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                setStatus('Schema error: ' + err.error);
+                return;
+            }
+        }
+
+        setStatus('Schema built successfully');
+        await refreshSchemaBrowser();
+    } catch (err) {
+        setStatus('Schema error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('running');
+    }
+}
+
+// --- Run Query ---
+
+async function runQuery() {
+    if (!sessionId) {
+        setStatus('No active session');
+        return;
+    }
+
+    const btn = document.getElementById('run-query-btn');
     const resultsContainer = document.getElementById('results-container');
     const mode = document.getElementById('mode-select').value;
 
-    runBtn.disabled = true;
-    runBtn.classList.add('running');
+    btn.disabled = true;
+    btn.classList.add('running');
     setStatus('Executing...');
     resultsContainer.textContent = '';
 
     try {
-        // Execute schema DDL if present
-        const schema = schemaEditor.getValue().trim();
-        if (schema) {
-            const statements = schema.split(';').map(s => s.trim()).filter(s => s.length > 0);
-            for (const stmt of statements) {
-                const res = await fetch(`/api/sessions/${sessionId}/execute`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sql: stmt, mode: mode })
-                });
-                if (!res.ok) {
-                    const err = await res.json();
-                    resultsContainer.textContent = 'Schema error: ' + err.error;
-                    setStatus('Schema execution failed');
-                    return;
-                }
-            }
-        }
-
-        // Execute query
         const query = queryEditor.getValue().trim();
         if (!query) {
             setStatus('No query to execute');
@@ -195,9 +221,68 @@ async function executeSql() {
         resultsContainer.textContent = 'Error: ' + err.message;
         setStatus('Execution error');
     } finally {
-        runBtn.disabled = false;
-        runBtn.classList.remove('running');
+        btn.disabled = false;
+        btn.classList.remove('running');
     }
+}
+
+// --- Schema Browser ---
+
+async function refreshSchemaBrowser() {
+    if (!sessionId) return;
+
+    const list = document.getElementById('schema-browser-list');
+    const empty = document.getElementById('schema-browser-empty');
+    const browser = document.getElementById('schema-browser');
+
+    try {
+        const response = await fetch(`/api/sessions/${sessionId}/tables`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        list.innerHTML = '';
+
+        if (!data.tables || data.tables.length === 0) {
+            empty.style.display = '';
+            list.style.display = 'none';
+            return;
+        }
+
+        empty.style.display = 'none';
+        list.style.display = '';
+        browser.classList.remove('collapsed');
+
+        data.tables.forEach(table => {
+            const item = document.createElement('div');
+            item.className = 'schema-table-item';
+
+            const name = document.createElement('div');
+            name.className = 'schema-table-name';
+            name.innerHTML = `<span class="schema-table-arrow">&#9654;</span> ${escapeHtml(table.name)}`;
+            name.addEventListener('click', () => item.classList.toggle('expanded'));
+
+            const cols = document.createElement('div');
+            cols.className = 'schema-columns';
+            table.columns.forEach(col => {
+                const colDiv = document.createElement('div');
+                colDiv.className = 'schema-column';
+                colDiv.innerHTML = `${escapeHtml(col.name)} <span class="schema-column-type">${escapeHtml(col.type)}</span>`;
+                cols.appendChild(colDiv);
+            });
+
+            item.appendChild(name);
+            item.appendChild(cols);
+            list.appendChild(item);
+        });
+    } catch (err) {
+        // Silently fail — schema browser is a convenience feature
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // --- Share ---
@@ -245,6 +330,10 @@ async function loadFiddleFromUrl() {
         if (queryEditor) queryEditor.setValue(fiddle.query);
         document.getElementById('mode-select').value = fiddle.mode;
         setStatus('Fiddle loaded');
+        // Auto-build schema for shared fiddles so schema browser populates
+        setTimeout(async () => {
+            if (sessionId) await buildSchema();
+        }, 500);
     } catch (err) {
         setStatus('Failed to load fiddle');
     }
@@ -313,12 +402,24 @@ function initResizeHandle() {
     });
 }
 
+// --- Schema Browser Toggle ---
+
+function initSchemaBrowserToggle() {
+    const toggle = document.getElementById('schema-browser-toggle');
+    const browser = document.getElementById('schema-browser');
+    toggle.addEventListener('click', () => {
+        browser.classList.toggle('collapsed');
+    });
+}
+
 // --- Event Listeners ---
 
 document.addEventListener('DOMContentLoaded', () => {
     populateExamples();
     createSession();
     initResizeHandle();
-    document.getElementById('run-btn').addEventListener('click', executeSql);
+    initSchemaBrowserToggle();
+    document.getElementById('build-schema-btn').addEventListener('click', buildSchema);
+    document.getElementById('run-query-btn').addEventListener('click', runQuery);
     document.getElementById('share-btn').addEventListener('click', shareFiddle);
 });
