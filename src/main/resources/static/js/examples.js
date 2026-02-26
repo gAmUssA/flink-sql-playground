@@ -136,6 +136,115 @@ WHERE o.product_id = s.order_ref
                          AND s.ship_time + INTERVAL '10' SECOND;`
     },
     {
+        title: "Realistic Orders (Faker)",
+        mode: "BATCH",
+        schema: `CREATE TEMPORARY TABLE fake_orders (
+    customer_name STRING,
+    product STRING,
+    amount DOUBLE,
+    city STRING
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '50',
+    'fields.customer_name.expression' = '#{Name.fullName}',
+    'fields.product.expression' = '#{Commerce.productName}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.city.expression' = '#{Address.city}'
+);`,
+        query: `-- Realistic fake data powered by DataFaker expressions
+SELECT
+    customer_name,
+    product,
+    ROUND(amount, 2) AS amount,
+    city
+FROM fake_orders
+ORDER BY amount DESC;`
+    },
+    {
+        title: "E-Commerce Streaming (Faker)",
+        mode: "STREAMING",
+        schema: `-- Products dimension table (upsert, keyed on product_id)
+CREATE TEMPORARY TABLE products (
+    product_id  STRING,
+    \`name\`   STRING,
+    brand       STRING,
+    vendor      STRING,
+    department  STRING,
+    PRIMARY KEY (product_id) NOT ENFORCED
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '50',
+    'fields.product_id.expression' = '#{Number.numberBetween ''1000'',''1500''}',
+    'fields.name.expression' = '#{Commerce.productName}',
+    'fields.brand.expression' = '#{Commerce.brand}',
+    'fields.vendor.expression' = '#{Commerce.vendor}',
+    'fields.department.expression' = '#{Commerce.department}'
+);
+
+-- Customers dimension table (upsert, keyed on customer_id)
+CREATE TEMPORARY TABLE customers (
+    customer_id INT,
+    \`name\`   STRING,
+    address     STRING,
+    postcode    STRING,
+    city        STRING,
+    email       STRING,
+    PRIMARY KEY (customer_id) NOT ENFORCED
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '50',
+    'fields.customer_id.expression' = '#{Number.numberBetween ''3000'',''3250''}',
+    'fields.name.expression' = '#{Name.fullName}',
+    'fields.address.expression' = '#{Address.streetAddress}',
+    'fields.postcode.expression' = '#{Address.postcode}',
+    'fields.city.expression' = '#{Address.city}',
+    'fields.email.expression' = '#{Internet.emailAddress}'
+);
+
+-- Orders fact table (append mode)
+CREATE TEMPORARY TABLE orders (
+    order_id    STRING,
+    customer_id INT,
+    product_id  STRING,
+    price       DOUBLE
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '50',
+    'fields.order_id.expression' = '#{Internet.UUID}',
+    'fields.customer_id.expression' = '#{Number.numberBetween ''3000'',''3250''}',
+    'fields.product_id.expression' = '#{Number.numberBetween ''1000'',''1500''}',
+    'fields.price.expression' = '#{Number.randomDouble ''2'',''10'',''100''}'
+);
+
+-- Clickstream table (append mode)
+CREATE TEMPORARY TABLE clicks (
+    click_id    STRING,
+    user_id     INT,
+    url         STRING,
+    user_agent  STRING,
+    view_time   INT
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '50',
+    'fields.click_id.expression' = '#{Internet.UUID}',
+    'fields.user_id.expression' = '#{Number.numberBetween ''3000'',''5000''}',
+    'fields.url.expression' = '#{regexify ''https://www[.]acme[.]com/product/[a-z]{5}-[a-z]{5}''}',
+    'fields.user_agent.expression' = '#{Internet.userAgent}',
+    'fields.view_time.expression' = '#{Number.numberBetween ''10'',''120''}'
+);`,
+        query: `-- Join orders with customers and products for a real-time sales dashboard
+SELECT
+    o.order_id,
+    c.\`name\` AS customer_name,
+    c.city,
+    p.\`name\` AS product_name,
+    p.department,
+    ROUND(o.price, 2) AS price
+FROM orders o
+JOIN customers c ON o.customer_id = c.customer_id
+JOIN products p ON o.product_id = p.product_id;`
+    },
+    {
         title: "Batch vs Streaming",
         mode: "STREAMING",
         schema: `-- Run this in both BATCH and STREAMING modes to see the difference!

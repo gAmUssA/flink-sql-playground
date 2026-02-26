@@ -8,7 +8,7 @@ public final class SecurityConstants {
     public static final int EXECUTION_TIMEOUT_SECONDS = 30;
     public static final long COLLECTION_TIMEOUT_MS = 15_000;
     public static final int DEFAULT_PARALLELISM = 1;
-    public static final Set<String> ALLOWED_CONNECTORS = Set.of("datagen", "print", "blackhole");
+    public static final Set<String> ALLOWED_CONNECTORS = Set.of("datagen", "faker", "print", "blackhole");
 
     private SecurityConstants() {
     }

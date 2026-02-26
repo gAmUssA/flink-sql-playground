@@ -43,6 +43,9 @@ dependencies {
     implementation("org.apache.flink:flink-table-runtime:$flinkVersion")
     implementation("org.apache.flink:flink-connector-datagen:$flinkVersion")
 
+    // DataFaker (used by ported flink-faker connector)
+    implementation("net.datafaker:datafaker:2.5.4")
+
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
@@ -50,4 +53,22 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+
+    testLogging {
+        events("passed", "skipped", "failed")
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = false
+        afterSuite(KotlinClosure2<TestDescriptor, TestResult, Unit>({ desc, result ->
+            if (desc.parent == null) {
+                println("\nTest Results: ${result.resultType} " +
+                        "(${result.testCount} tests, " +
+                        "${result.successfulTestCount} passed, " +
+                        "${result.failedTestCount} failed, " +
+                        "${result.skippedTestCount} skipped)")
+            }
+        }))
+    }
 }
