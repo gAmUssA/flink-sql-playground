@@ -86,15 +86,12 @@ GROUP BY
     'fields.page_id.max' = '3'
 );`,
         query: `-- Progressive aggregation: expand window every 5s up to 30s
-SELECT
-    page_id,
-    CUMULATE_START(view_time, INTERVAL '5' SECOND, INTERVAL '30' SECOND) AS window_start,
-    CUMULATE_END(view_time, INTERVAL '5' SECOND, INTERVAL '30' SECOND) AS window_end,
+SELECT page_id, window_start, window_end,
     COUNT(*) AS view_count
-FROM page_views
-GROUP BY
-    page_id,
-    CUMULATE(view_time, INTERVAL '5' SECOND, INTERVAL '30' SECOND);`
+FROM TABLE(
+    CUMULATE(TABLE page_views, DESCRIPTOR(view_time), INTERVAL '5' SECOND, INTERVAL '30' SECOND)
+)
+GROUP BY page_id, window_start, window_end;`
     },
     {
         title: "Interval Join",

@@ -30,7 +30,7 @@ class ExampleQueriesSmokeTest {
     @BeforeEach
     void setUp() {
         factory = new FlinkEnvironmentFactory(
-                new FlinkProperties(1, "8m", "32m")
+                new FlinkProperties(1, "8m", "32m", 5)
         );
         service = new SqlExecutionService(new SqlSecurityValidator());
     }

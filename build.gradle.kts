@@ -28,6 +28,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     runtimeOnly("com.h2database:h2")
 
+    // Caffeine cache
+    implementation("com.github.ben-manes.caffeine:caffeine:3.2.0")
+
     // Apache Flink
     implementation("org.apache.flink:flink-streaming-java:$flinkVersion")
     implementation("org.apache.flink:flink-clients:$flinkVersion")
