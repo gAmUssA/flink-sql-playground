@@ -21,3 +21,9 @@ Thumbs.db
 
 # Logs
 *.log
+.windsurf
+.tessl
+.cursor
+.codex
+.claude
+.agents

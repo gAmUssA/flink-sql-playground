@@ -70,12 +70,12 @@ The app listens on port 9090. Configure in `fly.toml`:
 
 ## Memory Budget
 
-| Component              | Memory  |
-|------------------------|---------|
+| Component              | Memory          |
+|------------------------|-----------------|
 | JVM heap               | 512 MB - 1.5 GB |
-| JVM metaspace          | 128 MB  |
-| Flink MiniCluster (x5) | ~500 MB |
-| OS / overhead          | ~200 MB |
-| **Total**              | **~2 GB** |
+| JVM metaspace          | 128 MB          |
+| Flink MiniCluster (x5) | ~500 MB         |
+| OS / overhead          | ~200 MB         |
+| **Total**              | **~2 GB**       |
 
 The JVM is configured with `-Xms512m -Xmx1536m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m`. SerialGC minimizes memory overhead for a single-user playground.

@@ -1,0 +1,15 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Java 21, Spring Boot 3.5.x, Apache Flink 2.2.x, Gradle (Kotlin DSL)
+  Architecture: Embedded Flink MiniCluster in Spring Boot, Monaco Editor frontend
+  Blueprint: docs/flink-sql-fiddle-blueprint.md
+  Convention: Keep changes small and focused
+
+rules:
+  proposal:
+    - Reference the relevant section of docs/flink-sql-fiddle-blueprint.md
+    - Keep proposals under 500 words
+  tasks:
+    - Break tasks into chunks of max 2 hours
+    - Include acceptance criteria for each task
