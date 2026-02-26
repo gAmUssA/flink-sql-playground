@@ -15,6 +15,7 @@ flink:
   parallelism: 1
   network-memory: 8m
   managed-memory: 32m
+  max-sessions: 3
 
 logging:
   level:

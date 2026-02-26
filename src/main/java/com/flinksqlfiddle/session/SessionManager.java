@@ -1,6 +1,7 @@
 package com.flinksqlfiddle.session;
 
 import com.flinksqlfiddle.flink.FlinkEnvironmentFactory;
+import com.flinksqlfiddle.flink.FlinkProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,20 +17,21 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SessionManager {
 
     private static final Logger log = LoggerFactory.getLogger(SessionManager.class);
-    private static final int MAX_SESSIONS = 5;
     private static final Duration IDLE_TIMEOUT = Duration.ofMinutes(15);
 
     private final ConcurrentHashMap<String, FlinkSession> sessions = new ConcurrentHashMap<>();
     private final FlinkEnvironmentFactory environmentFactory;
+    private final int maxSessions;
 
-    public SessionManager(FlinkEnvironmentFactory environmentFactory) {
+    public SessionManager(FlinkEnvironmentFactory environmentFactory, FlinkProperties flinkProperties) {
         this.environmentFactory = environmentFactory;
+        this.maxSessions = flinkProperties.maxSessions();
     }
 
     public String createSession() {
-        if (sessions.size() >= MAX_SESSIONS) {
-            log.warn("Session limit exceeded: {} active (max {})", sessions.size(), MAX_SESSIONS);
-            throw new SessionLimitExceededException(MAX_SESSIONS);
+        if (sessions.size() >= maxSessions) {
+            log.warn("Session limit exceeded: {} active (max {})", sessions.size(), maxSessions);
+            throw new SessionLimitExceededException(maxSessions);
         }
         String sessionId = UUID.randomUUID().toString();
         FlinkSession session = new FlinkSession(sessionId, environmentFactory);
