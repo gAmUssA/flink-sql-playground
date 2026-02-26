@@ -2,24 +2,26 @@ package com.flinksqlfiddle.session;
 
 import com.flinksqlfiddle.flink.FlinkEnvironmentFactory;
 import com.flinksqlfiddle.flink.FlinkProperties;
+import com.github.benmanes.caffeine.cache.Ticker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-import java.time.Instant;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class SessionManagerTest {
 
     private SessionManager manager;
+    private AtomicLong fakeTime;
 
     @BeforeEach
     void setUp() {
-        FlinkEnvironmentFactory factory = new FlinkEnvironmentFactory(
-                new FlinkProperties(1, "8m", "32m")
-        );
-        manager = new SessionManager(factory);
+        FlinkProperties props = new FlinkProperties(1, "8m", "32m", 5);
+        FlinkEnvironmentFactory factory = new FlinkEnvironmentFactory(props);
+        fakeTime = new AtomicLong(System.nanoTime());
+        Ticker ticker = fakeTime::get;
+        manager = new SessionManager(factory, props, ticker);
     }
 
     @Test
@@ -38,16 +40,6 @@ class SessionManagerTest {
         assertEquals(id, session.getSessionId());
         assertNotNull(session.getBatchEnv());
         assertNotNull(session.getStreamEnv());
-    }
-
-    @Test
-    void getSessionUpdatesLastAccessed() throws Exception {
-        String id = manager.createSession();
-        FlinkSession session = manager.getSession(id);
-        Instant firstAccess = session.getLastAccessed();
-        Thread.sleep(10);
-        manager.getSession(id);
-        assertTrue(session.getLastAccessed().isAfter(firstAccess));
     }
 
     @Test
@@ -72,27 +64,38 @@ class SessionManagerTest {
     }
 
     @Test
-    void cleanupEvictsIdleSessions() throws Exception {
+    void caffeineEvictsIdleSessions() {
         String id = manager.createSession();
-        // Force the session's lastAccessed to 16 minutes ago
-        FlinkSession session = manager.getSession(id);
-        Field lastAccessedField = FlinkSession.class.getDeclaredField("lastAccessed");
-        lastAccessedField.setAccessible(true);
-        lastAccessedField.set(session, Instant.now().minusSeconds(16 * 60));
-
-        manager.cleanupIdleSessions();
-
+        // Advance time by 16 minutes (past 15-minute idle timeout)
+        fakeTime.addAndGet(16L * 60 * 1_000_000_000L);
+        // Caffeine requires a cache operation to trigger eviction
         assertThrows(SessionNotFoundException.class, () -> manager.getSession(id));
     }
 
     @Test
-    void cleanupRetainsActiveSessions() {
+    void caffeineRetainsActiveSession() {
         String id = manager.createSession();
-        manager.getSession(id); // touch it
-
-        manager.cleanupIdleSessions();
-
+        // Advance 10 minutes, then touch the session
+        fakeTime.addAndGet(10L * 60 * 1_000_000_000L);
+        manager.getSession(id); // resets access time
+        // Advance another 10 minutes (20 total, but only 10 since last access)
+        fakeTime.addAndGet(10L * 60 * 1_000_000_000L);
         assertDoesNotThrow(() -> manager.getSession(id));
+    }
+
+    @Test
+    void evictedSlotCanBeReused() {
+        // Fill all 5 slots
+        for (int i = 0; i < 5; i++) {
+            manager.createSession();
+        }
+        assertThrows(SessionLimitExceededException.class, () -> manager.createSession());
+
+        // Expire all sessions
+        fakeTime.addAndGet(16L * 60 * 1_000_000_000L);
+
+        // Slot freed by eviction — new session should succeed
+        assertDoesNotThrow(() -> manager.createSession());
     }
 
     @Test

@@ -3,7 +3,6 @@ package com.flinksqlfiddle.session;
 import com.flinksqlfiddle.flink.FlinkEnvironmentFactory;
 import org.apache.flink.table.api.TableEnvironment;
 
-import java.time.Instant;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -14,8 +13,6 @@ public class FlinkSession {
     private final String sessionId;
     private final TableEnvironment batchEnv;
     private final TableEnvironment streamEnv;
-    private final Instant createdAt;
-    private volatile Instant lastAccessed;
 
     // Dedicated thread for Flink SQL planning — Calcite's RelMetadataQuery uses
     // thread-local state, so all TableEnvironment operations (creation and executeSql)
@@ -29,8 +26,6 @@ public class FlinkSession {
      */
     public FlinkSession(String sessionId, FlinkEnvironmentFactory factory) {
         this.sessionId = sessionId;
-        this.createdAt = Instant.now();
-        this.lastAccessed = this.createdAt;
         this.plannerExecutor = createPlannerExecutor(sessionId);
         this.batchEnv = runOnPlannerThread(factory::createBatchEnvironment);
         this.streamEnv = runOnPlannerThread(factory::createStreamingEnvironment);
@@ -44,8 +39,6 @@ public class FlinkSession {
         this.sessionId = sessionId;
         this.batchEnv = batchEnv;
         this.streamEnv = streamEnv;
-        this.createdAt = Instant.now();
-        this.lastAccessed = this.createdAt;
         this.plannerExecutor = createPlannerExecutor(sessionId);
     }
 
@@ -88,17 +81,5 @@ public class FlinkSession {
 
     public TableEnvironment getStreamEnv() {
         return streamEnv;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getLastAccessed() {
-        return lastAccessed;
-    }
-
-    public void updateLastAccessed() {
-        this.lastAccessed = Instant.now();
     }
 }

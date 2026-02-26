@@ -7,6 +7,8 @@ import com.flinksqlfiddle.session.SessionNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -49,6 +51,24 @@ public class GlobalExceptionHandler {
     public ErrorResponse handleExecutionTimeout(ExecutionTimeoutException e) {
         log.warn("Execution timeout: {}", e.getMessage());
         return new ErrorResponse(e.getMessage(), "EXECUTION_TIMEOUT");
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleValidationException(MethodArgumentNotValidException e) {
+        String message = e.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+                .reduce((a, b) -> a + "; " + b)
+                .orElse(e.getMessage());
+        log.warn("Validation error: {}", message);
+        return new ErrorResponse(message, "VALIDATION_ERROR");
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleMessageNotReadable(HttpMessageNotReadableException e) {
+        log.warn("Bad request: {}", e.getMessage());
+        return new ErrorResponse(e.getMessage(), "BAD_REQUEST");
     }
 
     @ExceptionHandler(Exception.class)
