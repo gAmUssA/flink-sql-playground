@@ -100,6 +100,37 @@ header h1 {
     letter-spacing: 0.3px;
 }
 
+.tour-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 12px;
+    padding: 3px 10px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+
+.tour-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border);
+    background: var(--bg-hover);
+}
+
+.tour-btn .btn-icon {
+    opacity: 0.7;
+}
+
+.tour-btn:hover .btn-icon {
+    opacity: 1;
+}
+
 /* === Main Layout === */
 
 main {
@@ -688,4 +719,77 @@ body.resizing .resize-handle {
 .schema-browser-content::-webkit-scrollbar-thumb {
     background: var(--border);
     border-radius: 3px;
+}
+
+/* === Driver.js Tour Overrides (dark theme + spacing restore) === */
+
+/* Restore internal spacing stripped by * { margin:0; padding:0 } */
+.driver-popover {
+    background: var(--bg-elevated) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+    padding: 15px !important;
+}
+
+.driver-popover-title {
+    color: var(--text-primary) !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    margin-bottom: 8px !important;
+    padding-right: 24px !important;
+}
+
+.driver-popover-description {
+    color: var(--text-secondary) !important;
+    margin-bottom: 12px !important;
+    line-height: 1.5 !important;
+}
+
+.driver-popover-description p {
+    margin-bottom: 6px !important;
+}
+
+.driver-popover-description p:last-child {
+    margin-bottom: 0 !important;
+}
+
+.driver-popover-close-btn {
+    color: var(--text-muted) !important;
+    top: 10px !important;
+    right: 10px !important;
+    font-size: 20px !important;
+    width: 24px !important;
+    height: 24px !important;
+}
+
+.driver-popover-close-btn:hover {
+    color: var(--text-primary) !important;
+}
+
+.driver-popover-footer {
+    margin-top: 12px !important;
+}
+
+.driver-popover-footer button {
+    background: var(--bg-raised) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border) !important;
+    text-shadow: none !important;
+    padding: 5px 12px !important;
+    border-radius: var(--radius) !important;
+}
+
+.driver-popover-footer button:hover {
+    background: var(--bg-hover) !important;
+}
+
+.driver-popover-progress-text {
+    color: var(--text-muted) !important;
+}
+
+.driver-popover-arrow-side-left.driver-popover-arrow,
+.driver-popover-arrow-side-right.driver-popover-arrow,
+.driver-popover-arrow-side-top.driver-popover-arrow,
+.driver-popover-arrow-side-bottom.driver-popover-arrow {
+    border-color: var(--bg-elevated) !important;
 }
