@@ -27,3 +27,4 @@ Thumbs.db
 .codex
 .claude
 .agents
+/.env

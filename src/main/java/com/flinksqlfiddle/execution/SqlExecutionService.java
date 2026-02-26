@@ -209,6 +209,14 @@ public class SqlExecutionService {
                     values.add(row.getField(i));
                 }
                 rows.add(values);
+
+                // Time-based collection limit: for unbounded streaming queries,
+                // return partial results rather than blocking until the hard timeout.
+                // Bounded queries (batch/finite sources) end naturally before this fires.
+                if ((System.currentTimeMillis() - startTime) > SecurityConstants.COLLECTION_TIMEOUT_MS) {
+                    truncated = true;
+                    break;
+                }
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to collect query results", e);

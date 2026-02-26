@@ -310,8 +310,13 @@ async function shareFiddle() {
         if (!response.ok) throw new Error('Failed to save fiddle');
         const data = await response.json();
         const url = `${window.location.origin}/f/${data.shortCode}`;
-        await navigator.clipboard.writeText(url);
-        setStatus('Link copied to clipboard!');
+        try {
+            await navigator.clipboard.writeText(url);
+            setStatus('Link copied to clipboard!');
+        } catch (clipErr) {
+            window.prompt('Copy this link:', url);
+            setStatus('Fiddle saved — copy the link above');
+        }
     } catch (err) {
         setStatus('Share failed: ' + err.message);
     }
