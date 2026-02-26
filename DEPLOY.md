@@ -68,6 +68,54 @@ The app listens on port 9090. Configure in `fly.toml`:
 
 **Note**: Koyeb may cold-start instances after inactivity on lower-tier plans, causing a ~30–60s delay on first request. This is acceptable for a playground/demo deployment.
 
+## Supabase (Persistent Fiddle Storage)
+
+By default, fiddles are stored in an in-memory H2 database (lost on restart). To persist fiddles across deployments, activate the `supabase` Spring profile with a Supabase PostgreSQL database.
+
+### Required Environment Variables
+
+| Variable                 | Description                                            | Example                                                        |
+|--------------------------|--------------------------------------------------------|----------------------------------------------------------------|
+| `SPRING_PROFILES_ACTIVE` | Activate Supabase profile                              | `supabase`                                                     |
+| `SUPABASE_DB_URL`        | JDBC connection URL (Transaction pooler, port 6543) | `jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres` |
+| `SUPABASE_DB_USER`       | Database user                                          | `postgres.<project-ref>`                                       |
+| `SUPABASE_DB_PASSWORD`   | Database password                                      | `<your-password>`                                              |
+
+### Setup
+
+1. Create a [Supabase](https://supabase.com) project
+2. Copy the **Transaction pooler** connection string from **Settings > Database > Connection string > JDBC** (select "Transaction pooler" / port 6543)
+3. Set the environment variables in your deployment platform (Koyeb, Fly.io, Docker, etc.)
+
+### Koyeb Example
+
+```bash
+koyeb service update flink-sql-fiddle \
+  --app flink-sql-fiddle \
+  --env SPRING_PROFILES_ACTIVE=supabase \
+  --env SUPABASE_DB_URL=jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres \
+  --env SUPABASE_DB_USER=postgres.<ref> \
+  --env SUPABASE_DB_PASSWORD=<password>
+```
+
+### Docker Example
+
+```bash
+docker run -p 9090:9090 \
+  -e SPRING_PROFILES_ACTIVE=supabase \
+  -e SUPABASE_DB_URL=jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres \
+  -e SUPABASE_DB_USER=postgres.<ref> \
+  -e SUPABASE_DB_PASSWORD=<password> \
+  flink-sql-fiddle
+```
+
+### Notes
+
+- Use the **Transaction pooler** (port 6543 on `pooler.supabase.com`) — available on the free tier and works over IPv4. The `?prepareThreshold=0` parameter is appended automatically by the supabase profile to disable prepared statements (required for Transaction mode).
+- Do **not** use the direct connection (`db.<ref>.supabase.co:5432`) — it requires IPv6, which many deployment environments don't support without the paid IPv4 add-on. Session pooler (port 5432) requires a paid plan.
+- Flyway runs migrations automatically on startup. The `fiddles` table is created by `V1__create_fiddles_table.sql`.
+- Without the `supabase` profile, the app defaults to in-memory H2 (no env vars needed for local dev).
+
 ## Memory Budget
 
 | Component              | Memory          |
