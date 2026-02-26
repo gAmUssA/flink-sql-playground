@@ -6,11 +6,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record FlinkProperties(
         int parallelism,
         String networkMemory,
-        String managedMemory
+        String managedMemory,
+        int maxSessions
 ) {
     public FlinkProperties {
         if (parallelism <= 0) parallelism = 1;
         if (networkMemory == null || networkMemory.isBlank()) networkMemory = "8m";
         if (managedMemory == null || managedMemory.isBlank()) managedMemory = "32m";
+        if (maxSessions <= 0) maxSessions = 3;
     }
 }

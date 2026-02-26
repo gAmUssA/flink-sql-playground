@@ -13,7 +13,8 @@ COPY --from=build /app/build/libs/*.jar app.jar
 EXPOSE 9090
 ENTRYPOINT ["java", \
     "-Xms512m", \
-    "-Xmx1536m", \
+    "-Xmx1024m", \
     "-XX:+UseSerialGC", \
-    "-XX:MaxMetaspaceSize=128m", \
+    "-XX:MetaspaceSize=128m", \
+    "-XX:MaxMetaspaceSize=384m", \
     "-jar", "app.jar"]
