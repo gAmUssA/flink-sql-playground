@@ -390,6 +390,73 @@ body.resizing .resize-handle {
 .row-delete td { color: var(--color-delete); }
 .row-delete td:first-child { border-left: 3px solid var(--border-delete); }
 
+/* Filter row */
+.results-table .filter-row th {
+    background: var(--bg-raised);
+    padding: 4px 4px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 33px;
+    z-index: 1;
+}
+
+.results-table .filter-row input[type="text"] {
+    width: 100%;
+    padding: 3px 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    outline: none;
+    transition: border-color var(--transition);
+}
+
+.results-table .filter-row input[type="text"]:focus {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+}
+
+.results-table .filter-row input[type="text"]::placeholder {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+/* Filter clear button */
+.filter-cell-op {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.filter-clear-btn {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--transition), border-color var(--transition);
+}
+
+.filter-clear-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border);
+}
+
+.filters-active .filter-clear-btn {
+    display: inline-flex;
+}
+
 /* Metadata bar */
 .results-meta {
     font-family: var(--font-sans);

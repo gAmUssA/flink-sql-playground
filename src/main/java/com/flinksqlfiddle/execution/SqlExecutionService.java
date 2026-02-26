@@ -85,13 +85,19 @@ public class SqlExecutionService {
         return session.runOnPlannerThread(() -> {
             TableEnvironment tEnv = session.getStreamEnv();
             String[] tableNames = tEnv.listTables();
+            log.debug("listTables found {} table(s): {}", tableNames.length, String.join(", ", tableNames));
             List<TableInfo> tables = new ArrayList<>();
             for (String tableName : tableNames) {
-                ResolvedSchema schema = tEnv.from(tableName).getResolvedSchema();
-                List<ColumnInfo> columns = schema.getColumns().stream()
-                        .map(col -> new ColumnInfo(col.getName(), col.getDataType().toString()))
-                        .toList();
-                tables.add(new TableInfo(tableName, columns));
+                try {
+                    ResolvedSchema schema = tEnv.from(tableName).getResolvedSchema();
+                    List<ColumnInfo> columns = schema.getColumns().stream()
+                            .map(col -> new ColumnInfo(col.getName(), col.getDataType().toString()))
+                            .toList();
+                    tables.add(new TableInfo(tableName, columns));
+                } catch (Exception e) {
+                    log.warn("Failed to resolve schema for table '{}': {}", tableName, e.getMessage());
+                    tables.add(new TableInfo(tableName, List.of()));
+                }
             }
             return tables;
         });

@@ -77,6 +77,42 @@ function renderResults(result) {
         headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
+
+    // Filter row
+    const filterRow = document.createElement('tr');
+    filterRow.className = 'filter-row';
+    const totalColumns = result.columns.length + 1; // +1 for op column
+    const filterInputs = [];
+
+    for (let c = 0; c < totalColumns; c++) {
+        const th = document.createElement('th');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Filter…';
+        input.addEventListener('input', () => applyFilters(table, filterInputs, result));
+        filterInputs.push(input);
+
+        if (c === 0) {
+            // Op column: wrap input + clear button
+            const wrapper = document.createElement('div');
+            wrapper.className = 'filter-cell-op';
+            const clearBtn = document.createElement('button');
+            clearBtn.className = 'filter-clear-btn';
+            clearBtn.textContent = '\u00d7';
+            clearBtn.title = 'Clear all filters';
+            clearBtn.addEventListener('click', () => {
+                filterInputs.forEach(inp => { inp.value = ''; });
+                applyFilters(table, filterInputs, result);
+            });
+            wrapper.appendChild(input);
+            wrapper.appendChild(clearBtn);
+            th.appendChild(wrapper);
+        } else {
+            th.appendChild(input);
+        }
+        filterRow.appendChild(th);
+    }
+    thead.appendChild(filterRow);
     table.appendChild(thead);
 
     // Body
@@ -112,6 +148,48 @@ function renderResults(result) {
 
     const statusRows = document.getElementById('status-rows');
     if (statusRows) statusRows.textContent = `${result.rowCount} row${result.rowCount !== 1 ? 's' : ''}`;
+}
+
+// --- Column Filtering ---
+
+function applyFilters(table, filterInputs, result) {
+    const filters = filterInputs.map(input => input.value.toLowerCase());
+    const hasActive = filters.some(f => f.length > 0);
+    const tbody = table.querySelector('tbody');
+    const rows = tbody.querySelectorAll('tr');
+    let visibleCount = 0;
+
+    rows.forEach(tr => {
+        const cells = tr.querySelectorAll('td');
+        let match = true;
+        for (let c = 0; c < filters.length; c++) {
+            if (filters[c] && cells[c]) {
+                if (!cells[c].textContent.toLowerCase().includes(filters[c])) {
+                    match = false;
+                    break;
+                }
+            }
+        }
+        tr.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+    });
+
+    // Toggle filters-active class for clear button visibility
+    table.classList.toggle('filters-active', hasActive);
+
+    // Update metadata text
+    const meta = table.parentElement.querySelector('.results-meta');
+    if (meta) {
+        const totalRows = result.rowCount;
+        const timeMs = result.executionTimeMs;
+        const plural = totalRows !== 1 ? 's' : '';
+        const truncNote = result.truncated ? ' (results truncated to 1000 rows)' : '';
+        if (hasActive) {
+            meta.textContent = `showing ${visibleCount} of ${totalRows} row${plural} in ${timeMs}ms${truncNote}`;
+        } else {
+            meta.textContent = `${totalRows} row${plural} in ${timeMs}ms${truncNote}`;
+        }
+    }
 }
 
 // --- Session Management ---
@@ -222,6 +300,8 @@ async function runQuery() {
         renderResults(result);
         setStatus(`${result.rowCount} rows in ${result.executionTimeMs}ms` +
                   (result.truncated ? ' (truncated)' : ''));
+
+        await refreshSchemaBrowser();
     } catch (err) {
         resultsContainer.textContent = 'Error: ' + err.message;
         setStatus('Execution error');
