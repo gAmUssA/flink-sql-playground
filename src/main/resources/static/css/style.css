@@ -1,10 +1,10 @@
 /* === Design Tokens === */
 
 :root {
-    /* Surfaces (near-black) */
-    --bg-base: #0a0a0a;
-    --bg-raised: #111111;
-    --bg-elevated: #161616;
+    /* Surfaces (blue-gray tinted dark) */
+    --bg-base: #0d1117;
+    --bg-raised: #161b22;
+    --bg-elevated: #1c2128;
 
     /* Text */
     --text-primary: #e5e5e5;
@@ -12,13 +12,18 @@
     --text-muted: #666666;
 
     /* Borders */
-    --border: #1e1e1e;
-    --border-subtle: #151515;
+    --border: #30363d;
+    --border-subtle: #21262d;
 
     /* Accent colors */
     --accent-blue: #3b82f6;
     --accent-blue-hover: #60a5fa;
     --accent-blue-active: #2563eb;
+
+    /* Green accent for execution */
+    --accent-green: #238636;
+    --accent-green-hover: #2ea043;
+    --accent-green-active: #1a7f37;
 
     /* Semantic / changelog (muted) */
     --color-insert: #34d399;
@@ -26,13 +31,23 @@
     --color-update-before: #22d3ee;
     --color-delete: #f87171;
 
+    /* Changelog left-border accents */
+    --border-insert: #238636;
+    --border-update-after: #9e6a03;
+    --border-update-before: #1b6d85;
+    --border-delete: #da3633;
+
     /* Typography */
     --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
     --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
     /* Spacing & shape */
-    --radius: 3px;
+    --radius: 6px;
     --transition: 120ms ease-out;
+
+    /* Shadows & hover */
+    --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4);
+    --bg-hover: rgba(136, 198, 255, 0.04);
 }
 
 /* === Base Reset === */
@@ -44,7 +59,7 @@
 }
 
 body {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 13px;
     background: var(--bg-base);
     color: var(--text-primary);
@@ -56,9 +71,25 @@ body {
 /* === Header === */
 
 header {
-    padding: 6px 12px;
+    padding: 0 16px;
+    height: 44px;
+    display: flex;
+    align-items: center;
     background: var(--bg-raised);
     border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    z-index: 10;
+}
+
+.header-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.header-logo {
+    color: var(--accent-blue);
+    flex-shrink: 0;
 }
 
 header h1 {
@@ -66,6 +97,7 @@ header h1 {
     font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
+    letter-spacing: 0.3px;
 }
 
 /* === Main Layout === */
@@ -110,10 +142,10 @@ main {
 /* === Panel Labels === */
 
 .editor-panel h2 {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 600;
-    padding: 3px 10px;
+    padding: 6px 12px;
     background: var(--bg-elevated);
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -131,68 +163,78 @@ main {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
+    padding: 8px 16px;
+    height: 44px;
     background: var(--bg-raised);
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
 }
 
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toolbar-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 4px;
+}
+
+.btn-icon {
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+
 .btn-primary {
-    padding: 5px 14px;
-    background: var(--accent-blue);
-    color: var(--text-primary);
-    font-family: var(--font-mono);
-    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    background: var(--accent-green);
+    color: #ffffff;
+    font-family: var(--font-sans);
+    font-size: 13px;
     font-weight: 600;
-    border: none;
+    border: 1px solid rgba(240, 246, 252, 0.1);
     border-radius: var(--radius);
     cursor: pointer;
     transition: background-color var(--transition);
+    box-shadow: var(--shadow-sm);
 }
 
-.btn-primary:hover { background: var(--accent-blue-hover); }
-.btn-primary:active { background: var(--accent-blue-active); }
-.btn-primary:disabled { background: var(--bg-elevated); color: var(--text-muted); cursor: not-allowed; }
+.btn-primary:hover { background: var(--accent-green-hover); }
+.btn-primary:active { background: var(--accent-green-active); }
+.btn-primary:disabled { background: var(--bg-elevated); color: var(--text-muted); cursor: not-allowed; box-shadow: none; border-color: var(--border); }
 .btn-primary.running { animation: pulse-running 1.5s ease-in-out infinite; }
 
 .btn-secondary {
-    padding: 5px 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
     background: var(--bg-elevated);
     color: var(--text-secondary);
-    font-family: var(--font-mono);
-    font-size: 12px;
+    font-family: var(--font-sans);
+    font-size: 13px;
     font-weight: 600;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     cursor: pointer;
-    transition: background-color var(--transition);
+    transition: background-color var(--transition), border-color var(--transition);
 }
 
-.btn-secondary:hover { background: var(--border); }
+.btn-secondary:hover { background: var(--border); border-color: #444c56; }
 .btn-secondary:disabled { color: var(--text-muted); cursor: not-allowed; }
 .btn-secondary.running { animation: pulse-running 1.5s ease-in-out infinite; }
-
-#share-btn {
-    padding: 5px 14px;
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    cursor: pointer;
-    transition: background-color var(--transition);
-}
-
-#share-btn:hover {
-    background: var(--border);
-}
 
 #mode-select, #example-select {
     padding: 4px 8px;
     background: var(--bg-elevated);
     color: var(--text-primary);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -205,7 +247,7 @@ main {
 }
 
 #status-text {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 11px;
     color: var(--text-muted);
     margin-left: auto;
@@ -243,7 +285,7 @@ body.resizing .resize-handle {
 }
 
 .results h2 {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 600;
     padding: 3px 10px;
@@ -340,7 +382,7 @@ body.resizing .resize-handle {
 }
 
 .schema-browser-title {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 600;
     color: var(--text-secondary);
@@ -383,7 +425,7 @@ body.resizing .resize-handle {
 
 .schema-browser-empty {
     padding: 12px 10px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 11px;
     color: var(--text-muted);
     line-height: 1.5;
