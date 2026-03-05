@@ -90,11 +90,11 @@ All dependencies must be `implementation` scope (not `compileOnly`) since there'
 
 According to Flink committer Robert Metzger's "Tiny Flink" research, an **empty MiniCluster starts with just 20 MB heap** when network buffers are reduced to 8 MB. Practical minimums for SQL queries:
 
-| Configuration | JVM Heap | Total Process Memory |
-|---|---|---|
-| Empty MiniCluster (tuned) | 20 MB | ~80 MB |
-| MiniCluster + simple SQL query | ~106 MB | ~250 MB |
-| Comfortable operation for a fiddle | 256–512 MB | ~512 MB–1 GB |
+| Configuration                      | JVM Heap   | Total Process Memory |
+|------------------------------------|------------|----------------------|
+| Empty MiniCluster (tuned)          | 20 MB      | ~80 MB               |
+| MiniCluster + simple SQL query     | ~106 MB    | ~250 MB              |
+| Comfortable operation for a fiddle | 256–512 MB | ~512 MB–1 GB         |
 
 The key tuning parameters: set `taskmanager.memory.network.min/max` to `8m` (default is 64 MB), `taskmanager.memory.managed.size` to `0` (not needed for HashMap state backend), parallelism to `1`, and use `-XX:+UseSerialGC` to reduce GC thread overhead.
 
@@ -369,12 +369,12 @@ A shareable link system follows SQL Fiddle's content-addressable model: hash the
 
 A `TableEnvironment` is locked to its mode at creation time—**you cannot toggle between batch and streaming on the same instance**. The behavioral differences are significant:
 
-| Behavior | Batch mode | Streaming mode |
-|---|---|---|
-| Aggregation results | Single final result | Changelog stream (insert/update/retract) |
-| `ORDER BY` | Any column | Only time attributes |
-| Watermarks | Automatic "perfect" watermarks | Must be explicitly declared |
-| Job lifecycle | Runs to completion, terminates | Runs indefinitely until cancelled |
+| Behavior                | Batch mode                               | Streaming mode                                                |
+|-------------------------|------------------------------------------|---------------------------------------------------------------|
+| Aggregation results     | Single final result                      | Changelog stream (insert/update/retract)                      |
+| `ORDER BY`              | Any column                               | Only time attributes                                          |
+| Watermarks              | Automatic "perfect" watermarks           | Must be explicitly declared                                   |
+| Job lifecycle           | Runs to completion, terminates           | Runs indefinitely until cancelled                             |
 | Bounded source behavior | Processes all data, returns final result | Produces incremental updates, terminates when source exhausts |
 
 **For a playground, this means**: batch mode produces clean, final results that are easy to display in a table. Streaming mode produces a changelog stream where rows can be inserted, updated, or retracted—this requires either collecting all changes and showing the final materialized state, or displaying the changelog itself with `+I`, `-U`, `+U` annotations. Both are valuable to teach users about Flink's dual nature.
@@ -387,15 +387,15 @@ The recommended UX is a toggle switch in the UI. When users switch modes, the ba
 
 A Flink SQL Fiddle in Docker requires careful memory budgeting:
 
-| Component | Memory |
-|---|---|
-| JVM base overhead + Metaspace | ~80 MB |
-| Spring Boot web framework | ~100 MB |
-| Flink MiniCluster (tuned) | 250–512 MB |
-| Per-query execution headroom | 200–500 MB |
-| OS + container overhead | ~100 MB |
-| **Total minimum** | **~1.5 GB** |
-| **Recommended** | **2–4 GB** |
+| Component                     | Memory      |
+|-------------------------------|-------------|
+| JVM base overhead + Metaspace | ~80 MB      |
+| Spring Boot web framework     | ~100 MB     |
+| Flink MiniCluster (tuned)     | 250–512 MB  |
+| Per-query execution headroom  | 200–500 MB  |
+| OS + container overhead       | ~100 MB     |
+| **Total minimum**             | **~1.5 GB** |
+| **Recommended**               | **2–4 GB**  |
 
 ### Dockerfile
 
@@ -412,13 +412,13 @@ ENTRYPOINT ["java", \
 
 ### Platform comparison
 
-| Platform | Suitable tier | Monthly cost | Notes |
-|---|---|---|---|
-| **Fly.io** | 1 GB shared VM | ~$5 | Tight but works for single-user MVP |
-| **Railway** | Pro plan, 2 GB | ~$10–15 | Good DX, usage-based |
-| **Koyeb** | 2 GB instance | ~$10–15 | Autoscaling support |
-| **Hetzner VPS** | 4 GB dedicated | ~$4–6 | Best value for memory-heavy JVM apps |
-| **Render** | 2 GB/1 CPU | ~$25 | Simple but expensive for specs |
+| Platform        | Suitable tier  | Monthly cost | Notes                                |
+|-----------------|----------------|--------------|--------------------------------------|
+| **Fly.io**      | 1 GB shared VM | ~$5          | Tight but works for single-user MVP  |
+| **Railway**     | Pro plan, 2 GB | ~$10–15      | Good DX, usage-based                 |
+| **Koyeb**       | 2 GB instance  | ~$10–15      | Autoscaling support                  |
+| **Hetzner VPS** | 4 GB dedicated | ~$4–6        | Best value for memory-heavy JVM apps |
+| **Render**      | 2 GB/1 CPU     | ~$25         | Simple but expensive for specs       |
 
 **Best value**: a Hetzner CX22 (4 GB RAM, 2 vCPU, $4.50/month) provides the most headroom. For PaaS convenience, Fly.io or Railway at the $10–15/month tier work well. Koyeb's **free tier (512 MB)** is insufficient—the MiniCluster alone needs more than that.
 

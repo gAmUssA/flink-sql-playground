@@ -109,16 +109,13 @@ class ExampleQueriesSmokeTest {
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
-                SELECT
-                    sensor_id,
-                    TUMBLE_START(event_time, INTERVAL '10' SECOND) AS window_start,
-                    TUMBLE_END(event_time, INTERVAL '10' SECOND) AS window_end,
+                SELECT sensor_id, window_start, window_end,
                     COUNT(*) AS reading_count,
                     ROUND(AVG(temperature), 1) AS avg_temp
-                FROM sensor_readings
-                GROUP BY
-                    sensor_id,
-                    TUMBLE(event_time, INTERVAL '10' SECOND)
+                FROM TABLE(
+                    TUMBLE(TABLE sensor_readings, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+                )
+                GROUP BY sensor_id, window_start, window_end
                 """);
 
         assertTrue(result.getColumnNames().containsAll(
@@ -152,15 +149,12 @@ class ExampleQueriesSmokeTest {
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
-                SELECT
-                    user_id,
-                    HOP_START(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND) AS window_start,
-                    HOP_END(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND) AS window_end,
+                SELECT user_id, window_start, window_end,
                     COUNT(*) AS click_count
-                FROM clicks
-                GROUP BY
-                    user_id,
-                    HOP(click_time, INTERVAL '5' SECOND, INTERVAL '15' SECOND)
+                FROM TABLE(
+                    HOP(TABLE clicks, DESCRIPTOR(click_time), INTERVAL '5' SECOND, INTERVAL '15' SECOND)
+                )
+                GROUP BY user_id, window_start, window_end
                 """);
 
         assertTrue(result.getColumnNames().containsAll(
@@ -459,13 +453,15 @@ class ExampleQueriesSmokeTest {
                     ROUND(AVG(s.temperature_c), 2)  AS avg_temp_c,
                     ROUND(AVG(s.pressure_psi), 2)   AS avg_pressure,
                     ROUND(AVG(s.ph_level), 2)       AS avg_ph
-                FROM sensor_readings s
+                FROM TABLE(
+                    TUMBLE(TABLE sensor_readings, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+                ) s
                 JOIN tanks t ON s.tank_id = t.tank_id
                 JOIN recipes r ON s.recipe_id = r.recipe_id
                 GROUP BY
                     t.tank_name, t.tank_type,
                     r.beer_name, r.style,
-                    TUMBLE(s.event_time, INTERVAL '10' SECOND)
+                    window_start, window_end
                 """);
 
         assertTrue(result.getColumnNames().containsAll(
