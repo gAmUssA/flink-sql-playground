@@ -4,7 +4,7 @@
 [![Java 21](https://img.shields.io/badge/Java-21-orange?logo=openjdk)](https://adoptium.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.3-green?logo=springboot)](https://spring.io/projects/spring-boot)
 [![Apache Flink](https://img.shields.io/badge/Apache%20Flink-2.2.0-blue?logo=apacheflink)](https://flink.apache.org/)
-[![License](https://img.shields.io/github/license/gAmUssA/flink-sql-playground)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQL queries in your browser against an embedded Flink runtime — no external cluster or infrastructure required.
 
