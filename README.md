@@ -41,6 +41,18 @@ Open [http://localhost:9090](http://localhost:9090) in your browser.
 
 ## Docker
 
+### Quick start (no build required)
+
+Pull and run the pre-built image from GitHub Container Registry:
+
+```bash
+docker run -p 9090:9090 ghcr.io/gamussa/flink-sql-playground:latest
+```
+
+The image supports both `amd64` and `arm64` architectures — works on Intel, AMD, and Apple Silicon.
+
+### Build locally
+
 Build and run with Docker Compose:
 
 ```bash
