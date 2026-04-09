@@ -18,6 +18,7 @@ public class FlinkSession {
     // must happen on the same thread to avoid NullPointerException in the metadata
     // handler provider.
     private final ExecutorService plannerExecutor;
+    private volatile Thread plannerThread;
 
     // Lazy-initialized environments — created on first access to save ~50 MB per
     // unused env and make session creation instant.
@@ -48,12 +49,22 @@ public class FlinkSession {
         this.plannerExecutor = createPlannerExecutor(sessionId);
     }
 
-    private static ExecutorService createPlannerExecutor(String sessionId) {
+    private ExecutorService createPlannerExecutor(String sessionId) {
         return Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "flink-planner-" + sessionId.substring(0, Math.min(8, sessionId.length())));
             t.setDaemon(true);
+            plannerThread = t;
             return t;
         });
+    }
+
+    /**
+     * Returns true if the current thread is the planner thread.
+     * Used to avoid deadlock when getBatchEnv/getStreamEnv are called
+     * from within a runOnPlannerThread block.
+     */
+    private boolean isOnPlannerThread() {
+        return Thread.currentThread() == plannerThread;
     }
 
     /**
@@ -87,7 +98,11 @@ public class FlinkSession {
             synchronized (batchLock) {
                 env = batchEnv;
                 if (env == null) {
-                    env = runOnPlannerThread(factory::createBatchEnvironment);
+                    // If already on planner thread (e.g. called from executeDdlOnBothEnvironments),
+                    // create directly to avoid deadlock on the single-thread executor.
+                    env = isOnPlannerThread()
+                            ? factory.createBatchEnvironment()
+                            : runOnPlannerThread(factory::createBatchEnvironment);
                     batchEnv = env;
                 }
             }
@@ -101,7 +116,9 @@ public class FlinkSession {
             synchronized (streamLock) {
                 env = streamEnv;
                 if (env == null) {
-                    env = runOnPlannerThread(factory::createStreamingEnvironment);
+                    env = isOnPlannerThread()
+                            ? factory.createStreamingEnvironment()
+                            : runOnPlannerThread(factory::createStreamingEnvironment);
                     streamEnv = env;
                 }
             }
