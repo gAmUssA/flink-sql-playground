@@ -9,6 +9,53 @@ const ROW_KIND_CLASSES = {
     '-D': 'row-delete'
 };
 
+// --- Theme Management ---
+
+const THEME_KEY = 'theme-preference';
+
+function getCurrentTheme() {
+    try {
+        const saved = localStorage.getItem(THEME_KEY);
+        if (saved === 'light' || saved === 'dark') return saved;
+    } catch (e) { /* localStorage unavailable */ }
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    // Sync Monaco editors
+    const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
+    if (typeof monaco !== 'undefined') {
+        monaco.editor.setTheme(monacoTheme);
+    }
+}
+
+function initTheme() {
+    const theme = getCurrentTheme();
+    applyTheme(theme);
+
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') || 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+        try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* ignore */ }
+    });
+
+    // Follow system preference changes when no explicit choice saved
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            try {
+                if (!localStorage.getItem(THEME_KEY)) {
+                    applyTheme(e.matches ? 'dark' : 'light');
+                }
+            } catch (err) { /* ignore */ }
+        });
+    }
+}
+
+// Apply theme immediately (before Monaco loads) to avoid flash
+applyTheme(getCurrentTheme());
+
 // --- Monaco Editor Setup ---
 
 require.config({
@@ -17,13 +64,15 @@ require.config({
 
 require(['vs/editor/editor.main'], function () {
     const firstExample = typeof EXAMPLES !== 'undefined' && EXAMPLES.length > 0 ? EXAMPLES[0] : null;
+    const monacoTheme = getCurrentTheme() === 'dark' ? 'vs-dark' : 'vs';
 
     schemaEditor = monaco.editor.create(document.getElementById('schema-editor'), {
         value: firstExample ? firstExample.schema : '',
         language: 'sql',
-        theme: 'vs-dark',
+        theme: monacoTheme,
         minimap: { enabled: false },
-        fontSize: 13,
+        fontSize: 15,
+        lineHeight: 24,
         lineNumbers: 'on',
         scrollBeyondLastLine: false,
         automaticLayout: true
@@ -32,9 +81,10 @@ require(['vs/editor/editor.main'], function () {
     queryEditor = monaco.editor.create(document.getElementById('query-editor'), {
         value: firstExample ? firstExample.query : '',
         language: 'sql',
-        theme: 'vs-dark',
+        theme: monacoTheme,
         minimap: { enabled: false },
-        fontSize: 13,
+        fontSize: 15,
+        lineHeight: 24,
         lineNumbers: 'on',
         scrollBeyondLastLine: false,
         automaticLayout: true
@@ -505,6 +555,7 @@ function initSchemaBrowserToggle() {
 // --- Event Listeners ---
 
 document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
     populateExamples();
     createSession();
     initResizeHandle();

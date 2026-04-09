@@ -1,53 +1,150 @@
-/* === Design Tokens === */
+/* === Design Tokens — Light Mode (default, matched to selectstar.stream) === */
 
 :root {
-    /* Surfaces (blue-gray tinted dark) */
-    --bg-base: #0d1117;
-    --bg-raised: #161b22;
-    --bg-elevated: #1c2128;
+    /* Surfaces */
+    --bg-base: #f8fafc;
+    --bg-raised: #ffffff;
+    --bg-elevated: #f1f5f9;
 
     /* Text */
-    --text-primary: #e5e5e5;
-    --text-secondary: #a0a0a0;
-    --text-muted: #666666;
+    --text-primary: #1a202c;
+    --text-secondary: #4b5563;
+    --text-muted: #64748b;
 
     /* Borders */
-    --border: #30363d;
-    --border-subtle: #21262d;
+    --border: #e5e7eb;
+    --border-subtle: #f3f4f6;
 
-    /* Accent colors */
-    --accent-blue: #3b82f6;
-    --accent-blue-hover: #60a5fa;
-    --accent-blue-active: #2563eb;
+    /* Accent colors — professional cyan/teal */
+    --accent-blue: #0891b2;
+    --accent-blue-hover: #0e7490;
+    --accent-blue-active: #06b6d4;
 
-    /* Green accent for execution */
-    --accent-green: #238636;
-    --accent-green-hover: #2ea043;
-    --accent-green-active: #1a7f37;
+    /* CTA — orange */
+    --accent-cta: #F97316;
+    --accent-cta-hover: #ea580c;
+    --accent-cta-active: #c2410c;
 
-    /* Semantic / changelog (muted) */
-    --color-insert: #34d399;
-    --color-update-after: #fbbf24;
-    --color-update-before: #22d3ee;
-    --color-delete: #f87171;
+    /* Premium indigo tints */
+    --premium-primary: #4F46E5;
+    --premium-border: rgba(79, 70, 229, 0.2);
+
+    /* macOS-style titlebar gradient */
+    --titlebar-top: #f0f0f5;
+    --titlebar-bottom: #e0e0e8;
+    --titlebar-border: #d0d0d8;
+
+    /* Semantic / changelog */
+    --color-insert: #166534;
+    --color-update-after: #92400e;
+    --color-update-before: #1e40af;
+    --color-delete: #991b1b;
+
+    /* Changelog row backgrounds */
+    --bg-insert: #dcfce7;
+    --bg-update-after: #fef3c7;
+    --bg-update-before: #dbeafe;
+    --bg-delete: #fee2e2;
 
     /* Changelog left-border accents */
-    --border-insert: #238636;
-    --border-update-after: #9e6a03;
-    --border-update-before: #1b6d85;
-    --border-delete: #da3633;
+    --border-insert: #16a34a;
+    --border-update-after: #f59e0b;
+    --border-update-before: #3b82f6;
+    --border-delete: #dc2626;
 
     /* Typography */
-    --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
-    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+    /* Typography scale (matched to tutorial) */
+    --font-size-code: 15px;
+    --line-height-code: 1.6;
+    --font-size-ui: 14px;
 
     /* Spacing & shape */
-    --radius: 6px;
+    --radius: 8px;
     --transition: 120ms ease-out;
 
-    /* Shadows & hover */
-    --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4);
+    /* Shadows — softer for light */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --bg-hover: rgba(0, 0, 0, 0.04);
+
+    /* Scrollbar */
+    --scrollbar-thumb: #cbd5e1;
+    --scrollbar-thumb-hover: #94a3b8;
+
+    /* Select arrow color (encoded for data-uri) */
+    --select-arrow: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234b5563' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
+    /* Focus ring */
+    --focus-ring: rgba(8, 145, 178, 0.2);
+}
+
+/* === Dark Mode === */
+
+[data-theme="dark"] {
+    /* Surfaces — premium dark palette */
+    --bg-base: #0a0a0a;
+    --bg-raised: #141414;
+    --bg-elevated: #1e1e2e;
+
+    /* Text */
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+
+    /* Borders */
+    --border: #3d3d4d;
+    --border-subtle: #252535;
+
+    /* Accent colors — cyan/teal */
+    --accent-blue: #22d3ee;
+    --accent-blue-hover: #67e8f9;
+    --accent-blue-active: #0891b2;
+
+    /* Premium indigo tints */
+    --premium-border: rgba(79, 70, 229, 0.3);
+
+    /* macOS-style titlebar gradient */
+    --titlebar-top: #3a3a4a;
+    --titlebar-bottom: #2a2a3a;
+    --titlebar-border: #4a4a5a;
+
+    /* Semantic / changelog */
+    --color-insert: #6ee7b7;
+    --color-update-after: #fcd34d;
+    --color-update-before: #93c5fd;
+    --color-delete: #fca5a5;
+
+    /* Changelog row backgrounds */
+    --bg-insert: #064e3b;
+    --bg-update-after: #78350f;
+    --bg-update-before: #1e3a8a;
+    --bg-delete: #7f1d1d;
+
+    /* Changelog left-border accents */
+    --border-insert: #10b981;
+    --border-update-after: #f59e0b;
+    --border-update-before: #3b82f6;
+    --border-delete: #ef4444;
+
+    /* Shadows — stronger for dark */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
     --bg-hover: rgba(136, 198, 255, 0.04);
+
+    /* Scrollbar */
+    --scrollbar-thumb: #3d3d4d;
+    --scrollbar-thumb-hover: #4a4a5a;
+
+    /* Select arrow */
+    --select-arrow: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
+    /* Focus ring */
+    --focus-ring: rgba(34, 211, 238, 0.15);
 }
 
 /* === Base Reset === */
@@ -60,31 +157,34 @@
 
 body {
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: var(--font-size-ui);
     background: var(--bg-base);
     color: var(--text-primary);
     display: flex;
     flex-direction: column;
     height: 100vh;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 /* === Header === */
 
 header {
-    padding: 0 16px;
-    height: 44px;
+    padding: 0 24px;
+    height: 48px;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     background: var(--bg-raised);
     border-bottom: 1px solid var(--border);
     box-shadow: var(--shadow-sm);
     z-index: 10;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .header-brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 
 .header-logo {
@@ -92,19 +192,39 @@ header {
     flex-shrink: 0;
 }
 
+.header-titles {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
 header h1 {
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: 1.1rem;
     font-weight: 600;
     color: var(--text-primary);
-    letter-spacing: 0.3px;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.header-subtitle {
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .tour-btn {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    margin-left: 12px;
     padding: 3px 10px;
     font-family: var(--font-sans);
     font-size: 12px;
@@ -129,6 +249,52 @@ header h1 {
 
 .tour-btn:hover .btn-icon {
     opacity: 1;
+}
+
+/* === Theme Toggle === */
+
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 16px;
+    line-height: 1;
+    transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+
+.theme-toggle:hover {
+    color: var(--text-primary);
+    border-color: var(--border);
+    background: var(--bg-hover);
+}
+
+.theme-toggle .icon-sun,
+.theme-toggle .icon-moon {
+    display: none;
+}
+
+/* Light mode: show moon (click to go dark) */
+.theme-toggle .icon-moon {
+    display: block;
+}
+.theme-toggle .icon-sun {
+    display: none;
+}
+
+/* Dark mode: show sun (click to go light) */
+[data-theme="dark"] .theme-toggle .icon-sun {
+    display: block;
+}
+[data-theme="dark"] .theme-toggle .icon-moon {
+    display: none;
 }
 
 /* === Main Layout === */
@@ -170,17 +336,20 @@ main {
     border-right: none;
 }
 
-/* === Panel Labels === */
+/* === Panel Labels (macOS-style titlebar) === */
 
 .editor-panel h2 {
     font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 600;
+    line-height: 1;
     padding: 6px 12px;
-    background: var(--bg-elevated);
+    background: linear-gradient(180deg, var(--titlebar-top) 0%, var(--titlebar-bottom) 100%);
+    border-bottom: 1px solid var(--titlebar-border);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 1.5px;
+    transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .editor-container {
@@ -199,6 +368,7 @@ main {
     background: var(--bg-raised);
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .control-group {
@@ -224,10 +394,10 @@ main {
     align-items: center;
     gap: 6px;
     padding: 6px 16px;
-    background: var(--accent-green);
+    background: var(--accent-cta);
     color: #ffffff;
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: var(--font-size-ui);
     font-weight: 600;
     border: 1px solid rgba(240, 246, 252, 0.1);
     border-radius: var(--radius);
@@ -236,8 +406,8 @@ main {
     box-shadow: var(--shadow-sm);
 }
 
-.btn-primary:hover { background: var(--accent-green-hover); }
-.btn-primary:active { background: var(--accent-green-active); }
+.btn-primary:hover { background: var(--accent-cta-hover); }
+.btn-primary:active { background: var(--accent-cta-active); }
 .btn-primary:disabled { background: var(--bg-elevated); color: var(--text-muted); cursor: not-allowed; box-shadow: none; border-color: var(--border); }
 .btn-primary.running { animation: pulse-running 1.5s ease-in-out infinite; }
 
@@ -249,15 +419,15 @@ main {
     background: var(--bg-elevated);
     color: var(--text-secondary);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: var(--font-size-ui);
     font-weight: 600;
-    border: 1px solid var(--border);
+    border: 1px solid var(--premium-border);
     border-radius: var(--radius);
     cursor: pointer;
     transition: background-color var(--transition), border-color var(--transition);
 }
 
-.btn-secondary:hover { background: var(--border); border-color: #444c56; }
+.btn-secondary:hover { background: var(--border); border-color: var(--titlebar-border); }
 .btn-secondary:disabled { color: var(--text-muted); cursor: not-allowed; }
 .btn-secondary.running { animation: pulse-running 1.5s ease-in-out infinite; }
 
@@ -267,26 +437,26 @@ main {
     background: var(--bg-elevated);
     color: var(--text-primary);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: var(--font-size-ui);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     cursor: pointer;
-    transition: border-color var(--transition);
+    transition: border-color var(--transition), background-color 0.2s ease;
     appearance: none;
     -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a0a0a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-image: var(--select-arrow);
     background-repeat: no-repeat;
     background-position: right 8px center;
 }
 
 #mode-select:hover, #example-select:hover {
-    border-color: #444c56;
+    border-color: var(--titlebar-border);
 }
 
 #mode-select:focus, #example-select:focus {
     border-color: var(--accent-blue);
     outline: none;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 #status-text {
@@ -351,10 +521,12 @@ body.resizing .resize-handle {
     font-size: 11px;
     font-weight: 600;
     padding: 6px 12px;
-    background: var(--bg-elevated);
+    background: linear-gradient(180deg, var(--titlebar-top) 0%, var(--titlebar-bottom) 100%);
+    border-bottom: 1px solid var(--titlebar-border);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 1.5px;
+    transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 #results-container {
@@ -362,10 +534,12 @@ body.resizing .resize-handle {
     overflow: auto;
     padding: 8px 12px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-code);
+    line-height: var(--line-height-code);
     background: var(--bg-base);
     color: var(--text-primary);
     white-space: pre-wrap;
+    transition: background-color 0.2s ease;
 }
 
 /* === Results Table === */
@@ -374,12 +548,13 @@ body.resizing .resize-handle {
     width: 100%;
     border-collapse: collapse;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-code);
+    line-height: var(--line-height-code);
 }
 
 .results-table th {
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
+    background: var(--accent-blue);
+    color: #ffffff;
     font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 600;
@@ -387,7 +562,7 @@ body.resizing .resize-handle {
     text-align: left;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 2px solid var(--border);
+    border-bottom: 2px solid var(--accent-blue-active);
     position: sticky;
     top: 0;
     z-index: 1;
@@ -408,17 +583,17 @@ body.resizing .resize-handle {
     background: var(--bg-hover);
 }
 
-/* Changelog row colors (muted semantic + left-border accent) */
-.row-insert td { color: var(--color-insert); }
+/* Changelog row colors (semantic bg + text + left-border accent) */
+.row-insert td { background: var(--bg-insert); color: var(--color-insert); }
 .row-insert td:first-child { border-left: 3px solid var(--border-insert); }
 
-.row-update-after td { color: var(--color-update-after); }
+.row-update-after td { background: var(--bg-update-after); color: var(--color-update-after); }
 .row-update-after td:first-child { border-left: 3px solid var(--border-update-after); }
 
-.row-update-before td { color: var(--color-update-before); }
+.row-update-before td { background: var(--bg-update-before); color: var(--color-update-before); }
 .row-update-before td:first-child { border-left: 3px solid var(--border-update-before); }
 
-.row-delete td { color: var(--color-delete); }
+.row-delete td { background: var(--bg-delete); color: var(--color-delete); }
 .row-delete td:first-child { border-left: 3px solid var(--border-delete); }
 
 /* Filter row */
@@ -446,7 +621,7 @@ body.resizing .resize-handle {
 
 .results-table .filter-row input[type="text"]:focus {
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .results-table .filter-row input[type="text"]::placeholder {
@@ -507,7 +682,7 @@ body.resizing .resize-handle {
     flex-direction: column;
     background: var(--bg-raised);
     border-right: 1px solid var(--border);
-    transition: width var(--transition), min-width var(--transition);
+    transition: width var(--transition), min-width var(--transition), background-color 0.2s ease;
     overflow: hidden;
 }
 
@@ -520,10 +695,13 @@ body.resizing .resize-handle {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 10px;
-    height: 32px;
-    background: var(--bg-elevated);
-    border-bottom: 1px solid var(--border);
+    /* Identical box model to .editor-panel h2 so they sit flush */
+    padding: 6px 12px;
+    font-size: 11px;
+    line-height: 1;
+    background: linear-gradient(180deg, var(--titlebar-top) 0%, var(--titlebar-bottom) 100%);
+    border-bottom: 1px solid var(--titlebar-border);
+    transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .schema-browser-title {
@@ -544,10 +722,11 @@ body.resizing .resize-handle {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 11px;
     cursor: pointer;
-    padding: 0 4px;
+    padding: 0;
     line-height: 1;
+    flex-shrink: 0;
 }
 
 .schema-browser-toggle:hover {
@@ -587,7 +766,7 @@ body.resizing .resize-handle {
     gap: 4px;
     padding: 3px 10px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-primary);
     transition: background-color var(--transition);
 }
@@ -661,7 +840,7 @@ body.resizing .resize-handle {
 #example-select:focus-visible {
     outline: 2px solid var(--accent-blue);
     outline-offset: 1px;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 0 4px var(--focus-ring);
 }
 
 /* === Status Bar === */
@@ -672,11 +851,11 @@ body.resizing .resize-handle {
     gap: 16px;
     padding: 0 12px;
     height: 24px;
-    background: var(--bg-elevated);
-    border-top: 1px solid var(--border);
+    background: var(--accent-blue);
+    border-top: 1px solid var(--accent-blue-active);
     font-family: var(--font-sans);
     font-size: 11px;
-    color: var(--text-muted);
+    color: #ffffff;
     flex-shrink: 0;
 }
 
@@ -700,12 +879,12 @@ body.resizing .resize-handle {
 }
 
 #results-container::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: var(--scrollbar-thumb);
     border-radius: 4px;
 }
 
 #results-container::-webkit-scrollbar-thumb:hover {
-    background: #444c56;
+    background: var(--scrollbar-thumb-hover);
 }
 
 .schema-browser-content::-webkit-scrollbar {
@@ -717,13 +896,12 @@ body.resizing .resize-handle {
 }
 
 .schema-browser-content::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: var(--scrollbar-thumb);
     border-radius: 3px;
 }
 
-/* === Driver.js Tour Overrides (dark theme + spacing restore) === */
+/* === Driver.js Tour Overrides (themed + spacing restore) === */
 
-/* Restore internal spacing stripped by * { margin:0; padding:0 } */
 .driver-popover {
     background: var(--bg-elevated) !important;
     color: var(--text-primary) !important;

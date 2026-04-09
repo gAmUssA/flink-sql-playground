@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flink SQL Fiddle</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext x='2' y='26' font-family='monospace' font-size='28' font-weight='bold' fill='%23E6526F'%3E%3E_%3C/text%3E%3C/svg%3E">
+    <title>Flink SQL Playground</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext x='2' y='26' font-family='monospace' font-size='28' font-weight='bold' fill='%2322d3ee'%3E%3E_%3C/text%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.4.0/dist/driver.css">
     <link rel="stylesheet" href="/css/style.css">
 </head>
@@ -14,10 +17,19 @@
             <svg class="header-logo" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <h1>Flink SQL Fiddle</h1>
+            <div class="header-titles">
+                <h1>Flink SQL Playground</h1>
+                <p class="header-subtitle">Interactive SQL Playground for Apache Flink</p>
+            </div>
+        </div>
+        <div class="header-actions">
             <button id="tour-btn" class="tour-btn" title="Take a guided tour">
                 <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm6.5-.25A.75.75 0 017.25 7h1a.75.75 0 01.75.75v2.75h.25a.75.75 0 010 1.5h-2a.75.75 0 010-1.5h.25v-2h-.25a.75.75 0 01-.75-.75zM8 6a1 1 0 100-2 1 1 0 000 2z"/></svg>
                 Tour
+            </button>
+            <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Toggle light/dark theme">
+                <svg class="icon-sun" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 01.5.5v1a.5.5 0 01-1 0v-1A.5.5 0 018 1zm0 10a3 3 0 100-6 3 3 0 000 6zm5-3a.5.5 0 01-.5.5h-1a.5.5 0 010-1h1A.5.5 0 0113 8zM4 8a.5.5 0 01-.5.5h-1a.5.5 0 010-1h1A.5.5 0 014 8zm8.354-4.354a.5.5 0 010 .708l-.708.707a.5.5 0 01-.707-.707l.707-.708a.5.5 0 01.708 0zM5.06 10.94a.5.5 0 010 .706l-.707.708a.5.5 0 11-.708-.708l.708-.707a.5.5 0 01.707 0zM12.354 11.646a.5.5 0 010 .708l-.707.707a.5.5 0 01-.708-.707l.708-.708a.5.5 0 01.707 0zM5.06 5.06a.5.5 0 010 .708l-.707.707a.5.5 0 11-.708-.707l.708-.708a.5.5 0 01.707 0z"/></svg>
+                <svg class="icon-moon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 .278a.768.768 0 01.08.858 7.208 7.208 0 00-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 01.81.316.733.733 0 01-.031.893A8.349 8.349 0 018.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 016 .278z"/></svg>
             </button>
         </div>
     </header>
