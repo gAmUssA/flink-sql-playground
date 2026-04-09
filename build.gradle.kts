@@ -51,6 +51,33 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
 }
 
+// Default 'test' task runs fast unit/controller tests only (excludes smoke tests).
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("smoke")
+    }
+    // Controller tests are independent — run test classes in parallel.
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+}
+
+// Separate task for slow smoke tests (Flink MiniCluster). Run sequentially since each
+// test spins up a full MiniCluster and needs significant memory.
+tasks.register<Test>("smokeTest") {
+    description = "Runs Flink MiniCluster smoke tests (slow)"
+    group = "verification"
+    useJUnitPlatform {
+        includeTags("smoke")
+    }
+    maxParallelForks = 1
+    // Give Flink MiniCluster room to breathe
+    jvmArgs("-Xmx1g")
+}
+
+// 'check' lifecycle includes both fast and smoke tests.
+tasks.named("check") {
+    dependsOn("smokeTest")
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
 

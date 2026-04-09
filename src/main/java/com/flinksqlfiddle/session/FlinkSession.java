@@ -11,8 +11,7 @@ import java.util.concurrent.Executors;
 public class FlinkSession {
 
     private final String sessionId;
-    private final TableEnvironment batchEnv;
-    private final TableEnvironment streamEnv;
+    private final FlinkEnvironmentFactory factory;
 
     // Dedicated thread for Flink SQL planning — Calcite's RelMetadataQuery uses
     // thread-local state, so all TableEnvironment operations (creation and executeSql)
@@ -20,15 +19,21 @@ public class FlinkSession {
     // handler provider.
     private final ExecutorService plannerExecutor;
 
+    // Lazy-initialized environments — created on first access to save ~50 MB per
+    // unused env and make session creation instant.
+    private volatile TableEnvironment batchEnv;
+    private volatile TableEnvironment streamEnv;
+    private final Object batchLock = new Object();
+    private final Object streamLock = new Object();
+
     /**
-     * Creates a session with environments built on the dedicated planner thread.
-     * This ensures Calcite's thread-local metadata providers are consistent.
+     * Creates a session with lazy environment initialization.
+     * Environments are created on the dedicated planner thread on first access.
      */
     public FlinkSession(String sessionId, FlinkEnvironmentFactory factory) {
         this.sessionId = sessionId;
+        this.factory = factory;
         this.plannerExecutor = createPlannerExecutor(sessionId);
-        this.batchEnv = runOnPlannerThread(factory::createBatchEnvironment);
-        this.streamEnv = runOnPlannerThread(factory::createStreamingEnvironment);
     }
 
     /**
@@ -37,6 +42,7 @@ public class FlinkSession {
      */
     public FlinkSession(String sessionId, TableEnvironment batchEnv, TableEnvironment streamEnv) {
         this.sessionId = sessionId;
+        this.factory = null;
         this.batchEnv = batchEnv;
         this.streamEnv = streamEnv;
         this.plannerExecutor = createPlannerExecutor(sessionId);
@@ -76,10 +82,30 @@ public class FlinkSession {
     }
 
     public TableEnvironment getBatchEnv() {
-        return batchEnv;
+        TableEnvironment env = batchEnv;
+        if (env == null) {
+            synchronized (batchLock) {
+                env = batchEnv;
+                if (env == null) {
+                    env = runOnPlannerThread(factory::createBatchEnvironment);
+                    batchEnv = env;
+                }
+            }
+        }
+        return env;
     }
 
     public TableEnvironment getStreamEnv() {
-        return streamEnv;
+        TableEnvironment env = streamEnv;
+        if (env == null) {
+            synchronized (streamLock) {
+                env = streamEnv;
+                if (env == null) {
+                    env = runOnPlannerThread(factory::createStreamingEnvironment);
+                    streamEnv = env;
+                }
+            }
+        }
+        return env;
     }
 }
