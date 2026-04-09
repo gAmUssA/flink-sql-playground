@@ -5,6 +5,7 @@ import com.flinksqlfiddle.flink.FlinkProperties;
 import com.flinksqlfiddle.security.SqlSecurityValidator;
 import com.flinksqlfiddle.session.FlinkSession;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Window intervals shrunk for fast execution
  * - CUMULATE uses TVF syntax (the only syntax Flink supports for it)
  */
+@Tag("smoke")
 class ExampleQueriesSmokeTest {
 
     private FlinkEnvironmentFactory factory;

@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: flink-sql-fiddle
+  threads:
+    virtual:
+      enabled: true
   datasource:
     url: jdbc:h2:mem:fiddledb
     driver-class-name: org.h2.Driver
@@ -15,8 +18,8 @@ flink:
   parallelism: 1
   network-memory: 8m
   managed-memory: 32m
-  max-sessions: 3
-  session-idle-timeout: 5m
+  max-sessions: 8
+  session-idle-timeout: 3m
 
 logging:
   level:

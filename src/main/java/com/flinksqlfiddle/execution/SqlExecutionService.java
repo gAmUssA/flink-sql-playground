@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
@@ -29,6 +31,11 @@ import java.util.regex.Pattern;
 public class SqlExecutionService {
 
     private static final Logger log = LoggerFactory.getLogger(SqlExecutionService.class);
+
+    // Dedicated executor for result collection — virtual threads avoid the
+    // ForkJoinPool contention that occurs when many sessions collect concurrently.
+    private static final ExecutorService RESULT_COLLECTOR =
+            Executors.newVirtualThreadPerTaskExecutor();
 
     private static final Pattern DDL_PATTERN = Pattern.compile(
             "^\\s*(CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)|DROP\\s+(TABLE|VIEW))\\b",
@@ -158,7 +165,7 @@ public class SqlExecutionService {
 
     private QueryResult awaitResult(TableResult tableResult, String sql, long startTime) {
         CompletableFuture<QueryResult> future = CompletableFuture.supplyAsync(() ->
-                collectResult(tableResult, startTime));
+                collectResult(tableResult, startTime), RESULT_COLLECTOR);
 
         try {
             QueryResult result = future.get(SecurityConstants.EXECUTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);

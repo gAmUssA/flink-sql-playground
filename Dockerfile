@@ -16,9 +16,10 @@ COPY --from=build /app/build/libs/*.jar app.jar
 RUN java -Djarmode=tools -jar app.jar extract --destination extracted && rm app.jar
 EXPOSE 9090
 ENTRYPOINT ["java", \
-    "-Xms512m", \
-    "-Xmx1024m", \
-    "-XX:+UseSerialGC", \
+    "-Xms768m", \
+    "-Xmx1536m", \
+    "-XX:+UseZGC", \
+    "-XX:+ZGenerational", \
     "-XX:MetaspaceSize=128m", \
     "-XX:MaxMetaspaceSize=384m", \
     "-jar", "extracted/app.jar"]
