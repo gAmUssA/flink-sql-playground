@@ -71,6 +71,10 @@
                     <svg class="btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>
                     Run Query
                 </button>
+                <button id="stop-query-btn" class="btn-secondary" style="display:none;" title="Stop streaming">
+                    <svg class="btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
+                    Stop
+                </button>
             </div>
             <div class="toolbar-divider"></div>
             <div class="control-group">
@@ -101,6 +105,7 @@
             <span class="status-bar-item" id="status-session">Session: --</span>
             <span class="status-bar-item" id="status-mode">Streaming</span>
             <span class="status-bar-item status-bar-right" id="status-rows"></span>
+            <span class="status-bar-item" id="status-build" title="Deployed build">build: --</span>
         </footer>
     </main>
 

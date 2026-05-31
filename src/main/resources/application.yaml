@@ -25,6 +25,7 @@ execution:
   max-rows: 1000
   execution-timeout: 30s
   collection-timeout: 15s
+  stream-timeout: 3m
 
 logging:
   level:
