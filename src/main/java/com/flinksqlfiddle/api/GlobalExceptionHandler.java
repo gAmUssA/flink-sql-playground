@@ -2,6 +2,8 @@ package com.flinksqlfiddle.api;
 
 import com.flinksqlfiddle.api.dto.ErrorResponse;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
+import com.flinksqlfiddle.fiddle.FiddleNotFoundException;
+import com.flinksqlfiddle.security.ForbiddenSqlException;
 import com.flinksqlfiddle.session.SessionLimitExceededException;
 import com.flinksqlfiddle.session.SessionNotFoundException;
 import org.slf4j.Logger;
@@ -18,9 +20,9 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    @ExceptionHandler(SecurityException.class)
+    @ExceptionHandler(ForbiddenSqlException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
-    public ErrorResponse handleSecurityException(SecurityException e) {
+    public ErrorResponse handleForbiddenSql(ForbiddenSqlException e) {
         log.warn("Security violation: {}", e.getMessage());
         return new ErrorResponse(e.getMessage(), "SECURITY_VIOLATION");
     }
@@ -32,9 +34,9 @@ public class GlobalExceptionHandler {
         return new ErrorResponse(e.getMessage(), "SESSION_NOT_FOUND");
     }
 
-    @ExceptionHandler(FiddleController.FiddleNotFoundException.class)
+    @ExceptionHandler(FiddleNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
-    public ErrorResponse handleFiddleNotFound(FiddleController.FiddleNotFoundException e) {
+    public ErrorResponse handleFiddleNotFound(FiddleNotFoundException e) {
         log.warn("Fiddle not found: {}", e.getMessage());
         return new ErrorResponse(e.getMessage(), "FIDDLE_NOT_FOUND");
     }
