@@ -724,10 +724,30 @@ function initSchemaBrowserToggle() {
 
 // --- Event Listeners ---
 
+// Shows which commit is deployed in the footer (read from /api/build-info).
+async function loadBuildInfo() {
+    const el = document.getElementById('status-build');
+    if (!el) return;
+    try {
+        const response = await fetch('/api/build-info');
+        if (!response.ok) return;
+        const info = await response.json();
+        el.textContent = `build: ${info.commit}`;
+        const parts = [];
+        if (info.branch && info.branch !== 'unknown') parts.push(info.branch);
+        if (info.commitFull && info.commitFull !== info.commit) parts.push(info.commitFull);
+        if (info.time && info.time !== 'unknown') parts.push(info.time);
+        el.title = parts.length ? parts.join(' · ') : 'Deployed build';
+    } catch (err) {
+        /* leave placeholder on failure */
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     populateExamples();
     createSession();
+    loadBuildInfo();
     initResizeHandle();
     initSchemaBrowserToggle();
     document.getElementById('build-schema-btn').addEventListener('click', buildSchema);
