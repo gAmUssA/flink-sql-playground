@@ -6,6 +6,7 @@ import com.flinksqlfiddle.security.SqlSecurityValidator;
 import com.flinksqlfiddle.session.FlinkSession;
 import com.flinksqlfiddle.util.SqlText;
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.catalog.ResolvedSchema;
@@ -16,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,8 +26,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,6 +43,15 @@ public class SqlExecutionService {
     // ForkJoinPool contention that occurs when many sessions collect concurrently.
     private static final ExecutorService RESULT_COLLECTOR =
             Executors.newVirtualThreadPerTaskExecutor();
+
+    // Enforces the streaming wall-clock cap: cancels the (possibly unbounded) Flink job
+    // when the deadline fires, so an idle blocking hasNext() can't outlive streamTimeout.
+    private static final ScheduledExecutorService STREAM_DEADLINE =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "stream-deadline");
+                t.setDaemon(true);
+                return t;
+            });
 
     private static final Pattern DDL_PATTERN = Pattern.compile(
             "^\\s*(CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)|DROP\\s+(TABLE|VIEW))\\b",
@@ -174,6 +188,134 @@ public class SqlExecutionService {
         return new QueryResult(List.of(), List.of(), List.of(), List.of(), executionTimeMs, false);
     }
 
+    /**
+     * Handle to a submitted streaming query. Created synchronously by
+     * {@link #prepareStream} (so validation and SQL-compile errors surface on the
+     * request thread and map to proper HTTP status codes), then consumed
+     * asynchronously by {@link #streamRows}. A null {@code tableResult} denotes a DDL
+     * statement that produced no result set.
+     */
+    public record StreamingQuery(TableResult tableResult, long startTime) {
+        boolean isDdl() {
+            return tableResult == null;
+        }
+    }
+
+    /**
+     * Validates and submits a query for streaming, returning immediately. For a SELECT
+     * this submits the job and returns its lazy {@link TableResult}; rows are pulled
+     * later by {@link #streamRows}. DDL is executed eagerly (synced to both envs) and
+     * yields a DDL marker. Runs on the request thread so security/SQL errors propagate
+     * to the {@code GlobalExceptionHandler}.
+     */
+    public StreamingQuery prepareStream(FlinkSession session, String sql) {
+        validator.validate(sql);
+        long startTime = System.currentTimeMillis();
+
+        if (isDdl(sql)) {
+            log.debug("DDL detected on stream path, syncing to both environments: {}", SqlText.truncate(sql));
+            executeDdlOnBothEnvironments(session, sql);
+            return new StreamingQuery(null, startTime);
+        }
+
+        log.info("Streaming SQL: {}", SqlText.truncate(sql));
+        TableEnvironment tEnv = session.getStreamEnv();
+        TableResult tableResult = session.runOnPlannerThread(() -> tEnv.executeSql(sql));
+        return new StreamingQuery(tableResult, startTime);
+    }
+
+    /**
+     * Pushes results to {@code listener} one row at a time as Flink yields them.
+     * Stops on the first of: row cap ({@link ExecutionLimits#maxRows()}), wall-clock cap
+     * ({@link ExecutionLimits#streamTimeout()}), source exhaustion, or client disconnect
+     * (an {@link IOException} from the listener). The underlying job is cancelled when the
+     * stream ends early. Intended to run on a background (virtual) thread.
+     */
+    public void streamRows(StreamingQuery query, ResultStreamListener listener) throws IOException {
+        if (query.isDdl()) {
+            listener.onSchema(List.of(), List.of());
+            listener.onEnd(0, false, System.currentTimeMillis() - query.startTime());
+            return;
+        }
+
+        TableResult tableResult = query.tableResult();
+        long startTime = query.startTime();
+
+        List<String> columnNames = new ArrayList<>();
+        List<String> columnTypes = new ArrayList<>();
+        tableResult.getResolvedSchema().getColumns().forEach(col -> {
+            columnNames.add(col.getName());
+            columnTypes.add(col.getDataType().toString());
+        });
+        listener.onSchema(columnNames, columnTypes);
+
+        AtomicBoolean deadlineFired = new AtomicBoolean(false);
+        ScheduledFuture<?> deadline = tableResult.getJobClient()
+                .map(jc -> STREAM_DEADLINE.schedule(() -> {
+                    deadlineFired.set(true);
+                    cancelQuietly(jc);
+                }, limits.streamTimeout().toMillis(), TimeUnit.MILLISECONDS))
+                .orElse(null);
+
+        int count = 0;
+        boolean rowCapHit = false;
+        boolean clientGone = false;
+        try (CloseableIterator<Row> it = tableResult.collect()) {
+            while (it.hasNext()) {
+                if (count >= limits.maxRows()) {
+                    rowCapHit = true;
+                    break;
+                }
+                Row row = it.next();
+                try {
+                    listener.onRow(
+                            ROW_KIND_LABELS.getOrDefault(row.getKind(), row.getKind().name()),
+                            rowValues(row));
+                } catch (IOException e) {
+                    clientGone = true; // client aborted/disconnected — stop and cancel
+                    break;
+                }
+                count++;
+            }
+        } catch (Exception e) {
+            // A deadline/stop cancellation surfaces here as an iterator failure; treat as a clean end.
+            log.debug("Stream iteration ended: {}", e.getMessage());
+        } finally {
+            if (deadline != null) {
+                deadline.cancel(false);
+            }
+            if (rowCapHit || clientGone) {
+                tableResult.getJobClient().ifPresent(SqlExecutionService::cancelQuietly);
+            }
+        }
+
+        boolean truncated = rowCapHit || deadlineFired.get();
+        log.info("Stream complete: {} rows{}{}", count,
+                truncated ? " (truncated)" : "",
+                clientGone ? " (client disconnected)" : "");
+
+        if (!clientGone) {
+            listener.onEnd(count, truncated, System.currentTimeMillis() - startTime);
+        }
+    }
+
+    /** Best-effort job cancellation — a job that already terminated throws, which we ignore. */
+    private static void cancelQuietly(JobClient jobClient) {
+        try {
+            jobClient.cancel();
+        } catch (Exception e) {
+            log.debug("Job cancel skipped (already terminated?): {}", e.getMessage());
+        }
+    }
+
+    private static List<Object> rowValues(Row row) {
+        List<Object> values = new ArrayList<>(row.getArity());
+        for (int i = 0; i < row.getArity(); i++) {
+            values.add(row.getField(i));
+        }
+        return values;
+    }
+
     private QueryResult awaitResult(TableResult tableResult, String sql, long startTime) {
         CompletableFuture<QueryResult> future = CompletableFuture.supplyAsync(() ->
                 collectResult(tableResult, startTime), RESULT_COLLECTOR);
@@ -223,11 +365,7 @@ public class SqlExecutionService {
                 }
                 Row row = it.next();
                 rowKinds.add(ROW_KIND_LABELS.getOrDefault(row.getKind(), row.getKind().name()));
-                List<Object> values = new ArrayList<>();
-                for (int i = 0; i < row.getArity(); i++) {
-                    values.add(row.getField(i));
-                }
-                rows.add(values);
+                rows.add(rowValues(row));
 
                 // Time-based collection limit: for unbounded streaming queries,
                 // return partial results rather than blocking until the hard timeout.
