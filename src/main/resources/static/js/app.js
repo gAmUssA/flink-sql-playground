@@ -1,6 +1,7 @@
 let sessionId = null;
 let schemaEditor = null;
 let queryEditor = null;
+let activeStreamController = null;
 
 const ROW_KIND_CLASSES = {
     '+I': 'row-insert',
@@ -100,17 +101,25 @@ require(['vs/editor/editor.main'], function () {
 
 // --- Results Rendering ---
 
-function renderResults(result) {
+// Builds the table scaffold (header + filter row + empty body + meta) and returns
+// handles plus a mutable `result` accumulator that grows as rows are appended.
+// Shared by one-shot batch rendering and incremental streaming.
+function buildResultsScaffold(columns, columnTypes) {
     const container = document.getElementById('results-container');
     container.innerHTML = '';
     container.classList.remove('fade-in');
     void container.offsetWidth;
     container.classList.add('fade-in');
 
-    if (!result.columns || result.columns.length === 0) {
-        container.textContent = 'Statement executed successfully.';
-        return;
-    }
+    const result = {
+        columns: columns,
+        columnTypes: columnTypes || [],
+        rows: [],
+        rowKinds: [],
+        rowCount: 0,
+        truncated: false,
+        executionTimeMs: 0
+    };
 
     const table = document.createElement('table');
     table.className = 'results-table';
@@ -121,7 +130,7 @@ function renderResults(result) {
     const kindTh = document.createElement('th');
     kindTh.textContent = 'op';
     headerRow.appendChild(kindTh);
-    result.columns.forEach(col => {
+    columns.forEach(col => {
         const th = document.createElement('th');
         th.textContent = col;
         headerRow.appendChild(th);
@@ -131,7 +140,7 @@ function renderResults(result) {
     // Filter row
     const filterRow = document.createElement('tr');
     filterRow.className = 'filter-row';
-    const totalColumns = result.columns.length + 1; // +1 for op column
+    const totalColumns = columns.length + 1; // +1 for op column
     const filterInputs = [];
 
     for (let c = 0; c < totalColumns; c++) {
@@ -165,39 +174,77 @@ function renderResults(result) {
     thead.appendChild(filterRow);
     table.appendChild(thead);
 
-    // Body
     const tbody = document.createElement('tbody');
-    result.rows.forEach((row, i) => {
-        const tr = document.createElement('tr');
-        const kind = result.rowKinds[i];
-        tr.className = ROW_KIND_CLASSES[kind] || '';
-
-        const kindTd = document.createElement('td');
-        kindTd.textContent = kind;
-        tr.appendChild(kindTd);
-
-        row.forEach(val => {
-            const td = document.createElement('td');
-            td.textContent = val === null ? 'NULL' : String(val);
-            tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-    });
     table.appendChild(tbody);
     container.appendChild(table);
 
-    // Metadata
     const meta = document.createElement('div');
     meta.className = 'results-meta';
-    let text = `${result.rowCount} row${result.rowCount !== 1 ? 's' : ''} in ${result.executionTimeMs}ms`;
-    if (result.truncated) {
-        text += ' (results truncated to 1000 rows)';
-    }
-    meta.textContent = text;
     container.appendChild(meta);
 
+    return { table, tbody, meta, filterInputs, result };
+}
+
+// Appends one row to a scaffold, keeping the accumulator in sync and honoring any
+// active column filters so live-streamed rows hide/show consistently.
+function appendResultRow(ctx, kind, values) {
+    ctx.result.rows.push(values);
+    ctx.result.rowKinds.push(kind);
+    ctx.result.rowCount = ctx.result.rows.length;
+
+    const tr = document.createElement('tr');
+    tr.className = ROW_KIND_CLASSES[kind] || '';
+
+    const kindTd = document.createElement('td');
+    kindTd.textContent = kind;
+    tr.appendChild(kindTd);
+
+    values.forEach(val => {
+        const td = document.createElement('td');
+        td.textContent = val === null ? 'NULL' : String(val);
+        tr.appendChild(td);
+    });
+    ctx.tbody.appendChild(tr);
+
+    applyFiltersToRow(tr, ctx.filterInputs);
+}
+
+// Finalizes the metadata line and status bar once a result set is complete.
+function finishResults(ctx, summary) {
+    ctx.result.rowCount = summary.rowCount;
+    ctx.result.truncated = summary.truncated;
+    ctx.result.executionTimeMs = summary.executionTimeMs;
+
+    const hasActive = ctx.filterInputs.some(inp => inp.value.length > 0);
+    if (hasActive) {
+        applyFilters(ctx.table, ctx.filterInputs, ctx.result);
+    } else {
+        const plural = summary.rowCount !== 1 ? 's' : '';
+        const trunc = summary.truncated ? ' (results truncated to 1000 rows)' : '';
+        ctx.meta.textContent = `${summary.rowCount} row${plural} in ${summary.executionTimeMs}ms${trunc}`;
+    }
+
     const statusRows = document.getElementById('status-rows');
-    if (statusRows) statusRows.textContent = `${result.rowCount} row${result.rowCount !== 1 ? 's' : ''}`;
+    if (statusRows) statusRows.textContent = `${summary.rowCount} row${summary.rowCount !== 1 ? 's' : ''}`;
+}
+
+// Renders a fully-collected (batch) result in a single pass.
+function renderResults(result) {
+    if (!result.columns || result.columns.length === 0) {
+        const container = document.getElementById('results-container');
+        container.innerHTML = '';
+        container.textContent = 'Statement executed successfully.';
+        return;
+    }
+    const ctx = buildResultsScaffold(result.columns, result.columnTypes);
+    for (let i = 0; i < result.rows.length; i++) {
+        appendResultRow(ctx, result.rowKinds[i], result.rows[i]);
+    }
+    finishResults(ctx, {
+        rowCount: result.rowCount,
+        truncated: result.truncated,
+        executionTimeMs: result.executionTimeMs
+    });
 }
 
 // --- Column Filtering ---
@@ -240,6 +287,23 @@ function applyFilters(table, filterInputs, result) {
             meta.textContent = `${totalRows} row${plural} in ${timeMs}ms${truncNote}`;
         }
     }
+}
+
+// Applies the current filters to a single (newly streamed) row, hiding it if it
+// doesn't match — keeps live-appended rows consistent with active filters.
+function applyFiltersToRow(tr, filterInputs) {
+    const filters = filterInputs.map(input => input.value.toLowerCase());
+    const cells = tr.querySelectorAll('td');
+    let match = true;
+    for (let c = 0; c < filters.length; c++) {
+        if (filters[c] && cells[c]) {
+            if (!cells[c].textContent.toLowerCase().includes(filters[c])) {
+                match = false;
+                break;
+            }
+        }
+    }
+    tr.style.display = match ? '' : 'none';
 }
 
 // --- Session Management ---
@@ -316,10 +380,23 @@ async function runQuery() {
         setStatus('No active session');
         return;
     }
+    const query = queryEditor.getValue().trim();
+    if (!query) {
+        setStatus('No query to execute');
+        return;
+    }
+    const mode = document.getElementById('mode-select').value;
+    if (mode === 'STREAMING') {
+        await runStreamingQuery(query);
+    } else {
+        await runBatchQuery(query, mode);
+    }
+}
 
+// Batch: wait for the server to collect the full result set, then render once.
+async function runBatchQuery(query, mode) {
     const btn = document.getElementById('run-query-btn');
     const resultsContainer = document.getElementById('results-container');
-    const mode = document.getElementById('mode-select').value;
 
     btn.disabled = true;
     btn.classList.add('running');
@@ -327,12 +404,6 @@ async function runQuery() {
     resultsContainer.textContent = '';
 
     try {
-        const query = queryEditor.getValue().trim();
-        if (!query) {
-            setStatus('No query to execute');
-            return;
-        }
-
         const response = await fetch(`/api/sessions/${sessionId}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -358,6 +429,105 @@ async function runQuery() {
     } finally {
         btn.disabled = false;
         btn.classList.remove('running');
+    }
+}
+
+// Streaming: read newline-delimited JSON frames and append rows live as they arrive.
+// Stoppable via the Stop button (AbortController) — the server cancels the Flink job.
+async function runStreamingQuery(query) {
+    const btn = document.getElementById('run-query-btn');
+    const stopBtn = document.getElementById('stop-query-btn');
+    const resultsContainer = document.getElementById('results-container');
+
+    btn.disabled = true;
+    btn.classList.add('running');
+    if (stopBtn) stopBtn.style.display = '';
+    setStatus('Streaming…');
+    resultsContainer.textContent = '';
+
+    activeStreamController = new AbortController();
+    let ctx = null;
+    let aborted = false;
+
+    try {
+        const response = await fetch(`/api/sessions/${sessionId}/execute/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sql: query, mode: 'STREAMING' }),
+            signal: activeStreamController.signal
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({ error: 'Stream failed' }));
+            resultsContainer.textContent = 'Error: ' + err.error;
+            setStatus('Execution failed');
+            return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            let nl;
+            while ((nl = buffer.indexOf('\n')) >= 0) {
+                const line = buffer.slice(0, nl).trim();
+                buffer = buffer.slice(nl + 1);
+                if (!line) continue;
+                ctx = handleStreamEvent(JSON.parse(line), ctx, resultsContainer);
+            }
+        }
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            aborted = true;
+            setStatus('Stopped');
+        } else {
+            resultsContainer.textContent = 'Error: ' + err.message;
+            setStatus('Execution error');
+        }
+    } finally {
+        activeStreamController = null;
+        btn.disabled = false;
+        btn.classList.remove('running');
+        if (stopBtn) stopBtn.style.display = 'none';
+        await refreshSchemaBrowser();
+    }
+}
+
+// Dispatches one NDJSON stream frame; returns the (possibly new) render context.
+function handleStreamEvent(event, ctx, resultsContainer) {
+    switch (event.type) {
+        case 'schema':
+            if (!event.columns || event.columns.length === 0) {
+                resultsContainer.textContent = 'Statement executed successfully.';
+                return null;
+            }
+            return buildResultsScaffold(event.columns, event.columnTypes);
+        case 'row':
+            if (ctx) {
+                appendResultRow(ctx, event.kind, event.values);
+                const statusRows = document.getElementById('status-rows');
+                if (statusRows) {
+                    const n = ctx.result.rowCount;
+                    statusRows.textContent = `${n} row${n !== 1 ? 's' : ''}`;
+                }
+            }
+            return ctx;
+        case 'end':
+            if (ctx) finishResults(ctx, event);
+            setStatus(`${event.rowCount} row${event.rowCount !== 1 ? 's' : ''} in ${event.executionTimeMs}ms` +
+                      (event.truncated ? ' (truncated)' : ''));
+            return ctx;
+        case 'error':
+            resultsContainer.textContent = 'Error: ' + event.error;
+            setStatus('Execution failed');
+            return ctx;
+        default:
+            return ctx;
     }
 }
 
@@ -554,15 +724,42 @@ function initSchemaBrowserToggle() {
 
 // --- Event Listeners ---
 
+// Shows which commit is deployed in the footer (read from /api/build-info).
+async function loadBuildInfo() {
+    const el = document.getElementById('status-build');
+    if (!el) return;
+    try {
+        const response = await fetch('/api/build-info');
+        if (!response.ok) return;
+        const info = await response.json();
+        el.textContent = `build: ${info.commit}`;
+        const parts = [];
+        if (info.branch && info.branch !== 'unknown') parts.push(info.branch);
+        if (info.commitFull && info.commitFull !== info.commit) parts.push(info.commitFull);
+        if (info.time && info.time !== 'unknown') parts.push(info.time);
+        el.title = parts.length ? parts.join(' · ') : 'Deployed build';
+    } catch (err) {
+        /* leave placeholder on failure */
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     populateExamples();
     createSession();
+    loadBuildInfo();
     initResizeHandle();
     initSchemaBrowserToggle();
     document.getElementById('build-schema-btn').addEventListener('click', buildSchema);
     document.getElementById('run-query-btn').addEventListener('click', runQuery);
     document.getElementById('share-btn').addEventListener('click', shareFiddle);
+    const stopBtn = document.getElementById('stop-query-btn');
+    if (stopBtn) stopBtn.addEventListener('click', () => {
+        if (activeStreamController) {
+            activeStreamController.abort();
+            setStatus('Stopping…');
+        }
+    });
 
     // Sync status bar mode indicator
     const modeSelect = document.getElementById('mode-select');

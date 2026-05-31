@@ -1,3 +1,5 @@
+import java.time.Instant
+
 plugins {
     java
     id("org.springframework.boot") version "4.0.6"
@@ -17,6 +19,46 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+// --- Build info: capture the git commit + build time and ship them on the classpath
+// as build-info.properties, so the running app can report exactly which commit is deployed.
+val buildInfoDir = layout.buildDirectory.dir("generated-resources/build-info")
+
+val generateBuildInfo by tasks.registering {
+    description = "Writes git commit/branch/build-time into build-info.properties"
+    group = "build"
+    outputs.dir(buildInfoDir)
+    outputs.upToDateWhen { false } // always reflect the current HEAD
+    doLast {
+        fun git(vararg args: String): String = try {
+            val process = ProcessBuilder(listOf("git") + args).redirectErrorStream(true).start()
+            val text = process.inputStream.bufferedReader().readText().trim()
+            if (process.waitFor() == 0 && text.isNotEmpty()) text else "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+
+        val file = buildInfoDir.get().file("build-info.properties").asFile
+        file.parentFile.mkdirs()
+        file.writeText(
+            """
+            build.commit=${git("rev-parse", "--short", "HEAD")}
+            build.commitFull=${git("rev-parse", "HEAD")}
+            build.branch=${git("rev-parse", "--abbrev-ref", "HEAD")}
+            build.version=${project.version}
+            build.time=${Instant.now()}
+            """.trimIndent() + "\n"
+        )
+    }
+}
+
+sourceSets.named("main") {
+    resources.srcDir(buildInfoDir)
+}
+
+tasks.named("processResources") {
+    dependsOn(generateBuildInfo)
 }
 
 val flinkVersion = "2.2.1"

@@ -1,6 +1,7 @@
 package com.flinksqlfiddle.api;
 
 import com.flinksqlfiddle.flink.FlinkProperties;
+import com.flinksqlfiddle.execution.ExecutionLimits;
 import com.flinksqlfiddle.execution.ExecutionMode;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
 import com.flinksqlfiddle.execution.QueryResult;
@@ -39,6 +40,9 @@ class ExecutionControllerTest {
 
     @MockitoBean
     private SqlExecutionService executionService;
+
+    @MockitoBean
+    private ExecutionLimits executionLimits;
 
     private static final String EXECUTE_URL = "/api/sessions/test-session/execute";
 
