@@ -4,6 +4,7 @@ import com.flinksqlfiddle.api.dto.FiddleResponse;
 import com.flinksqlfiddle.api.dto.SaveFiddleRequest;
 import com.flinksqlfiddle.execution.ExecutionMode;
 import com.flinksqlfiddle.fiddle.Fiddle;
+import com.flinksqlfiddle.fiddle.FiddleNotFoundException;
 import com.flinksqlfiddle.fiddle.FiddleService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -40,11 +41,5 @@ public class FiddleController {
                 fiddle.getQuery(),
                 ExecutionMode.valueOf(fiddle.getMode())
         );
-    }
-
-    public static class FiddleNotFoundException extends RuntimeException {
-        public FiddleNotFoundException(String shortCode) {
-            super("Fiddle not found: " + shortCode);
-        }
     }
 }

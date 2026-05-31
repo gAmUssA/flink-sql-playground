@@ -1,6 +1,6 @@
 plugins {
     java
-    id("org.springframework.boot") version "4.0.3"
+    id("org.springframework.boot") version "4.0.6"
     id("io.spring.dependency-management") version "1.1.7"
 }
 
@@ -19,7 +19,7 @@ repositories {
     mavenCentral()
 }
 
-val flinkVersion = "2.2.0"
+val flinkVersion = "2.2.1"
 
 dependencies {
     // Spring Boot
@@ -32,7 +32,7 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
 
     // Caffeine cache
-    implementation("com.github.ben-manes.caffeine:caffeine:3.2.0")
+    implementation("com.github.ben-manes.caffeine:caffeine:3.2.4")
 
     // Apache Flink
     implementation("org.apache.flink:flink-streaming-java:$flinkVersion")

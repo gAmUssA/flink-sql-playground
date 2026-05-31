@@ -1,5 +1,6 @@
 package com.flinksqlfiddle.security;
 
+import com.flinksqlfiddle.util.SqlText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -46,25 +47,25 @@ public class SqlSecurityValidator {
 
     private void validateStatement(String sql) {
         if (CREATE_FUNCTION_PATTERN.matcher(sql).find()) {
-            log.warn("Blocked SQL: {} [type=CREATE_FUNCTION]", truncate(sql));
-            throw new SecurityException("CREATE FUNCTION statements are not allowed");
+            log.warn("Blocked SQL: {} [type=CREATE_FUNCTION]", SqlText.truncate(sql));
+            throw new ForbiddenSqlException("CREATE FUNCTION statements are not allowed");
         }
         if (ADD_JAR_PATTERN.matcher(sql).find()) {
-            log.warn("Blocked SQL: {} [type=ADD_JAR]", truncate(sql));
-            throw new SecurityException("ADD JAR statements are not allowed");
+            log.warn("Blocked SQL: {} [type=ADD_JAR]", SqlText.truncate(sql));
+            throw new ForbiddenSqlException("ADD JAR statements are not allowed");
         }
         if (CREATE_CATALOG_PATTERN.matcher(sql).find()) {
-            log.warn("Blocked SQL: {} [type=CREATE_CATALOG]", truncate(sql));
-            throw new SecurityException("CREATE CATALOG statements are not allowed");
+            log.warn("Blocked SQL: {} [type=CREATE_CATALOG]", SqlText.truncate(sql));
+            throw new ForbiddenSqlException("CREATE CATALOG statements are not allowed");
         }
         if (SET_PATTERN.matcher(sql).find()) {
-            log.warn("Blocked SQL: {} [type=SET]", truncate(sql));
-            throw new SecurityException("SET statements are not allowed");
+            log.warn("Blocked SQL: {} [type=SET]", SqlText.truncate(sql));
+            throw new ForbiddenSqlException("SET statements are not allowed");
         }
         if (CREATE_TABLE_PATTERN.matcher(sql).find()) {
             validateConnector(sql);
         }
-        log.debug("Validation passed: {}", truncate(sql));
+        log.debug("Validation passed: {}", SqlText.truncate(sql));
     }
 
     private void validateConnector(String sql) {
@@ -72,16 +73,11 @@ public class SqlSecurityValidator {
         if (matcher.find()) {
             String connector = matcher.group(1);
             if (!SecurityConstants.ALLOWED_CONNECTORS.contains(connector)) {
-                log.warn("Blocked SQL: {} [type=FORBIDDEN_CONNECTOR, connector={}]", truncate(sql), connector);
-                throw new SecurityException(
+                log.warn("Blocked SQL: {} [type=FORBIDDEN_CONNECTOR, connector={}]", SqlText.truncate(sql), connector);
+                throw new ForbiddenSqlException(
                         "Connector '" + connector + "' is not allowed. Allowed connectors: "
                                 + SecurityConstants.ALLOWED_CONNECTORS);
             }
         }
-    }
-
-    private static String truncate(String sql) {
-        String oneLine = sql.replaceAll("\\s+", " ").trim();
-        return oneLine.length() > 80 ? oneLine.substring(0, 80) + "..." : oneLine;
     }
 }

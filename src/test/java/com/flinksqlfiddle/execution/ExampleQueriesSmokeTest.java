@@ -34,7 +34,7 @@ class ExampleQueriesSmokeTest {
         factory = new FlinkEnvironmentFactory(
                 new FlinkProperties(1, "8m", "32m", 5, null)
         );
-        service = new SqlExecutionService(new SqlSecurityValidator());
+        service = new SqlExecutionService(new SqlSecurityValidator(), ExecutionLimits.defaults());
     }
 
     /**
@@ -79,9 +79,9 @@ class ExampleQueriesSmokeTest {
                 ORDER BY user_id
                 """);
 
-        assertEquals(List.of("user_id", "order_count", "total_amount"), result.getColumnNames());
-        assertEquals(5, result.getRowCount());
-        result.getRowKinds().forEach(kind -> assertEquals("+I", kind));
+        assertEquals(List.of("user_id", "order_count", "total_amount"), result.columnNames());
+        assertEquals(5, result.rowCount());
+        result.rowKinds().forEach(kind -> assertEquals("+I", kind));
     }
 
     // --- Tumbling Window (STREAMING) ---
@@ -120,9 +120,9 @@ class ExampleQueriesSmokeTest {
                 GROUP BY sensor_id, window_start, window_end
                 """);
 
-        assertTrue(result.getColumnNames().containsAll(
+        assertTrue(result.columnNames().containsAll(
                 List.of("sensor_id", "window_start", "reading_count", "avg_temp")));
-        assertTrue(result.getRowCount() > 0, "Expected at least one tumbling-window row");
+        assertTrue(result.rowCount() > 0, "Expected at least one tumbling-window row");
     }
 
     // --- Hopping Window (STREAMING) ---
@@ -159,9 +159,9 @@ class ExampleQueriesSmokeTest {
                 GROUP BY user_id, window_start, window_end
                 """);
 
-        assertTrue(result.getColumnNames().containsAll(
+        assertTrue(result.columnNames().containsAll(
                 List.of("user_id", "window_start", "click_count")));
-        assertTrue(result.getRowCount() > 0, "Expected at least one hopping-window row");
+        assertTrue(result.rowCount() > 0, "Expected at least one hopping-window row");
     }
 
     // --- Cumulate Window (STREAMING) ---
@@ -199,9 +199,9 @@ class ExampleQueriesSmokeTest {
                 GROUP BY page_id, window_start, window_end
                 """);
 
-        assertTrue(result.getColumnNames().containsAll(
+        assertTrue(result.columnNames().containsAll(
                 List.of("page_id", "window_start", "view_count")));
-        assertTrue(result.getRowCount() > 0, "Expected at least one cumulate-window row");
+        assertTrue(result.rowCount() > 0, "Expected at least one cumulate-window row");
     }
 
     // --- Realistic Orders (Faker, BATCH) ---
@@ -236,9 +236,9 @@ class ExampleQueriesSmokeTest {
                 ORDER BY amount DESC
                 """);
 
-        assertEquals(List.of("customer_name", "product", "amount", "city"), result.getColumnNames());
-        assertEquals(50, result.getRowCount());
-        result.getRowKinds().forEach(kind -> assertEquals("+I", kind));
+        assertEquals(List.of("customer_name", "product", "amount", "city"), result.columnNames());
+        assertEquals(50, result.rowCount());
+        result.rowKinds().forEach(kind -> assertEquals("+I", kind));
     }
 
     // --- Multi-table Faker DDL (BATCH) ---
@@ -271,13 +271,13 @@ class ExampleQueriesSmokeTest {
 
         QueryResult customers = service.execute(session, ExecutionMode.BATCH,
                 "SELECT * FROM customers");
-        assertEquals(List.of("customer_id", "name"), customers.getColumnNames());
-        assertEquals(10, customers.getRowCount());
+        assertEquals(List.of("customer_id", "name"), customers.columnNames());
+        assertEquals(10, customers.rowCount());
 
         QueryResult products = service.execute(session, ExecutionMode.BATCH,
                 "SELECT * FROM products");
-        assertEquals(List.of("product_name", "price"), products.getColumnNames());
-        assertEquals(10, products.getRowCount());
+        assertEquals(List.of("product_name", "price"), products.columnNames());
+        assertEquals(10, products.rowCount());
     }
 
     // --- E-Commerce Streaming (Faker, multi-table join) ---
@@ -368,9 +368,9 @@ class ExampleQueriesSmokeTest {
                 JOIN products p ON o.product_id = p.product_id
                 """);
 
-        assertTrue(result.getColumnNames().containsAll(
+        assertTrue(result.columnNames().containsAll(
                 List.of("order_id", "customer_name", "city", "product_name", "department", "price")));
-        assertTrue(result.getRowCount() > 0, "Expected at least one joined row");
+        assertTrue(result.rowCount() > 0, "Expected at least one joined row");
     }
 
     // --- Brewmaster Monitoring (Faker, STREAMING) ---
@@ -466,9 +466,9 @@ class ExampleQueriesSmokeTest {
                     window_start, window_end
                 """);
 
-        assertTrue(result.getColumnNames().containsAll(
+        assertTrue(result.columnNames().containsAll(
                 List.of("tank_name", "beer_name", "readings", "avg_temp_c")));
-        assertTrue(result.getRowCount() > 0, "Expected at least one windowed row");
+        assertTrue(result.rowCount() > 0, "Expected at least one windowed row");
     }
 
     // --- Interval Join (STREAMING) ---
@@ -520,9 +520,9 @@ class ExampleQueriesSmokeTest {
                                          AND s.ship_time + INTERVAL '5' SECOND
                 """);
 
-        assertTrue(result.getColumnNames().containsAll(
+        assertTrue(result.columnNames().containsAll(
                 List.of("order_id", "product_id", "shipment_id")));
-        assertTrue(result.getRowCount() > 0, "Expected at least one interval-join row");
+        assertTrue(result.rowCount() > 0, "Expected at least one interval-join row");
     }
 
     // --- Batch vs Streaming: BATCH mode ---
@@ -554,9 +554,9 @@ class ExampleQueriesSmokeTest {
                 GROUP BY category
                 """);
 
-        assertEquals(List.of("category", "event_count", "total_value"), result.getColumnNames());
-        assertEquals(3, result.getRowCount());
-        result.getRowKinds().forEach(kind -> assertEquals("+I", kind));
+        assertEquals(List.of("category", "event_count", "total_value"), result.columnNames());
+        assertEquals(3, result.rowCount());
+        result.rowKinds().forEach(kind -> assertEquals("+I", kind));
     }
 
     // --- Batch vs Streaming: STREAMING mode ---
@@ -588,10 +588,10 @@ class ExampleQueriesSmokeTest {
                 GROUP BY category
                 """);
 
-        assertEquals(List.of("category", "event_count", "total_value"), result.getColumnNames());
-        assertTrue(result.getRowCount() > 0, "Expected at least one streaming row");
+        assertEquals(List.of("category", "event_count", "total_value"), result.columnNames());
+        assertTrue(result.rowCount() > 0, "Expected at least one streaming row");
         Set<String> validKinds = Set.of("+I", "-U", "+U", "-D");
-        result.getRowKinds().forEach(kind ->
+        result.rowKinds().forEach(kind ->
                 assertTrue(validKinds.contains(kind), "Unexpected RowKind: " + kind));
     }
 }

@@ -26,14 +26,6 @@ public class ExecutionController {
                                    @Valid @RequestBody ExecuteRequest request) {
         FlinkSession session = sessionManager.getSession(sessionId);
         QueryResult result = executionService.execute(session, request.mode(), request.sql());
-        return new ExecuteResponse(
-                result.getColumnNames(),
-                result.getColumnTypes(),
-                result.getRows(),
-                result.getRowKinds(),
-                result.getRowCount(),
-                result.getExecutionTimeMs(),
-                result.isTruncated()
-        );
+        return ExecuteResponse.from(result);
     }
 }
