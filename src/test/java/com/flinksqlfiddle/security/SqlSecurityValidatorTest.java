@@ -12,40 +12,40 @@ class SqlSecurityValidatorTest {
 
     @Test
     void blockCreateFunction() {
-        SecurityException ex = assertThrows(SecurityException.class, () ->
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("CREATE FUNCTION myudf AS 'com.evil.Udf'"));
         assertTrue(ex.getMessage().contains("CREATE FUNCTION"));
     }
 
     @Test
     void blockCreateTemporaryFunction() {
-        assertThrows(SecurityException.class, () ->
+        assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("CREATE TEMPORARY FUNCTION myudf AS 'com.evil.Udf'"));
     }
 
     @Test
     void blockCreateTemporarySystemFunction() {
-        assertThrows(SecurityException.class, () ->
+        assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("CREATE TEMPORARY SYSTEM FUNCTION myudf AS 'com.evil.Udf'"));
     }
 
     @Test
     void blockSetStatement() {
-        SecurityException ex = assertThrows(SecurityException.class, () ->
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("SET 'execution.runtime-mode' = 'batch'"));
         assertTrue(ex.getMessage().contains("SET"));
     }
 
     @Test
     void blockAddJar() {
-        SecurityException ex = assertThrows(SecurityException.class, () ->
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("ADD JAR '/tmp/evil.jar'"));
         assertTrue(ex.getMessage().contains("ADD JAR"));
     }
 
     @Test
     void blockCreateCatalog() {
-        SecurityException ex = assertThrows(SecurityException.class, () ->
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("CREATE CATALOG mycat WITH ('type' = 'generic_in_memory')"));
         assertTrue(ex.getMessage().contains("CREATE CATALOG"));
     }
@@ -84,14 +84,14 @@ class SqlSecurityValidatorTest {
 
     @Test
     void blockFilesystemConnector() {
-        SecurityException ex = assertThrows(SecurityException.class, () ->
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("CREATE TABLE t (id INT) WITH ('connector' = 'filesystem', 'path' = '/etc/passwd')"));
         assertTrue(ex.getMessage().contains("filesystem"));
     }
 
     @Test
     void blockJdbcConnector() {
-        SecurityException ex = assertThrows(SecurityException.class, () ->
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("CREATE TABLE t (id INT) WITH ('connector' = 'jdbc')"));
         assertTrue(ex.getMessage().contains("jdbc"));
     }
@@ -132,7 +132,7 @@ class SqlSecurityValidatorTest {
 
     @Test
     void blockMixedValidAndInvalidStatements() {
-        assertThrows(SecurityException.class, () ->
+        assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("SELECT 1; SET 'k' = 'v'"));
     }
 
@@ -167,11 +167,11 @@ class SqlSecurityValidatorTest {
 
     @Test
     void caseInsensitiveBlocking() {
-        assertThrows(SecurityException.class, () ->
+        assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("set 'key' = 'value'"));
-        assertThrows(SecurityException.class, () ->
+        assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("create function f as 'x'"));
-        assertThrows(SecurityException.class, () ->
+        assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("Add Jar '/tmp/evil.jar'"));
     }
 }

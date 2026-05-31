@@ -2,6 +2,7 @@ package com.flinksqlfiddle.execution;
 
 import com.flinksqlfiddle.flink.FlinkEnvironmentFactory;
 import com.flinksqlfiddle.flink.FlinkProperties;
+import com.flinksqlfiddle.security.ForbiddenSqlException;
 import com.flinksqlfiddle.security.SqlSecurityValidator;
 import com.flinksqlfiddle.session.FlinkSession;
 import org.apache.flink.table.api.TableEnvironment;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -25,7 +27,7 @@ class SqlExecutionServiceTest {
         factory = new FlinkEnvironmentFactory(
                 new FlinkProperties(1, "8m", "32m", 5, null)
         );
-        service = new SqlExecutionService(new SqlSecurityValidator());
+        service = new SqlExecutionService(new SqlSecurityValidator(), ExecutionLimits.defaults());
     }
 
     @Test
@@ -47,17 +49,17 @@ class SqlExecutionServiceTest {
 
         QueryResult result = service.execute(env, "SELECT id, val FROM test_source");
 
-        assertEquals(5, result.getRowCount());
-        assertEquals(List.of("id", "val"), result.getColumnNames());
-        assertEquals(2, result.getColumnTypes().size());
-        assertFalse(result.isTruncated());
-        assertTrue(result.getExecutionTimeMs() >= 0);
+        assertEquals(5, result.rowCount());
+        assertEquals(List.of("id", "val"), result.columnNames());
+        assertEquals(2, result.columnTypes().size());
+        assertFalse(result.truncated());
+        assertTrue(result.executionTimeMs() >= 0);
     }
 
     @Test
     void executeRejectsUnsafeSql() {
         TableEnvironment env = factory.createBatchEnvironment();
-        assertThrows(SecurityException.class, () ->
+        assertThrows(ForbiddenSqlException.class, () ->
                 service.execute(env, "CREATE FUNCTION evil AS 'com.evil.Udf'"));
     }
 
@@ -79,10 +81,10 @@ class SqlExecutionServiceTest {
 
         QueryResult result = service.execute(env, "SELECT id, val FROM test_source");
 
-        assertEquals(3, result.getRowCount());
-        assertFalse(result.getRowKinds().isEmpty());
+        assertEquals(3, result.rowCount());
+        assertFalse(result.rowKinds().isEmpty());
         Set<String> validKinds = Set.of("+I", "-U", "+U", "-D");
-        result.getRowKinds().forEach(kind ->
+        result.rowKinds().forEach(kind ->
                 assertTrue(validKinds.contains(kind), "Unexpected RowKind: " + kind));
     }
 
@@ -100,8 +102,8 @@ class SqlExecutionServiceTest {
 
         QueryResult result = service.execute(env, "SELECT name, age FROM test_source");
 
-        assertEquals(List.of("name", "age"), result.getColumnNames());
-        assertEquals(2, result.getColumnTypes().size());
+        assertEquals(List.of("name", "age"), result.columnNames());
+        assertEquals(2, result.columnTypes().size());
     }
 
     @Test
@@ -121,8 +123,8 @@ class SqlExecutionServiceTest {
 
         QueryResult result = service.execute(env, "SELECT id FROM big_source");
 
-        assertEquals(1000, result.getRowCount());
-        assertTrue(result.isTruncated());
+        assertEquals(1000, result.rowCount());
+        assertTrue(result.truncated());
     }
 
     // --- Dual-mode tests ---
@@ -145,7 +147,7 @@ class SqlExecutionServiceTest {
                 """);
 
         QueryResult result = service.execute(env, "SELECT id, val FROM test_source");
-        result.getRowKinds().forEach(kind -> assertEquals("+I", kind));
+        result.rowKinds().forEach(kind -> assertEquals("+I", kind));
     }
 
     @Test
@@ -160,7 +162,7 @@ class SqlExecutionServiceTest {
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.BATCH, "SELECT id FROM src");
-        assertEquals(2, result.getRowCount());
+        assertEquals(2, result.rowCount());
     }
 
     @Test
@@ -177,43 +179,42 @@ class SqlExecutionServiceTest {
         // Query in BATCH mode — should find the table
         QueryResult batchResult = service.execute(session, ExecutionMode.BATCH,
                 "SELECT id FROM synced_src");
-        assertEquals(3, batchResult.getRowCount());
+        assertEquals(3, batchResult.rowCount());
     }
 
     @Test
-    void makeIdempotentPrependsDropForCreateTable() {
+    void dropStatementForCreateTable() {
         String sql = "CREATE TABLE orders (id INT) WITH ('connector' = 'datagen')";
-        String result = SqlExecutionService.makeIdempotent(sql);
-        assertTrue(result.startsWith("DROP TABLE IF EXISTS orders;\n"));
-        assertTrue(result.endsWith(sql));
+        assertEquals(Optional.of("DROP TABLE IF EXISTS orders"),
+                SqlExecutionService.dropStatementFor(sql));
     }
 
     @Test
-    void makeIdempotentHandlesBacktickQuotedNames() {
+    void dropStatementForBacktickQuotedNames() {
         String sql = "CREATE TABLE `my-table` (id INT) WITH ('connector' = 'datagen')";
-        String result = SqlExecutionService.makeIdempotent(sql);
-        assertTrue(result.startsWith("DROP TABLE IF EXISTS `my-table`;\n"));
+        assertEquals(Optional.of("DROP TABLE IF EXISTS `my-table`"),
+                SqlExecutionService.dropStatementFor(sql));
     }
 
     @Test
-    void makeIdempotentHandlesTemporaryTable() {
+    void dropStatementForTemporaryTable() {
         String sql = "CREATE TEMPORARY TABLE temp_orders (id INT) WITH ('connector' = 'datagen')";
-        String result = SqlExecutionService.makeIdempotent(sql);
-        assertTrue(result.startsWith("DROP TABLE IF EXISTS temp_orders;\n"));
+        assertEquals(Optional.of("DROP TABLE IF EXISTS temp_orders"),
+                SqlExecutionService.dropStatementFor(sql));
     }
 
     @Test
-    void makeIdempotentHandlesIfNotExists() {
+    void dropStatementForIfNotExists() {
         String sql = "CREATE TABLE IF NOT EXISTS orders (id INT) WITH ('connector' = 'datagen')";
-        String result = SqlExecutionService.makeIdempotent(sql);
-        assertTrue(result.startsWith("DROP TABLE IF EXISTS orders;\n"));
+        assertEquals(Optional.of("DROP TABLE IF EXISTS orders"),
+                SqlExecutionService.dropStatementFor(sql));
     }
 
     @Test
-    void makeIdempotentPassesThroughNonCreateStatements() {
-        assertEquals("SELECT * FROM t", SqlExecutionService.makeIdempotent("SELECT * FROM t"));
-        assertEquals("DROP TABLE t", SqlExecutionService.makeIdempotent("DROP TABLE t"));
-        assertEquals("CREATE VIEW v AS SELECT 1", SqlExecutionService.makeIdempotent("CREATE VIEW v AS SELECT 1"));
+    void dropStatementForEmptyOnNonCreateStatements() {
+        assertEquals(Optional.empty(), SqlExecutionService.dropStatementFor("SELECT * FROM t"));
+        assertEquals(Optional.empty(), SqlExecutionService.dropStatementFor("DROP TABLE t"));
+        assertEquals(Optional.empty(), SqlExecutionService.dropStatementFor("CREATE VIEW v AS SELECT 1"));
     }
 
     @Test

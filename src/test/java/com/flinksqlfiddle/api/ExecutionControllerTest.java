@@ -5,6 +5,7 @@ import com.flinksqlfiddle.execution.ExecutionMode;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
 import com.flinksqlfiddle.execution.QueryResult;
 import com.flinksqlfiddle.execution.SqlExecutionService;
+import com.flinksqlfiddle.security.ForbiddenSqlException;
 import com.flinksqlfiddle.session.FlinkSession;
 import com.flinksqlfiddle.session.SessionManager;
 import com.flinksqlfiddle.session.SessionNotFoundException;
@@ -119,7 +120,7 @@ class ExecutionControllerTest {
         FlinkSession session = mock(FlinkSession.class);
         when(sessionManager.getSession("test-session")).thenReturn(session);
         when(executionService.execute(any(FlinkSession.class), any(ExecutionMode.class), any(String.class)))
-                .thenThrow(new SecurityException("Blocked SQL"));
+                .thenThrow(new ForbiddenSqlException("Blocked SQL"));
 
         mockMvc.perform(post(EXECUTE_URL)
                         .contentType(MediaType.APPLICATION_JSON)

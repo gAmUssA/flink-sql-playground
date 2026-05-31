@@ -7,6 +7,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public class FlinkSession {
 
@@ -93,33 +95,32 @@ public class FlinkSession {
     }
 
     public TableEnvironment getBatchEnv() {
-        TableEnvironment env = batchEnv;
-        if (env == null) {
-            synchronized (batchLock) {
-                env = batchEnv;
-                if (env == null) {
-                    // If already on planner thread (e.g. called from executeDdlOnBothEnvironments),
-                    // create directly to avoid deadlock on the single-thread executor.
-                    env = isOnPlannerThread()
-                            ? factory.createBatchEnvironment()
-                            : runOnPlannerThread(factory::createBatchEnvironment);
-                    batchEnv = env;
-                }
-            }
-        }
-        return env;
+        return getOrCreate(() -> batchEnv, env -> batchEnv = env, batchLock,
+                factory::createBatchEnvironment);
     }
 
     public TableEnvironment getStreamEnv() {
-        TableEnvironment env = streamEnv;
+        return getOrCreate(() -> streamEnv, env -> streamEnv = env, streamLock,
+                factory::createStreamingEnvironment);
+    }
+
+    /**
+     * Double-checked-locking lazy initializer shared by both environment getters.
+     * If already on the planner thread (e.g. called from within a runOnPlannerThread
+     * block such as DDL syncing), creates directly to avoid deadlocking on the
+     * single-thread executor.
+     */
+    private TableEnvironment getOrCreate(Supplier<TableEnvironment> getter,
+                                         Consumer<TableEnvironment> setter,
+                                         Object lock,
+                                         Supplier<TableEnvironment> creator) {
+        TableEnvironment env = getter.get();
         if (env == null) {
-            synchronized (streamLock) {
-                env = streamEnv;
+            synchronized (lock) {
+                env = getter.get();
                 if (env == null) {
-                    env = isOnPlannerThread()
-                            ? factory.createStreamingEnvironment()
-                            : runOnPlannerThread(factory::createStreamingEnvironment);
-                    streamEnv = env;
+                    env = isOnPlannerThread() ? creator.get() : runOnPlannerThread(creator::get);
+                    setter.accept(env);
                 }
             }
         }
