@@ -15,7 +15,7 @@ Notes:
     pays container image pull + cold page cache + slower vCPU, so treat these as a
     relative baseline for comparing optimizations (AppCDS, CRaC, ...), not absolute SLAs.
 """
-import argparse, json, os, re, signal, statistics, subprocess, time, urllib.request
+import argparse, json, os, re, signal, socket, statistics, subprocess, sys, time, urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JAR_DIR = os.path.join(REPO, "build", "quarkus-app")
@@ -43,8 +43,23 @@ def get(path, timeout=5):
         return r.status, r.read().decode()
 
 
-def free_port():
-    subprocess.run("PID=$(lsof -ti tcp:9090); [ -n \"$PID\" ] && kill -9 $PID; sleep 1", shell=True)
+def port_in_use(port=9090):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def wait_port_free(port=9090, timeout=15):
+    """Non-destructive: wait for *our* just-terminated app to release the port.
+
+    We never kill by port — if a foreign process holds 9090, the run aborts up front with
+    a clear message rather than force-killing something unrelated.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not port_in_use(port):
+            return True
+        time.sleep(0.2)
+    return False
 
 
 def main():
@@ -54,11 +69,15 @@ def main():
     ap.add_argument("--jvm", default="", help="extra JVM flags, space-separated")
     args = ap.parse_args()
     extra = args.jvm.split() if args.jvm else []
+    label = re.sub(r"[^A-Za-z0-9._-]", "_", args.label)  # keep it safe to put in a filename
+
+    if port_in_use():
+        sys.exit("Port 9090 is already in use — stop the other process (we won't kill it) and retry.")
 
     results = []
     for run in range(1, args.runs + 1):
-        free_port()
-        logf = open(f"/tmp/cold_{args.label}_{run}.log", "w")
+        wait_port_free()  # let the previous run's process fully release the port
+        logf = open(f"/tmp/cold_{label}_{run}.log", "w")
         t0 = time.monotonic()
         proc = subprocess.Popen([JAVA] + PROD_FLAGS + extra + ["-jar", "quarkus-run.jar"],
                                 cwd=JAR_DIR, stdout=logf, stderr=subprocess.STDOUT)
@@ -80,7 +99,7 @@ def main():
         rss = subprocess.run(f"ps -o rss= -p {proc.pid}", shell=True, capture_output=True, text=True).stdout.strip()
         rss_mb = int(rss) / 1024 if rss.isdigit() else None
         logf.flush(); logf.close()
-        m = re.search(r"started in ([\d.]+)s", open(f"/tmp/cold_{args.label}_{run}.log").read())
+        m = re.search(r"started in ([\d.]+)s", open(f"/tmp/cold_{label}_{run}.log").read())
         started = float(m.group(1)) if m else None
         proc.send_signal(signal.SIGTERM)
         try:
@@ -91,7 +110,6 @@ def main():
                             warm_query=warm, total_cold_to_first_result=total_cold, rss_mb=rss_mb))
         print(f"run {run}: ready={ready:.2f}s quarkusStarted={started}s coldQuery={cold:.2f}s "
               f"warmQuery={warm:.2f}s totalCold={total_cold:.2f}s rss={rss_mb:.0f}MB")
-        free_port()
 
     def med(k):
         v = [r[k] for r in results if r[k] is not None]

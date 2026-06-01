@@ -262,7 +262,8 @@ async function createSession() {
 // and silent; probes both modes to warm the batch and streaming TableEnvironments.
 async function warmUp() {
   if (!sessionId) return;
-  setStatus('Warming up engine…', 'compiling');
+  // Don't stomp on a status the user's own query may have set if they ran one immediately.
+  if (!R.running) setStatus('Warming up engine…', 'compiling');
   const probe = (mode) => fetch(api(`/api/sessions/${sessionId}/execute`), {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql: 'SELECT 1', mode })
