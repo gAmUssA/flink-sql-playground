@@ -13,6 +13,8 @@ import io.smallrye.common.annotation.Blocking;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.MultiEmitter;
+import jakarta.annotation.PreDestroy;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
@@ -33,14 +35,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Path("/api/sessions/{sessionId}")
 @Produces(MediaType.APPLICATION_JSON)
+@ApplicationScoped
 public class ExecutionResource {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionResource.class);
 
     // Each streaming request occupies a thread for its whole lifetime (up to streamTimeout),
-    // so virtual threads keep this cheap under many concurrent streams.
-    private static final ExecutorService STREAM_EXECUTOR =
-            Executors.newVirtualThreadPerTaskExecutor();
+    // so virtual threads keep this cheap under many concurrent streams. Owned by this
+    // application-scoped bean and shut down on application stop (see shutdown()).
+    private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     private final SessionManager sessionManager;
     private final SqlExecutionService executionService;
@@ -49,6 +52,11 @@ public class ExecutionResource {
     public ExecutionResource(SessionManager sessionManager, SqlExecutionService executionService) {
         this.sessionManager = sessionManager;
         this.executionService = executionService;
+    }
+
+    @PreDestroy
+    void shutdown() {
+        streamExecutor.shutdown();
     }
 
     @POST
@@ -72,7 +80,7 @@ public class ExecutionResource {
      *
      * <p>{@code @Blocking} dispatches the method invocation to a worker thread: {@code prepareStream}
      * blocks on the session's planner thread to compile/submit the job, which must not run on the
-     * Vert.x event loop. Row production then happens on {@link #STREAM_EXECUTOR}.
+     * Vert.x event loop. Row production then happens on {@link #streamExecutor}.
      */
     @POST
     @Path("/execute/stream")
@@ -90,7 +98,7 @@ public class ExecutionResource {
             // Subscriber cancellation (client disconnect) flips the listener's flag so the
             // next callback throws IOException — the same stop path streamRows already handles.
             emitter.onTermination(listener::clientGone);
-            STREAM_EXECUTOR.execute(() -> {
+            streamExecutor.execute(() -> {
                 try {
                     executionService.streamRows(query, listener);
                     emitter.complete();

@@ -32,10 +32,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      # Build the (platform-independent) Quarkus uber-jar ONCE on the native runner. This
-      # keeps the arm64 image build from compiling under QEMU emulation — the cause of the
-      # prior 6-hour timeouts. The git SHA/branch are injected so the deployed-build footer
-      # is accurate (the Docker context has no .git).
+      # Build the (platform-independent) Quarkus fast-jar (build/quarkus-app/) ONCE on the
+      # native runner. This keeps the arm64 image build from compiling under QEMU emulation —
+      # the cause of the prior 6-hour timeouts. The git SHA/branch are injected so the
+      # deployed-build footer is accurate (the Docker context has no .git).
       - name: Build application jar
         run: ./gradlew quarkusBuild --no-daemon -PbuildCommit=${{ github.sha }} -PbuildBranch=${{ github.ref_name }}
 
