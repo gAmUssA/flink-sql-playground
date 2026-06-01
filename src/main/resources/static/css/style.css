@@ -185,7 +185,12 @@ svg { display: block; }
   transition: width .25s, flex-basis .25s;
   overflow: hidden;
 }
-.sidebar.collapsed { width: 0; flex-basis: 0; }
+/* Collapse to a narrow rail (not 0) so the toggle stays reachable to re-expand. */
+.sidebar.collapsed { width: 44px; flex-basis: 44px; }
+.sidebar.collapsed .side-title { display: none; }
+.sidebar.collapsed .side-body { display: none; }
+.sidebar.collapsed .side-head { justify-content: center; padding-left: 0; padding-right: 0; }
+.sidebar.collapsed #schema-browser-toggle { transform: rotate(180deg); }
 .side-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 13px 14px 13px 18px; border-bottom: 1px solid var(--border);

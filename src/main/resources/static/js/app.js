@@ -837,7 +837,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('theme-toggle').addEventListener('click', () => {
     setTweak('theme', tweaks.theme === 'cobalt' ? 'nebula' : 'cobalt');
   });
-  document.getElementById('schema-browser-toggle').addEventListener('click', () => {
-    document.getElementById('schema-browser').classList.toggle('collapsed');
+  document.getElementById('schema-browser-toggle').addEventListener('click', (e) => {
+    const collapsed = document.getElementById('schema-browser').classList.toggle('collapsed');
+    e.currentTarget.title = collapsed ? 'Expand tables' : 'Collapse';
   });
 });
