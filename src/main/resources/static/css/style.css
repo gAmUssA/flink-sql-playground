@@ -330,6 +330,11 @@ main {
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--border);
+    /* Allow the panel to shrink below its content's intrinsic width. Without this,
+       Monaco's explicit width set while maximized would prevent the panel from
+       returning to its 50% split when restored. */
+    min-width: 0;
+    min-height: 0;
 }
 
 .editor-panel:last-child {
@@ -350,6 +355,10 @@ main {
     text-transform: uppercase;
     letter-spacing: 1.5px;
     transition: background 0.2s ease, border-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
 .editor-container {
@@ -527,6 +536,69 @@ body.resizing .resize-handle {
     text-transform: uppercase;
     letter-spacing: 1.5px;
     transition: background 0.2s ease, border-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+/* === Panel maximize (demo focus) === */
+
+.panel-maximize-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 18px;
+    padding: 0;
+    margin: -4px 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex: none;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.panel-maximize-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.panel-maximize-btn svg {
+    display: block;
+}
+
+/* Toggle the expand/restore glyph based on the panel's state */
+.panel-maximize-btn .icon-compress {
+    display: none;
+}
+
+.panel-maximized .panel-maximize-btn .icon-expand {
+    display: none;
+}
+
+.panel-maximized .panel-maximize-btn .icon-compress {
+    display: block;
+}
+
+/* A maximized panel fills the whole viewport for distraction-free demoing */
+.panel-maximized {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    margin: 0;
+    background: var(--bg-base);
+    border: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-maximized .editor-container,
+.panel-maximized #results-container {
+    flex: 1;
+    min-height: 0;
 }
 
 #results-container {
