@@ -1,130 +1,128 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="nebula" data-density="regular" data-glow="on">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Flink SQL Playground</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext x='2' y='26' font-family='monospace' font-size='28' font-weight='bold' fill='%2322d3ee'%3E%3E_%3C/text%3E%3C/svg%3E">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.4.0/dist/driver.css">
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%238b5cf6'/%3E%3Cpath d='M16 5l9 5-9 5-9-5 9-5z' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M7 16l9 5 9-5' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-    <header>
-        <div class="header-brand">
-            <svg class="header-logo" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <div class="header-titles">
+<div class="app">
+    <!-- ===== Topbar ===== -->
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark" data-icon="layers"></div>
+            <div class="brand-text">
                 <h1>Flink SQL Playground</h1>
-                <p class="header-subtitle">Interactive SQL Playground for Apache Flink</p>
+                <p>Interactive streaming SQL for Apache Flink</p>
             </div>
         </div>
-        <div class="header-actions">
-            <button id="tour-btn" class="tour-btn" title="Take a guided tour">
-                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm6.5-.25A.75.75 0 017.25 7h1a.75.75 0 01.75.75v2.75h.25a.75.75 0 010 1.5h-2a.75.75 0 010-1.5h.25v-2h-.25a.75.75 0 01-.75-.75zM8 6a1 1 0 100-2 1 1 0 000 2z"/></svg>
-                Tour
-            </button>
-            <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Toggle light/dark theme">
-                <svg class="icon-sun" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 01.5.5v1a.5.5 0 01-1 0v-1A.5.5 0 018 1zm0 10a3 3 0 100-6 3 3 0 000 6zm5-3a.5.5 0 01-.5.5h-1a.5.5 0 010-1h1A.5.5 0 0113 8zM4 8a.5.5 0 01-.5.5h-1a.5.5 0 010-1h1A.5.5 0 014 8zm8.354-4.354a.5.5 0 010 .708l-.708.707a.5.5 0 01-.707-.707l.707-.708a.5.5 0 01.708 0zM5.06 10.94a.5.5 0 010 .706l-.707.708a.5.5 0 11-.708-.708l.708-.707a.5.5 0 01.707 0zM12.354 11.646a.5.5 0 010 .708l-.707.707a.5.5 0 01-.708-.707l.708-.708a.5.5 0 01.707 0zM5.06 5.06a.5.5 0 010 .708l-.707.707a.5.5 0 11-.708-.707l.708-.708a.5.5 0 01.707 0z"/></svg>
-                <svg class="icon-moon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 .278a.768.768 0 01.08.858 7.208 7.208 0 00-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 01.81.316.733.733 0 01-.031.893A8.349 8.349 0 018.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 016 .278z"/></svg>
-            </button>
+        <div class="brand-spacer"></div>
+        <div class="topbar-actions">
+            <span class="conn-pill"><i class="conn-dot"></i> <span id="status-build">build: --</span></span>
+            <button id="tour-btn" class="btn ghost sm"><span data-icon="info" data-size="14"></span> Tour</button>
+            <button id="tweaks-btn" class="icon-btn outline" title="Tweaks"><span data-icon="sliders" data-size="16"></span></button>
+            <button id="theme-toggle" class="icon-btn outline" title="Toggle light / dark"><span data-icon="moon" data-size="16"></span></button>
         </div>
     </header>
 
-    <main>
-        <div class="main-content">
-            <aside id="schema-browser" class="schema-browser">
-                <div class="schema-browser-header">
-                    <span class="schema-browser-title">Tables</span>
-                    <button id="schema-browser-toggle" class="schema-browser-toggle" title="Toggle schema browser">&lsaquo;</button>
+    <!-- ===== Workspace ===== -->
+    <div class="workspace">
+        <aside id="schema-browser" class="sidebar">
+            <div class="side-head">
+                <span class="side-title"><span data-icon="db" data-size="13"></span> Tables</span>
+                <button id="schema-browser-toggle" class="icon-btn ghost" title="Collapse"><span data-icon="chevL" data-size="14"></span></button>
+            </div>
+            <div class="side-body">
+                <div id="schema-browser-empty" class="side-empty">
+                    <div class="side-empty-ic"><span data-icon="db" data-size="22"></span></div>
+                    <p>No tables yet.</p>
+                    <span>Run <b>Build Schema</b> to register your DDL.</span>
                 </div>
-                <div id="schema-browser-content" class="schema-browser-content">
-                    <div id="schema-browser-empty" class="schema-browser-empty">No tables. Use Build Schema to create tables.</div>
-                    <div id="schema-browser-list"></div>
-                </div>
-            </aside>
+                <div id="schema-browser-list" class="tbl-list" style="display:none"></div>
+            </div>
+        </aside>
 
-            <div class="editors-wrapper">
-                <section class="editors">
-                    <div class="editor-panel" id="schema-panel">
-                        <h2>Schema (DDL)
-                            <button class="panel-maximize-btn" title="Maximize panel (Esc to exit)" aria-label="Maximize panel">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                            </button>
-                        </h2>
-                        <div id="schema-editor" class="editor-container"></div>
+        <main class="editors">
+            <div class="editor-row">
+                <section class="pane editor-panel" id="schema-panel">
+                    <div class="panel-head">
+                        <span class="panel-title">Schema</span>
+                        <span class="panel-badge">DDL</span>
+                        <button class="icon-btn ghost panel-maximize-btn" title="Maximize panel"></button>
                     </div>
-                    <div class="editor-panel" id="query-panel">
-                        <h2>Query
-                            <button class="panel-maximize-btn" title="Maximize panel (Esc to exit)" aria-label="Maximize panel">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                            </button>
-                        </h2>
-                        <div id="query-editor" class="editor-container"></div>
+                    <div class="pane-body"><div id="schema-editor" class="editor-mount"></div></div>
+                </section>
+                <div class="pane-split"></div>
+                <section class="pane editor-panel" id="query-panel">
+                    <div class="panel-head">
+                        <span class="panel-title">Query</span>
+                        <span class="panel-badge">DML</span>
+                        <button class="icon-btn ghost panel-maximize-btn" title="Maximize panel"></button>
                     </div>
+                    <div class="pane-body"><div id="query-editor" class="editor-mount"></div></div>
                 </section>
             </div>
-        </div>
 
-        <div class="controls">
-            <div class="control-group">
-                <button id="build-schema-btn" class="btn-secondary">
-                    <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm.5 4.5v3h3a.5.5 0 010 1h-3v3a.5.5 0 01-1 0v-3h-3a.5.5 0 010-1h3v-3a.5.5 0 011 0z"/></svg>
-                    Build Schema
-                </button>
-                <button id="run-query-btn" class="btn-primary">
-                    <svg class="btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>
-                    Run Query
-                </button>
-                <button id="stop-query-btn" class="btn-secondary" style="display:none;" title="Stop streaming">
-                    <svg class="btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
-                    Stop
-                </button>
+            <!-- ===== Toolbar ===== -->
+            <div class="toolbar">
+                <button id="build-schema-btn" class="btn outline"><span data-icon="plus" data-size="15"></span> Build Schema</button>
+                <button id="run-query-btn" class="btn run"><span data-icon="play" data-size="14"></span> <span class="run-label">Run Query</span></button>
+                <div class="tb-sep"></div>
+                <div class="segmented" id="mode-segmented" role="radiogroup" aria-label="Execution mode">
+                    <button type="button" data-mode="STREAMING" class="is-on">Streaming</button>
+                    <button type="button" data-mode="BATCH">Batch</button>
+                </div>
+                <div class="tb-select">
+                    <select id="example-select" aria-label="Query preset"></select>
+                    <span data-icon="chevD" data-size="14"></span>
+                </div>
+                <button id="share-btn" class="btn ghost"><span data-icon="share" data-size="14"></span> Share</button>
+                <div class="tb-spacer"></div>
+                <span class="tb-status st-ready" id="tb-status">
+                    <i class="tb-status-dot"></i>
+                    <span id="status-text">Session ready</span>
+                </span>
             </div>
-            <div class="toolbar-divider"></div>
-            <div class="control-group">
-                <select id="mode-select">
-                    <option value="STREAMING" selected>Streaming</option>
-                    <option value="BATCH">Batch</option>
-                </select>
-                <select id="example-select"></select>
-            </div>
-            <div class="toolbar-divider"></div>
-            <div class="control-group">
-                <button id="share-btn" class="btn-secondary">
-                    <svg class="btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 1a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM11 2.5a2.5 2.5 0 11.603 1.628l-6.718 3.12a2.5 2.5 0 010 1.504l6.718 3.12a2.5 2.5 0 11-.488.876l-6.718-3.12a2.5 2.5 0 110-3.256l6.718-3.12A2.5 2.5 0 0111 2.5zm-8.5 4a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm11 5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z"/></svg>
-                    Share
-                </button>
-            </div>
-            <span id="status-text"></span>
-        </div>
 
-        <div class="resize-handle"></div>
+            <!-- ===== Results ===== -->
+            <section class="results" id="results-panel">
+                <div class="results-head">
+                    <div class="results-tabs" id="results-tabs">
+                        <button class="rtab is-active" data-tab="table"><span data-icon="grid" data-size="13"></span> Table</button>
+                        <button class="rtab" data-tab="changelog"><span data-icon="pulse" data-size="13"></span> Changelog <span class="rtab-count" id="tab-count-changelog" style="display:none">0</span></button>
+                        <button class="rtab" data-tab="throughput"><span data-icon="pulse" data-size="13"></span> Throughput</button>
+                        <button class="rtab" data-tab="graph"><span data-icon="flow" data-size="13"></span> Job Graph</button>
+                    </div>
+                    <div class="results-meta">
+                        <span class="res-run" id="res-run" style="display:none"><i class="rv-live-dot"></i> streaming</span>
+                        <button class="icon-btn ghost panel-maximize-btn" title="Maximize panel"></button>
+                    </div>
+                </div>
+                <div class="results-body" id="results-container"></div>
+            </section>
+        </main>
+    </div>
 
-        <section class="results" id="results-panel">
-            <h2>Results
-                <button class="panel-maximize-btn" title="Maximize panel (Esc to exit)" aria-label="Maximize panel">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                </button>
-            </h2>
-            <div id="results-container"></div>
-        </section>
+    <footer class="statusbar">
+        <span class="sb-item sb-session" id="status-session"><span data-icon="dot" data-size="9"></span> no session</span>
+        <span class="sb-item" id="status-mode">Streaming</span>
+        <span class="sb-item" id="status-rows">0 rows</span>
+        <span class="sb-item" id="status-changelog">0 changelog events</span>
+        <div class="sb-spacer"></div>
+        <span class="sb-item">apache flink 2.2</span>
+        <span class="sb-item sb-state st-ready" id="sb-state"><i></i> ready</span>
+    </footer>
+</div>
 
-        <footer class="status-bar">
-            <span class="status-bar-item" id="status-session">Session: --</span>
-            <span class="status-bar-item" id="status-mode">Streaming</span>
-            <span class="status-bar-item status-bar-right" id="status-rows"></span>
-            <span class="status-bar-item" id="status-build" title="Deployed build">build: --</span>
-        </footer>
-    </main>
+<div class="maxed-backdrop" id="maxed-backdrop" hidden></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/driver.js@1.4.0/dist/driver.js.iife.js"></script>
-    <script src="/js/examples.js"></script>
-    <script src="/js/tour.js"></script>
-    <script src="/js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+<script src="/js/examples.js"></script>
+<script src="/js/app.js"></script>
 </body>
 </html>
