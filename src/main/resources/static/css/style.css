@@ -568,19 +568,8 @@ body.resizing .resize-handle {
 
 .panel-maximize-btn svg {
     display: block;
-}
-
-/* Toggle the expand/restore glyph based on the panel's state */
-.panel-maximize-btn .icon-compress {
-    display: none;
-}
-
-.panel-maximized .panel-maximize-btn .icon-expand {
-    display: none;
-}
-
-.panel-maximized .panel-maximize-btn .icon-compress {
-    display: block;
+    width: 13px;
+    height: 13px;
 }
 
 /* A maximized panel fills the whole viewport for distraction-free demoing */

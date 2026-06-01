@@ -745,6 +745,26 @@ async function loadBuildInfo() {
 
 // --- Panel Maximize (demo focus) ---
 
+// Single-icon SVGs swapped in JS rather than toggled via CSS display. Stacking two
+// SVGs and hiding one with `display:none` rendered both in Safari/WebKit, so we keep
+// exactly one icon element in the DOM and replace it on state change.
+const MAXIMIZE_ICON_EXPAND =
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+const MAXIMIZE_ICON_COMPRESS =
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+
+// Sets each maximize button's icon/label to match whether its panel is maximized.
+function syncMaximizeIcons() {
+    document.querySelectorAll('.panel-maximize-btn').forEach(btn => {
+        const panel = btn.closest('.editor-panel, .results');
+        const maximized = !!(panel && panel.classList.contains('panel-maximized'));
+        btn.innerHTML = maximized ? MAXIMIZE_ICON_COMPRESS : MAXIMIZE_ICON_EXPAND;
+        const label = maximized ? 'Restore panel (Esc)' : 'Maximize panel';
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+    });
+}
+
 // Toggles a panel between its normal size and a full-viewport overlay. Only one
 // panel is maximized at a time. Monaco editors need an explicit relayout after
 // their container resizes.
@@ -754,6 +774,7 @@ function togglePanelMaximize(panel) {
     if (willMaximize) {
         panel.classList.add('panel-maximized');
     }
+    syncMaximizeIcons();
     requestAnimationFrame(() => {
         if (schemaEditor) schemaEditor.layout();
         if (queryEditor) queryEditor.layout();
@@ -774,6 +795,7 @@ function initPanelMaximize() {
             if (maximized) togglePanelMaximize(maximized);
         }
     });
+    syncMaximizeIcons();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
