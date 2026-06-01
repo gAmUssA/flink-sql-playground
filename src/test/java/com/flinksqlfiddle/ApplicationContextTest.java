@@ -3,9 +3,9 @@ package com.flinksqlfiddle;
 import com.flinksqlfiddle.execution.ExecutionLimits;
 import com.flinksqlfiddle.execution.SqlExecutionService;
 import com.flinksqlfiddle.flink.FlinkProperties;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.Duration;
 
@@ -13,21 +13,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Verifies the full Spring context boots and that the {@code @ConfigurationProperties}
- * records bind from application.yaml — in particular {@link ExecutionLimits}, which is
- * wired into {@link SqlExecutionService} by the framework rather than by tests.
+ * Verifies the Quarkus application boots and that the config-mapped records bind from
+ * application.properties — in particular {@link ExecutionLimits}, which is wired into
+ * {@link SqlExecutionService} by the container rather than by tests.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@QuarkusTest
 class ApplicationContextTest {
 
-    @Autowired
-    private SqlExecutionService executionService;
+    @Inject
+    SqlExecutionService executionService;
 
-    @Autowired
-    private ExecutionLimits executionLimits;
+    @Inject
+    ExecutionLimits executionLimits;
 
-    @Autowired
-    private FlinkProperties flinkProperties;
+    @Inject
+    FlinkProperties flinkProperties;
 
     @Test
     void contextLoadsAndWiresBeans() {

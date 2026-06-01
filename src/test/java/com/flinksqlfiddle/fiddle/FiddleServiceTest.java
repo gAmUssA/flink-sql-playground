@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class FiddleServiceTest {
@@ -22,8 +23,7 @@ class FiddleServiceTest {
 
     @Test
     void saveCreatesNewFiddle() {
-        when(repository.findById(anyString())).thenReturn(Optional.empty());
-        when(repository.save(any(Fiddle.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findByIdOptional(anyString())).thenReturn(Optional.empty());
 
         Fiddle result = service.save("CREATE TABLE t(id INT)", "SELECT * FROM t", "BATCH");
 
@@ -31,24 +31,23 @@ class FiddleServiceTest {
         assertEquals("CREATE TABLE t(id INT)", result.getSchema());
         assertEquals("SELECT * FROM t", result.getQuery());
         assertEquals("BATCH", result.getMode());
-        verify(repository).save(any(Fiddle.class));
+        verify(repository).persist(any(Fiddle.class));
     }
 
     @Test
     void saveReturnExistingForDuplicate() {
         Fiddle existing = new Fiddle("existing1", "CREATE TABLE t(id INT)", "SELECT * FROM t", "BATCH");
-        when(repository.findById(anyString())).thenReturn(Optional.of(existing));
+        when(repository.findByIdOptional(anyString())).thenReturn(Optional.of(existing));
 
         Fiddle result = service.save("CREATE TABLE t(id INT)", "SELECT * FROM t", "BATCH");
 
         assertSame(existing, result);
-        verify(repository, never()).save(any(Fiddle.class));
+        verify(repository, never()).persist(any(Fiddle.class));
     }
 
     @Test
     void saveGeneratesDeterministicShortCode() {
-        when(repository.findById(anyString())).thenReturn(Optional.empty());
-        when(repository.save(any(Fiddle.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findByIdOptional(anyString())).thenReturn(Optional.empty());
 
         Fiddle first = service.save("schema1", "query1", "BATCH");
         Fiddle second = service.save("schema1", "query1", "BATCH");
@@ -58,8 +57,7 @@ class FiddleServiceTest {
 
     @Test
     void saveGeneratesDifferentCodesForDifferentInput() {
-        when(repository.findById(anyString())).thenReturn(Optional.empty());
-        when(repository.save(any(Fiddle.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findByIdOptional(anyString())).thenReturn(Optional.empty());
 
         Fiddle first = service.save("schema1", "query1", "BATCH");
         Fiddle second = service.save("schema2", "query2", "BATCH");
@@ -69,8 +67,7 @@ class FiddleServiceTest {
 
     @Test
     void shortCodeIsEightHexCharacters() {
-        when(repository.findById(anyString())).thenReturn(Optional.empty());
-        when(repository.save(any(Fiddle.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findByIdOptional(anyString())).thenReturn(Optional.empty());
 
         Fiddle result = service.save("any schema", "any query", "BATCH");
 
@@ -81,7 +78,7 @@ class FiddleServiceTest {
     @Test
     void loadReturnsEntityWhenExists() {
         Fiddle fiddle = new Fiddle("abc12345", "schema", "query", "BATCH");
-        when(repository.findById("abc12345")).thenReturn(Optional.of(fiddle));
+        when(repository.findByIdOptional("abc12345")).thenReturn(Optional.of(fiddle));
 
         Optional<Fiddle> result = service.load("abc12345");
 
@@ -91,7 +88,7 @@ class FiddleServiceTest {
 
     @Test
     void loadReturnsEmptyWhenNotExists() {
-        when(repository.findById("nonexistent")).thenReturn(Optional.empty());
+        when(repository.findByIdOptional("nonexistent")).thenReturn(Optional.empty());
 
         Optional<Fiddle> result = service.load("nonexistent");
 
@@ -100,8 +97,7 @@ class FiddleServiceTest {
 
     @Test
     void saveDifferentModeProducesDifferentCode() {
-        when(repository.findById(anyString())).thenReturn(Optional.empty());
-        when(repository.save(any(Fiddle.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findByIdOptional(anyString())).thenReturn(Optional.empty());
 
         Fiddle batch = service.save("same schema", "same query", "BATCH");
         Fiddle streaming = service.save("same schema", "same query", "STREAMING");

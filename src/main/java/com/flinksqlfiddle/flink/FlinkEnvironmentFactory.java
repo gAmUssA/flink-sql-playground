@@ -3,11 +3,11 @@ package com.flinksqlfiddle.flink;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
+import jakarta.enterprise.context.ApplicationScoped;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
-@Component
+@ApplicationScoped
 public class FlinkEnvironmentFactory {
 
     private static final Logger log = LoggerFactory.getLogger(FlinkEnvironmentFactory.class);

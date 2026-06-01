@@ -1,16 +1,14 @@
 package com.flinksqlfiddle.execution;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
-
 import java.time.Duration;
 
 /**
- * Resource limits applied to query execution, bound from the {@code execution.*}
- * configuration prefix. These are operational guardrails (how many rows, how long),
- * distinct from the security allowlist in
- * {@link com.flinksqlfiddle.security.SecurityConstants}.
+ * Resource limits applied to query execution (how many rows, how long). These are
+ * operational guardrails, distinct from the security allowlist in
+ * {@link com.flinksqlfiddle.security.SecurityConstants}. Bound from the
+ * {@code execution.*} prefix via {@link ExecutionConfig} + {@code AppConfig};
+ * directly instantiable in tests.
  */
-@ConfigurationProperties(prefix = "execution")
 public record ExecutionLimits(
         int maxRows,
         Duration executionTimeout,
