@@ -13,10 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Java 21
+      - name: Set up Java 25
         uses: actions/setup-java@v5
         with:
-          java-version: '21'
+          # Quarkus augmentation runs in the Gradle JVM and loads the compiled
+          # (Java 25) classes, so the build must run on JDK 25.
+          java-version: '25'
           distribution: 'temurin'
 
       - name: Setup Gradle
