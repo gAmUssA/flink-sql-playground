@@ -9,6 +9,7 @@ import com.flinksqlfiddle.execution.SqlExecutionService;
 import com.flinksqlfiddle.execution.SqlExecutionService.StreamingQuery;
 import com.flinksqlfiddle.session.FlinkSession;
 import com.flinksqlfiddle.session.SessionManager;
+import io.smallrye.common.annotation.Blocking;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.MultiEmitter;
@@ -68,12 +69,17 @@ public class ExecutionResource {
      * streaming) so they map to proper HTTP status codes via {@code GlobalExceptionHandler};
      * once streaming has begun, errors are delivered as an {@code error} frame. Quarkus REST
      * serializes each emitted {@link StreamEvent} to one JSON line for {@code application/x-ndjson}.
+     *
+     * <p>{@code @Blocking} dispatches the method invocation to a worker thread: {@code prepareStream}
+     * blocks on the session's planner thread to compile/submit the job, which must not run on the
+     * Vert.x event loop. Row production then happens on {@link #STREAM_EXECUTOR}.
      */
     @POST
     @Path("/execute/stream")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/x-ndjson")
     @RestStreamElementType(MediaType.APPLICATION_JSON)
+    @Blocking
     public Multi<StreamEvent> executeStream(@PathParam("sessionId") String sessionId,
                                             @Valid ExecuteRequest request) {
         FlinkSession session = sessionManager.getSession(sessionId);
