@@ -743,6 +743,39 @@ async function loadBuildInfo() {
     }
 }
 
+// --- Panel Maximize (demo focus) ---
+
+// Toggles a panel between its normal size and a full-viewport overlay. Only one
+// panel is maximized at a time. Monaco editors need an explicit relayout after
+// their container resizes.
+function togglePanelMaximize(panel) {
+    const willMaximize = !panel.classList.contains('panel-maximized');
+    document.querySelectorAll('.panel-maximized').forEach(p => p.classList.remove('panel-maximized'));
+    if (willMaximize) {
+        panel.classList.add('panel-maximized');
+    }
+    requestAnimationFrame(() => {
+        if (schemaEditor) schemaEditor.layout();
+        if (queryEditor) queryEditor.layout();
+    });
+}
+
+function initPanelMaximize() {
+    document.querySelectorAll('.panel-maximize-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const panel = btn.closest('.editor-panel, .results');
+            if (panel) togglePanelMaximize(panel);
+        });
+    });
+    // Esc exits the maximized panel.
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const maximized = document.querySelector('.panel-maximized');
+            if (maximized) togglePanelMaximize(maximized);
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     populateExamples();
@@ -750,6 +783,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadBuildInfo();
     initResizeHandle();
     initSchemaBrowserToggle();
+    initPanelMaximize();
     document.getElementById('build-schema-btn').addEventListener('click', buildSchema);
     document.getElementById('run-query-btn').addEventListener('click', runQuery);
     document.getElementById('share-btn').addEventListener('click', shareFiddle);
