@@ -74,8 +74,8 @@ function defineMonacoThemes() {
         'editorLineNumber.foreground': '#' + t.com,
         'editorLineNumber.activeForeground': '#' + t.fg,
         'editor.lineHighlightBackground': t.base === 'vs' ? '#00000008' : '#ffffff0a',
-        'editorCursor.foreground': '#8b5cf6',
-        'editor.selectionBackground': '#8b5cf640',
+        'editorCursor.foreground': '#3b82f6',
+        'editor.selectionBackground': '#3b82f640',
         'editorGutter.background': '#' + t.bg
       }
     });
@@ -83,14 +83,14 @@ function defineMonacoThemes() {
 }
 
 /* ============================== Tweaks / theme state ============================== */
-const TWEAKS_KEY = 'fsf-tweaks';
+const TWEAKS_KEY = 'fsf-tweaks-v2';
 const ACCENTS = ['#8b5cf6', '#a78bfa', '#3b82f6', '#22d3ee', '#10b981', '#ec4899'];
 const FONTS = [
   { value: "'IBM Plex Mono'", label: 'IBM Plex Mono' },
   { value: "'JetBrains Mono'", label: 'JetBrains Mono' },
   { value: "'Space Mono'", label: 'Space Mono' }
 ];
-const TWEAK_DEFAULTS = { theme: 'nebula', accent: '#8b5cf6', glow: true, density: 'regular', mono: "'IBM Plex Mono'" };
+const TWEAK_DEFAULTS = { theme: 'nebula', accent: '#3b82f6', glow: true, density: 'regular', mono: "'IBM Plex Mono'" };
 
 let tweaks = { ...TWEAK_DEFAULTS };
 

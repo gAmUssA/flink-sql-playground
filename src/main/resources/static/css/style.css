@@ -5,7 +5,7 @@
   --mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace;
   --ui: 'IBM Plex Sans', system-ui, sans-serif;
   --display: 'IBM Plex Sans', system-ui, sans-serif;
-  --accent: #8b5cf6;
+  --accent: #3b82f6;
 
   --r-sm: 6px; --r-md: 9px; --r-lg: 14px;
   --row-h: 34px;
@@ -17,8 +17,8 @@
 [data-theme="nebula"] {
   --bg-0: #08080f;
   --bg-1: #0c0c16;
-  --bg-grad: radial-gradient(1200px 700px at 80% -10%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 60%),
-             radial-gradient(900px 600px at -10% 110%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 55%);
+  --bg-grad: radial-gradient(1100px 600px at 92% -25%, color-mix(in oklab, var(--accent) 7%, transparent), transparent 58%),
+             radial-gradient(800px 520px at -14% 118%, color-mix(in oklab, var(--accent) 4%, transparent), transparent 60%);
   --surface: #111120;
   --surface-2: #16162a;
   --surface-3: #1d1d34;
@@ -63,7 +63,7 @@
 [data-theme="cobalt"] {
   --bg-0: #eef0f5;
   --bg-1: #f5f6fa;
-  --bg-grad: radial-gradient(1100px 640px at 82% -12%, color-mix(in oklab, var(--accent) 14%, transparent), transparent 60%);
+  --bg-grad: radial-gradient(1000px 560px at 90% -22%, color-mix(in oklab, var(--accent) 6%, transparent), transparent 62%);
   --surface: #ffffff;
   --surface-2: #f5f6fa;
   --surface-3: #eceef4;
