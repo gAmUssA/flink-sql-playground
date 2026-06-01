@@ -2,18 +2,18 @@
 
 :root {
     /* Surfaces */
-    --bg-base: #f8fafc;
-    --bg-raised: #ffffff;
-    --bg-elevated: #f1f5f9;
+    --bg-base: #ffffff;
+    --bg-raised: #f6f8fa;
+    --bg-elevated: #eaeef2;
 
     /* Text */
-    --text-primary: #1a202c;
+    --text-primary: #1f2328;
     --text-secondary: #4b5563;
-    --text-muted: #64748b;
+    --text-muted: #656d76;
 
     /* Borders */
-    --border: #e5e7eb;
-    --border-subtle: #f3f4f6;
+    --border: #d0d7de;
+    --border-subtle: #eaeef2;
 
     /* Accent colors — professional cyan/teal */
     --accent-blue: #0891b2;
@@ -29,10 +29,10 @@
     --premium-primary: #4F46E5;
     --premium-border: rgba(79, 70, 229, 0.2);
 
-    /* macOS-style titlebar gradient */
-    --titlebar-top: #f0f0f5;
-    --titlebar-bottom: #e0e0e8;
-    --titlebar-border: #d0d0d8;
+    /* Flat panel header (devtool-style, no gradient) */
+    --titlebar-top: #f6f8fa;
+    --titlebar-bottom: #f6f8fa;
+    --titlebar-border: #d0d7de;
 
     /* Semantic / changelog */
     --color-insert: #166534;
@@ -62,7 +62,7 @@
     --font-size-ui: 14px;
 
     /* Spacing & shape */
-    --radius: 8px;
+    --radius: 6px;
     --transition: 120ms ease-out;
 
     /* Shadows — softer for light */
@@ -85,19 +85,19 @@
 /* === Dark Mode === */
 
 [data-theme="dark"] {
-    /* Surfaces — premium dark palette */
-    --bg-base: #0a0a0a;
-    --bg-raised: #141414;
-    --bg-elevated: #1e1e2e;
+    /* Surfaces — cool graphite (GitHub Primer-style) for a devtool feel */
+    --bg-base: #0d1117;
+    --bg-raised: #161b22;
+    --bg-elevated: #21262d;
 
     /* Text */
-    --text-primary: #f1f5f9;
-    --text-secondary: #cbd5e1;
-    --text-muted: #94a3b8;
+    --text-primary: #e6edf3;
+    --text-secondary: #adbac7;
+    --text-muted: #768390;
 
     /* Borders */
-    --border: #3d3d4d;
-    --border-subtle: #252535;
+    --border: #30363d;
+    --border-subtle: #21262d;
 
     /* Accent colors — cyan/teal */
     --accent-blue: #22d3ee;
@@ -107,10 +107,10 @@
     /* Premium indigo tints */
     --premium-border: rgba(79, 70, 229, 0.3);
 
-    /* macOS-style titlebar gradient */
-    --titlebar-top: #3a3a4a;
-    --titlebar-bottom: #2a2a3a;
-    --titlebar-border: #4a4a5a;
+    /* Flat panel header (devtool-style, no gradient) */
+    --titlebar-top: #1c2128;
+    --titlebar-bottom: #1c2128;
+    --titlebar-border: #30363d;
 
     /* Semantic / changelog */
     --color-insert: #6ee7b7;
@@ -118,11 +118,12 @@
     --color-update-before: #93c5fd;
     --color-delete: #fca5a5;
 
-    /* Changelog row backgrounds */
-    --bg-insert: #064e3b;
-    --bg-update-after: #78350f;
-    --bg-update-before: #1e3a8a;
-    --bg-delete: #7f1d1d;
+    /* Changelog row backgrounds — subtle diff-style tints (accent comes from the
+       left border + text color, not a saturated fill) */
+    --bg-insert: #12231c;
+    --bg-update-after: #28220f;
+    --bg-update-before: #14233f;
+    --bg-delete: #2a1719;
 
     /* Changelog left-border accents */
     --border-insert: #10b981;
@@ -176,7 +177,6 @@ header {
     justify-content: space-between;
     background: var(--bg-raised);
     border-bottom: 1px solid var(--border);
-    box-shadow: var(--shadow-sm);
     z-index: 10;
     transition: background-color 0.2s ease, border-color 0.2s ease;
 }
@@ -353,7 +353,7 @@ main {
     border-bottom: 1px solid var(--titlebar-border);
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 1.5px;
+    letter-spacing: 0.8px;
     transition: background 0.2s ease, border-color 0.2s ease;
     display: flex;
     align-items: center;
@@ -534,7 +534,7 @@ body.resizing .resize-handle {
     border-bottom: 1px solid var(--titlebar-border);
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 1.5px;
+    letter-spacing: 0.8px;
     transition: background 0.2s ease, border-color 0.2s ease;
     display: flex;
     align-items: center;
@@ -614,8 +614,8 @@ body.resizing .resize-handle {
 }
 
 .results-table th {
-    background: var(--accent-blue);
-    color: #ffffff;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
     font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 600;
@@ -623,7 +623,7 @@ body.resizing .resize-handle {
     text-align: left;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 2px solid var(--accent-blue-active);
+    border-bottom: 2px solid var(--accent-blue);
     position: sticky;
     top: 0;
     z-index: 1;
@@ -771,7 +771,7 @@ body.resizing .resize-handle {
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 1.5px;
+    letter-spacing: 0.8px;
     white-space: nowrap;
 }
 
@@ -912,16 +912,28 @@ body.resizing .resize-handle {
     gap: 16px;
     padding: 0 12px;
     height: 24px;
-    background: var(--accent-blue);
-    border-top: 1px solid var(--accent-blue-active);
-    font-family: var(--font-sans);
+    background: var(--bg-raised);
+    border-top: 1px solid var(--border);
+    font-family: var(--font-mono);
     font-size: 11px;
-    color: #ffffff;
+    color: var(--text-muted);
     flex-shrink: 0;
 }
 
 .status-bar-item {
     white-space: nowrap;
+}
+
+/* Session indicator gets a small live accent dot */
+#status-session::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    vertical-align: middle;
 }
 
 .status-bar-right {
