@@ -22,7 +22,8 @@ const ICONS = {
   expand: '<path d="M9 21H5a2 2 0 0 1-2-2v-4"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
   minimize: '<path d="M9 3v4a2 2 0 0 1-2 2H3"/><path d="M21 9h-4a2 2 0 0 1-2-2V3"/><path d="M3 15h4a2 2 0 0 1 2 2v4"/><path d="M15 21v-4a2 2 0 0 1 2-2h4"/>',
   dot: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>',
-  x: '<path d="M18 6L6 18M6 6l12 12"/>'
+  x: '<path d="M18 6L6 18M6 6l12 12"/>',
+  filter: '<path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/>'
 };
 
 function iconSvg(name, size = 16) {
@@ -94,11 +95,26 @@ const TWEAK_DEFAULTS = { theme: 'nebula', accent: '#3b82f6', glow: true, density
 
 let tweaks = { ...TWEAK_DEFAULTS };
 
+// Default theme follows the OS until the user explicitly picks one:
+// dark → Nebula, light → Cobalt.
+function systemTheme() {
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'nebula' : 'cobalt';
+}
+
 function loadTweaks() {
   try {
     const saved = JSON.parse(localStorage.getItem(TWEAKS_KEY) || '{}');
     tweaks = { ...TWEAK_DEFAULTS, ...saved };
-  } catch (e) { tweaks = { ...TWEAK_DEFAULTS }; }
+    // No explicit theme choice yet → derive from system preference.
+    if (!saved.themeExplicit) tweaks.theme = systemTheme();
+  } catch (e) { tweaks = { ...TWEAK_DEFAULTS, theme: systemTheme() }; }
+}
+
+// Re-derive theme on OS change, but only while the user hasn't pinned one.
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (!tweaks.themeExplicit) { tweaks.theme = systemTheme(); applyTweaks(); buildTweaksPanel(); }
+  });
 }
 
 function saveTweaks() {
@@ -127,6 +143,8 @@ function applyMonacoTheme() {
 
 function setTweak(key, val) {
   tweaks[key] = val;
+  // Any explicit theme pick stops the app from following the OS preference.
+  if (key === 'theme') tweaks.themeExplicit = true;
   saveTweaks();
   applyTweaks();
   buildTweaksPanel();
@@ -150,6 +168,7 @@ const R = {
   truncated: false,
   executionTimeMs: 0,
   jobNodes: ['Source', 'Operator', 'Sink: collect'],
+  filters: {},               // colIndex -> { op, v, v2 }
   err: null
 };
 const MAX_LOG = 400;
@@ -367,6 +386,8 @@ function resetResults() {
   R.columns = []; R.columnTypes = []; R.aligns = [];
   R.materialized = new Map(); R.log = []; R.samples = [];
   R.truncated = false; R.executionTimeMs = 0; R.err = null;
+  R.filters = {};
+  closeFilterPopover();
   flashKeys = new Set(); rowsSinceSample = 0;
   updateStatusBar();
   renderActiveView();
@@ -442,6 +463,7 @@ function scheduleRender() {
 
 function setActiveTab(tab) {
   activeTab = tab;
+  if (tab !== 'table') closeFilterPopover();
   document.querySelectorAll('#results-tabs .rtab').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
   renderActiveView();
 }
@@ -479,18 +501,155 @@ function renderActiveView() {
 }
 
 function renderTable() {
-  if (!R.columns.length || R.materialized.size === 0) {
+  if (!R.columns.length) {
     return emptyState('grid', 'No rows yet', 'Run the query to materialize results.');
   }
-  const head = `<thead><tr><th class="rv-rownum">#</th>${R.columns.map((c, i) =>
-    `<th class="al-${R.aligns[i] || 'left'}"><span class="rv-col">${escapeHtml(c)}</span><span class="rv-coltype">${escapeHtml(R.columnTypes[i] || '')}</span></th>`).join('')}</tr></thead>`;
-  const rows = [...R.materialized.entries()].map(([key, ent], idx) => {
-    const flash = flashKeys.has(key) ? ' class="is-flash"' : '';
-    const cells = ent.values.map((v, j) =>
-      `<td class="al-${R.aligns[j] || 'left'}${j === 0 ? ' rv-key' : ''}">${fmtVal(v)}</td>`).join('');
-    return `<tr${flash}><td class="rv-rownum">${idx + 1}</td>${cells}</tr>`;
-  }).join('');
-  return `<table class="rv-table">${head}<tbody>${rows}</tbody></table>`;
+  const allRows = [...R.materialized.entries()]; // [key, {values, kind}]
+  const active = Object.entries(R.filters).filter(([, f]) => f && f.v !== '' && f.v != null);
+  const filtered = allRows.filter(([, ent]) => active.every(([ci, f]) => matchFilter(ent.values[+ci], f)));
+
+  const bar = renderFilterBar(active, filtered.length, allRows.length);
+
+  let inner;
+  if (allRows.length === 0) {
+    inner = emptyState('grid', 'No rows yet', 'Run the query to materialize results.');
+  } else {
+    const head = `<thead><tr><th class="rv-rownum">#</th>${R.columns.map((c, idx) => {
+      const f = R.filters[idx];
+      const isFil = f && f.v !== '' && f.v != null;
+      const align = R.aligns[idx] || 'left';
+      return `<th class="al-${align}${isFil ? ' th-filtered' : ''}">
+        <button class="th-btn" data-col="${idx}">
+          <span class="th-labels"><span class="rv-col">${escapeHtml(c)}</span><span class="rv-coltype">${escapeHtml(R.columnTypes[idx] || '')}</span></span>
+          <span class="th-funnel${isFil ? ' is-on' : ''}">${iconSvg('filter', 12)}</span>
+        </button></th>`;
+    }).join('')}</tr></thead>`;
+    let body;
+    if (filtered.length === 0) {
+      body = `<tr><td class="rv-noresult" colspan="${R.columns.length + 1}">No rows match the current filters.</td></tr>`;
+    } else {
+      body = filtered.map(([key, ent], idx) => {
+        const flash = flashKeys.has(key) ? ' is-flash' : '';
+        const cells = ent.values.map((v, j) =>
+          `<td class="al-${R.aligns[j] || 'left'}${j === 0 ? ' rv-key' : ''}">${fmtVal(v)}</td>`).join('');
+        return `<tr class="${flash.trim()}"><td class="rv-rownum">${idx + 1}</td>${cells}</tr>`;
+      }).join('');
+    }
+    inner = `<table class="rv-table">${head}<tbody>${body}</tbody></table>`;
+  }
+  return `<div class="rv-table-wrap">${bar}${inner}</div>`;
+}
+
+function renderFilterBar(active, shown, total) {
+  let mid, count = '';
+  if (active.length === 0) {
+    mid = `<span class="rv-filter-hint">Click a column header to filter rows</span>`;
+  } else {
+    const chips = active.map(([ci, f]) => {
+      const valTxt = f.op === 'between'
+        ? `${escapeHtml(f.v)}–${escapeHtml(f.v2 || '∞')}`
+        : escapeHtml(f.v);
+      return `<button class="rv-chip" data-chip="${ci}"><b>${escapeHtml(R.columns[+ci])}</b><span class="rv-chip-op">${escapeHtml(opSymbol(f.op))}</span><span class="rv-chip-val">${valTxt}</span><i class="rv-chip-x" data-chipx="${ci}">${iconSvg('x', 11)}</i></button>`;
+    }).join('');
+    mid = `<div class="rv-chips">${chips}<button class="rv-clear-all" data-clearall>Clear all</button></div>`;
+    count = `<span class="rv-filter-count">${shown} of ${total}</span>`;
+  }
+  return `<div class="rv-filterbar"><span class="rv-filter-lead">${iconSvg('filter', 13)} Filters</span>${mid}${count}</div>`;
+}
+
+// ---- Column filter model ----
+const NUM_OPS = [['>=', '≥'], ['<=', '≤'], ['>', '>'], ['<', '<'], ['=', '='], ['!=', '≠'], ['between', 'between']];
+const TXT_OPS = [['contains', 'contains'], ['=', 'equals'], ['!=', 'is not']];
+function opSymbol(op) {
+  const f = NUM_OPS.concat(TXT_OPS).find((o) => o[0] === op);
+  return f ? f[1] : op;
+}
+function matchFilter(val, f) {
+  if (!f || f.v === '' || f.v == null) return true;
+  if (f.op === 'contains') return String(val).toLowerCase().includes(String(f.v).toLowerCase());
+  const isNum = typeof val === 'number';
+  const a = isNum ? val : parseFloat(val);
+  const b = parseFloat(f.v), b2 = parseFloat(f.v2);
+  switch (f.op) {
+    case '=': return isNum ? a === b : String(val) === String(f.v);
+    case '!=': return isNum ? a !== b : String(val).toLowerCase() !== String(f.v).toLowerCase();
+    case '>': return a > b;
+    case '<': return a < b;
+    case '>=': return a >= b;
+    case '<=': return a <= b;
+    case 'between': return (f.v2 === '' || f.v2 == null) ? a >= b : (a >= Math.min(b, b2) && a <= Math.max(b, b2));
+    default: return true;
+  }
+}
+
+let openFilterIdx = null;
+function toggleFilter(idx, rect) {
+  if (openFilterIdx === idx) closeFilterPopover();
+  else openFilterPopover(idx, rect);
+}
+function removeFilter(ci) { delete R.filters[ci]; closeFilterPopover(); renderActiveView(); }
+function clearAllFilters() { R.filters = {}; closeFilterPopover(); renderActiveView(); }
+function closeFilterPopover() {
+  const p = document.querySelector('.filt-pop');
+  if (p) { if (p._cleanup) p._cleanup(); p.remove(); }
+  openFilterIdx = null;
+}
+function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+
+function openFilterPopover(colIdx, anchorRect) {
+  closeFilterPopover();
+  openFilterIdx = colIdx;
+  const isNum = isNumericType(R.columnTypes[colIdx]);
+  const ops = isNum ? NUM_OPS : TXT_OPS;
+  const cur = R.filters[colIdx] || {};
+  let op = cur.op || ops[0][0];
+  let v = cur.v != null ? cur.v : '';
+  let v2 = cur.v2 != null ? cur.v2 : '';
+
+  const pop = document.createElement('div');
+  pop.className = 'filt-pop';
+
+  function readInputs() {
+    const vi = pop.querySelector('.filt-v'); if (vi) v = vi.value;
+    const v2i = pop.querySelector('.filt-v2'); if (v2i) v2 = v2i.value;
+  }
+  function apply() {
+    readInputs();
+    R.filters[colIdx] = { op, v, v2: op === 'between' ? v2 : '' };
+    closeFilterPopover();
+    renderActiveView();
+  }
+  function draw() {
+    pop.innerHTML = `
+      <div class="filt-pop-head"><span class="filt-pop-col">${escapeHtml(R.columns[colIdx])}</span><span class="filt-pop-type">${escapeHtml(R.columnTypes[colIdx] || '')}</span></div>
+      <div class="filt-ops">${ops.map(([o, sym]) => `<button class="filt-op${o === op ? ' is-on' : ''}" data-op="${o}">${escapeHtml(sym)}</button>`).join('')}</div>
+      <div class="filt-inputs">
+        <input class="filt-input filt-v" type="${isNum ? 'number' : 'text'}" placeholder="${op === 'between' ? 'min' : 'value'}" value="${escapeAttr(v)}" />
+        ${op === 'between' ? `<span class="filt-and">and</span><input class="filt-input filt-v2" type="number" placeholder="max" value="${escapeAttr(v2)}" />` : ''}
+      </div>
+      <div class="filt-pop-actions"><button class="filt-clear" data-clear>Clear</button><button class="btn run sm" data-apply>Apply</button></div>`;
+    pop.querySelectorAll('.filt-op').forEach((b) => b.addEventListener('click', () => { readInputs(); op = b.dataset.op; draw(); }));
+    pop.querySelector('[data-apply]').addEventListener('click', apply);
+    pop.querySelector('[data-clear]').addEventListener('click', () => removeFilter(colIdx));
+    const fi = pop.querySelector('.filt-v'); if (fi) fi.focus();
+  }
+  draw();
+
+  document.body.appendChild(pop);
+  const pw = 268;
+  const left = Math.max(10, Math.min(anchorRect.left, window.innerWidth - pw - 10));
+  pop.style.left = left + 'px';
+  pop.style.top = (anchorRect.bottom + 7) + 'px';
+  pop.style.width = pw + 'px';
+
+  const onDocDown = (e) => {
+    if (e.target.closest('.filt-pop') || e.target.closest('.th-btn') || e.target.closest('.rv-chip')) return;
+    closeFilterPopover();
+  };
+  const onKey = (e) => { if (e.key === 'Escape') closeFilterPopover(); else if (e.key === 'Enter') apply(); };
+  document.addEventListener('mousedown', onDocDown);
+  document.addEventListener('keydown', onKey);
+  pop._cleanup = () => { document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey); };
 }
 
 function renderChangelog() {
@@ -833,6 +992,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.querySelectorAll('#results-tabs .rtab').forEach((b) => {
     b.addEventListener('click', () => setActiveTab(b.dataset.tab));
+  });
+
+  // Delegated handling for column-filter affordances in the Table view (the
+  // results body is re-rendered on every streamed row, so we bind once here).
+  document.getElementById('results-container').addEventListener('click', (e) => {
+    const chipX = e.target.closest('.rv-chip-x');
+    if (chipX) { e.stopPropagation(); removeFilter(parseInt(chipX.dataset.chipx, 10)); return; }
+    if (e.target.closest('[data-clearall]')) { clearAllFilters(); return; }
+    const chip = e.target.closest('.rv-chip');
+    if (chip) { toggleFilter(parseInt(chip.dataset.chip, 10), chip.getBoundingClientRect()); return; }
+    const th = e.target.closest('.th-btn');
+    if (th) { toggleFilter(parseInt(th.dataset.col, 10), th.closest('th').getBoundingClientRect()); return; }
   });
   document.getElementById('theme-toggle').addEventListener('click', () => {
     setTweak('theme', tweaks.theme === 'cobalt' ? 'nebula' : 'cobalt');
