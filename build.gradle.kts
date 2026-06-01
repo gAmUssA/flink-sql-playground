@@ -1,4 +1,5 @@
 import java.time.Instant
+import org.gradle.api.tasks.bundling.Jar
 
 plugins {
     java
@@ -30,6 +31,11 @@ val generateBuildInfo by tasks.registering {
     group = "build"
     outputs.dir(buildInfoDir)
     outputs.upToDateWhen { false } // always reflect the current HEAD
+    // Optional overrides for environments without a .git directory (e.g. Docker builds):
+    // pass -PbuildCommit=<sha> -PbuildBranch=<name>. Falls back to `git` otherwise.
+    val commitOverride = (findProperty("buildCommit") as String?)?.takeIf { it.isNotBlank() && it != "unknown" }
+    val branchOverride = (findProperty("buildBranch") as String?)?.takeIf { it.isNotBlank() && it != "unknown" }
+    val projectVersion = project.version.toString()
     doLast {
         fun git(vararg args: String): String = try {
             val process = ProcessBuilder(listOf("git") + args).redirectErrorStream(true).start()
@@ -39,18 +45,28 @@ val generateBuildInfo by tasks.registering {
             "unknown"
         }
 
+        val commitFull = commitOverride ?: git("rev-parse", "HEAD")
+        val commit = commitOverride?.take(7) ?: git("rev-parse", "--short", "HEAD")
+        val branch = branchOverride ?: git("rev-parse", "--abbrev-ref", "HEAD")
+
         val file = buildInfoDir.get().file("build-info.properties").asFile
         file.parentFile.mkdirs()
         file.writeText(
             """
-            build.commit=${git("rev-parse", "--short", "HEAD")}
-            build.commitFull=${git("rev-parse", "HEAD")}
-            build.branch=${git("rev-parse", "--abbrev-ref", "HEAD")}
-            build.version=${project.version}
+            build.commit=$commit
+            build.commitFull=$commitFull
+            build.branch=$branch
+            build.version=$projectVersion
             build.time=${Instant.now()}
             """.trimIndent() + "\n"
         )
     }
+}
+
+// Spring Boot's bootJar is the artifact we ship. The plain library jar is unused and
+// its presence makes build/libs ambiguous for the Docker `COPY *.jar` glob.
+tasks.named<Jar>("jar") {
+    enabled = false
 }
 
 sourceSets.named("main") {

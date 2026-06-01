@@ -1,0 +1,22 @@
+# Packages a prebuilt Spring Boot jar (built once, natively, in CI) into the runtime
+# image. This avoids running a full Gradle/Flink compile under QEMU emulation for the
+# arm64 image — only the lightweight jar extraction runs per-architecture.
+#
+# To build straight from source instead (Koyeb, docker compose, local), use the root
+# Dockerfile. The jar must already exist at build/libs/*.jar (run `./gradlew bootJar`).
+FROM eclipse-temurin:25.0.2_10-jre
+WORKDIR /app
+COPY build/libs/*.jar app.jar
+# Extract the fat JAR so all classes are on a flat classpath.
+# Flink's MiniCluster TaskManager classloaders use the system classloader,
+# which cannot see classes nested inside a Spring Boot fat JAR.
+RUN java -Djarmode=tools -jar app.jar extract --destination extracted && rm app.jar
+EXPOSE 9090
+ENTRYPOINT ["java", \
+    "-Xms768m", \
+    "-Xmx1536m", \
+    "-XX:+UseZGC", \
+    "-XX:+ZGenerational", \
+    "-XX:MetaspaceSize=128m", \
+    "-XX:MaxMetaspaceSize=384m", \
+    "-jar", "extracted/app.jar"]

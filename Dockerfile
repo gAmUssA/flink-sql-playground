@@ -5,7 +5,12 @@ COPY gradle/ gradle/
 COPY gradlew ./
 RUN chmod +x gradlew && ./gradlew dependencies --no-daemon || true
 COPY src/ src/
-RUN ./gradlew clean build -x test --no-daemon
+# Optional build metadata for the deployed-build footer. Pass with
+# --build-arg GIT_COMMIT=$(git rev-parse HEAD) --build-arg GIT_BRANCH=$(git branch --show-current);
+# defaults to "unknown" when unset (the build context has no .git).
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+RUN ./gradlew clean bootJar --no-daemon -PbuildCommit=$GIT_COMMIT -PbuildBranch=$GIT_BRANCH
 
 FROM eclipse-temurin:25.0.2_10-jre
 WORKDIR /app
