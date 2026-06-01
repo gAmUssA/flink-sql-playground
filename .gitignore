@@ -28,3 +28,15 @@ Thumbs.db
 .claude
 .agents
 /.env
+
+# AI agent session/local files — may contain tokens and secrets
+.opencode
+.copilot
+.cline
+.continue
+.junie
+.pi
+.roo
+.augment
+.aider*
+CLAUDE.local.md

@@ -1,14 +1,14 @@
 package com.flinksqlfiddle.security;
 
 import com.flinksqlfiddle.util.SqlText;
+import jakarta.enterprise.context.ApplicationScoped;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Service
+@ApplicationScoped
 public class SqlSecurityValidator {
 
     private static final Logger log = LoggerFactory.getLogger(SqlSecurityValidator.class);

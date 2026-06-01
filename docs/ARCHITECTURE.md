@@ -1,8 +1,8 @@
 # Architecture
 
-Flink SQL Playground is a Spring Boot 4.0.3 web application that embeds Apache Flink 2.2.0 as an in-process SQL execution engine. Users write and run Flink SQL in their browser — no external cluster required.
+Flink SQL Playground is a Quarkus 3.36 web application that embeds Apache Flink 2.2.1 as an in-process SQL execution engine. Users write and run Flink SQL in their browser — no external cluster required.
 
-**Stack:** Java 21, Spring Boot 4.0.3, Apache Flink 2.2.0, Gradle Kotlin DSL, H2/PostgreSQL, Caffeine cache, Monaco Editor.
+**Stack:** Java 25, Quarkus 3.36 (JAX-RS/RESTEasy Reactive, Hibernate ORM + Panache, SmallRye Config), Apache Flink 2.2.1, Gradle Kotlin DSL, H2/PostgreSQL, Caffeine cache, Monaco Editor.
 
 ## System Overview
 
@@ -17,7 +17,7 @@ Flink SQL Playground is a Spring Boot 4.0.3 web application that embeds Apache F
           │                 │                 │
           ▼                 ▼                 │
 ┌─────────────────────────────────────────────────────────┐
-│  REST API (Spring MVC)                                  │
+│  REST API (Quarkus REST / JAX-RS)                       │
 │  /api/sessions  /api/sessions/{id}/execute  /api/fiddles│
 ├─────────────────────────────────────────────────────────┤
 │  SessionManager        SqlExecutionService              │
@@ -38,7 +38,7 @@ Flink SQL Playground is a Spring Boot 4.0.3 web application that embeds Apache F
 
 ```
 com.flinksqlfiddle/
-├── api/                    REST controllers, DTOs, exception handler, CORS
+├── api/                    JAX-RS resources, DTOs, exception mappers
 │   └── dto/                ExecuteRequest/Response, FiddleRequest/Response, etc.
 ├── execution/              SqlExecutionService, QueryResult, ExecutionMode
 ├── flink/                  FlinkEnvironmentFactory, FlinkProperties
@@ -53,7 +53,7 @@ com.flinksqlfiddle/
 A query execution follows this path:
 
 1. **HTTP** — `POST /api/sessions/{id}/execute` with `{ sql, mode }`.
-2. **Controller** — `ExecutionController` retrieves the `FlinkSession` from `SessionManager`.
+2. **Resource** — `ExecutionResource` retrieves the `FlinkSession` from `SessionManager`.
 3. **Validation** — `SqlSecurityValidator` blocks forbidden SQL (CREATE FUNCTION, ADD JAR, SET, disallowed connectors).
 4. **DDL handling** — If the statement is DDL (CREATE TABLE, DROP TABLE), it runs on **both** batch and streaming environments so tables are visible in either mode. CREATE TABLE is made idempotent by prepending DROP TABLE IF EXISTS.
 5. **Execution** — The query runs on the session's dedicated planner thread via `session.runOnPlannerThread()`. This is required because Calcite's `RelMetadataQuery` uses thread-local state.
@@ -68,8 +68,8 @@ Sessions are stored in a **Caffeine cache**:
 
 | Setting      | Value                                                |
 |--------------|------------------------------------------------------|
-| Max sessions | 3 (configurable)                                     |
-| Idle timeout | 5 minutes (configurable)                             |
+| Max sessions | 8 (configurable via `flink.max-sessions`)            |
+| Idle timeout | 3 minutes (configurable via `flink.session-idle-timeout`) |
 | Eviction     | LRU after max, expire-after-access for idle          |
 | Cleanup      | Synchronous removal listener calls `session.close()` |
 
@@ -84,7 +84,7 @@ Flink runs in embedded single-JVM mode — no explicit MiniCluster instantiation
 - Network memory: 8m
 - Managed memory: 32m
 
-**Docker classpath workaround:** The Dockerfile extracts the Spring Boot fat JAR to a flat classpath (`java -Djarmode=tools -jar app.jar extract`). This is necessary because Flink's TaskManager classloaders use the system classloader, which cannot see classes nested inside a fat JAR. Without extraction, connector discovery (SPI) fails.
+**Classloader handling:** When a job has no user jars (always true for embedded SQL), Flink deserializes the job graph with `ClassLoader.getSystemClassLoader()`. Under Quarkus, Flink is loaded by the Quarkus classloader, not the JVM system classloader, so that path fails with `ClassNotFoundException` on Flink operator factories. `FlinkEnvironmentFactory` therefore sets `pipeline.classpaths` to the application's own code location, which makes Flink build a user-code classloader parented to the classloader that loaded Flink — resolving both the operator factories and the bundled faker connector. This works uniformly in `quarkusDev`, the packaged fast-jar, and tests, so no uber-jar/classpath-flattening is needed.
 
 ## Security Model
 
@@ -112,9 +112,10 @@ Unbounded streaming queries return partial results after the collection timeout.
 
 Fiddles (saved SQL snippets) are stored via JPA in H2 (dev) or PostgreSQL (production).
 
-- **Entity:** `Fiddle` with `short_code` (PK), `schema_sql`, `query_sql`, `mode`, `created_at`
+- **Repository:** Panache (`FiddleRepository implements PanacheRepositoryBase<Fiddle, String>`); writes wrapped in `@jakarta.transaction.Transactional`.
+- **Entity:** `Fiddle` with `short_code` (PK), `schema_ddl`, `query`, `mode`, `created_at`
 - **Short code:** SHA-256 hash of `schema|query|mode`, truncated to 8 characters. Same input always produces the same code (content-addressable).
-- **URL routing:** `/f/{shortCode}` → `SpaForwardingController` forwards to `index.html`, JavaScript loads the fiddle on init.
+- **URL routing:** `/f/{shortCode}` → `SpaResource` returns `index.html`, JavaScript loads the fiddle on init.
 
 ## Custom Faker Connector
 
@@ -133,49 +134,50 @@ Vanilla HTML/CSS/JavaScript with no build step.
 | File             | Purpose                                         |
 |------------------|-------------------------------------------------|
 | `index.html`     | SPA shell                                       |
-| `js/app.js`      | Session management, API calls, result rendering |
+| `js/app.js`      | Session management, API calls, result rendering, guided tour |
 | `js/examples.js` | Preloaded example queries (9 examples)          |
-| `js/tour.js`     | Product tour (Driver.js)                        |
-| `css/style.css`  | Dark theme, responsive layout                   |
+| `css/style.css`  | Theme system (Nebula/Carbon/Cobalt), responsive layout |
 
 The editor uses Monaco Editor (v0.52.2) with SQL language support. Results render as an HTML table with per-column filter inputs, row-kind color coding, and a truncation indicator.
 
 ## Configuration
 
-**Default (`application.yaml`):**
+**Default (`application.properties`):**
 
-| Property                     | Value                  |
-|------------------------------|------------------------|
-| `server.port`                | 9090                   |
-| `spring.datasource.url`      | `jdbc:h2:mem:fiddledb` |
-| `flink.parallelism`          | 1                      |
-| `flink.max-sessions`         | 3                      |
-| `flink.session-idle-timeout` | 5m                     |
+| Property                          | Value                  |
+|-----------------------------------|------------------------|
+| `quarkus.http.port`               | 9090                   |
+| `quarkus.datasource.jdbc.url`     | `jdbc:h2:mem:fiddledb` |
+| `flink.parallelism`               | 1                      |
+| `flink.max-sessions`              | 8                      |
+| `flink.session-idle-timeout`      | 3m                     |
 
-**Production (`application-supabase.yaml`):** Switches to PostgreSQL via Supabase with HikariCP connection pooling (3 max, 1 min idle) and Flyway migrations.
+The `flink.*` and `execution.*` prefixes are bound via SmallRye `@ConfigMapping` interfaces (`FlinkConfig`, `ExecutionConfig`) and mapped into the `FlinkProperties` / `ExecutionLimits` domain records by `AppConfig`.
+
+**Production (`application-supabase.properties`, profile `supabase`):** Switches to PostgreSQL via Supabase with a small Agroal pool (3 max, 1 min idle) and Flyway migrations.
 
 ## Docker
 
 Multi-stage build:
 
-1. **Build stage** (`eclipse-temurin:21-jdk`) — Gradle build, skip tests
-2. **Runtime stage** (`eclipse-temurin:21-jre`) — Extract JAR, run with tuned JVM flags
+1. **Build stage** (`eclipse-temurin:25-jdk`) — `./gradlew quarkusBuild` (Quarkus augmentation requires JDK 25)
+2. **Runtime stage** (`eclipse-temurin:25-jre`) — copy the fast-jar layout (`build/quarkus-app/`, `lib/` first for layer caching), run `quarkus-run.jar` with tuned JVM flags
 
 ```
-JVM: -Xms512m -Xmx1024m -XX:+UseSerialGC
+JVM: -Xms768m -Xmx1536m -XX:+UseZGC -XX:+ZGenerational
      -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m
 ```
 
-Docker Compose allocates a 2GB memory limit for the container.
+CI builds the fast-jar once natively, then `Dockerfile.runtime` packages it per-architecture (avoids compiling Flink under QEMU). Docker Compose allocates a 3GB memory limit for the container.
 
 ## Test Structure
 
-| Layer       | Tests                                                                      | Pattern                            |
-|-------------|----------------------------------------------------------------------------|------------------------------------|
-| Controllers | `SessionControllerTest`, `ExecutionControllerTest`, `FiddleControllerTest` | `@WebMvcTest` + `@MockitoBean`     |
-| Execution   | `SqlExecutionServiceTest`, `ExampleQueriesSmokeTest`                       | Real Flink environments            |
-| Sessions    | `SessionManagerTest`                                                       | Caffeine `Ticker` for time control |
-| Security    | `SqlSecurityValidatorTest`                                                 | Direct method calls                |
-| Config      | `FlinkPropertiesTest`, `FlinkEnvironmentFactoryTest`                       | Constructor validation             |
+| Layer     | Tests                                                                   | Pattern                                       |
+|-----------|-------------------------------------------------------------------------|-----------------------------------------------|
+| Resources | `SessionResourceTest`, `ExecutionResourceTest`, `FiddleResourceTest`    | `@QuarkusTest` + REST Assured + `@InjectMock` |
+| Execution | `SqlExecutionServiceTest`, `StreamingExecutionTest`, `ExampleQueriesSmokeTest` | Real Flink environments (tag `smoke`)  |
+| Sessions  | `SessionManagerTest`                                                    | Caffeine `Ticker` for time control            |
+| Security  | `SqlSecurityValidatorTest`                                              | Direct method calls                           |
+| Config    | `FlinkPropertiesTest`, `FlinkEnvironmentFactoryTest`, `ApplicationContextTest` | Constructor validation + `@QuarkusTest` boot |
 
 **Smoke test adaptations:** Streaming examples in `ExampleQueriesSmokeTest` convert `PROCTIME()` to deterministic event-time columns with watermarks so windows fire when the bounded source finishes, making tests deterministic without real-time waits.

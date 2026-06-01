@@ -1,8 +1,10 @@
 package com.flinksqlfiddle.fiddle;
 
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -10,28 +12,34 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Optional;
 
-@Service
+@ApplicationScoped
 public class FiddleService {
 
     private static final Logger log = LoggerFactory.getLogger(FiddleService.class);
 
     private final FiddleRepository repository;
 
+    @Inject
     public FiddleService(FiddleRepository repository) {
         this.repository = repository;
     }
 
+    @Transactional
     public Fiddle save(String schema, String query, String mode) {
         String shortCode = generateShortCode(schema + "|" + query + "|" + mode);
-        Fiddle fiddle = repository.findById(shortCode)
-                .orElseGet(() -> repository.save(new Fiddle(shortCode, schema, query, mode)));
+        Fiddle fiddle = repository.findByIdOptional(shortCode)
+                .orElseGet(() -> {
+                    Fiddle created = new Fiddle(shortCode, schema, query, mode);
+                    repository.persist(created);
+                    return created;
+                });
         log.info("Fiddle saved: {}", shortCode);
         return fiddle;
     }
 
     public Optional<Fiddle> load(String shortCode) {
         log.debug("Loading fiddle: {}", shortCode);
-        return repository.findById(shortCode);
+        return repository.findByIdOptional(shortCode);
     }
 
     private String generateShortCode(String content) {

@@ -6,15 +6,14 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Ticker;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.util.UUID;
 
-@Service
+@ApplicationScoped
 public class SessionManager {
 
     private static final Logger log = LoggerFactory.getLogger(SessionManager.class);
@@ -23,7 +22,7 @@ public class SessionManager {
     private final FlinkEnvironmentFactory environmentFactory;
     private final int maxSessions;
 
-    @Autowired
+    @Inject
     public SessionManager(FlinkEnvironmentFactory environmentFactory, FlinkProperties flinkProperties) {
         this(environmentFactory, flinkProperties, Ticker.systemTicker());
     }
