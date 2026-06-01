@@ -90,13 +90,16 @@ def main():
             except Exception:
                 time.sleep(0.05)
         if ready is None:
-            print(f"run {run}: never became ready"); proc.kill(); continue
+            print(f"run {run}: never became ready")
+            proc.kill(); proc.wait()   # reap so we don't leave a zombie
+            logf.close()               # don't leak the fd across runs
+            continue
         sid = json.loads(post("/api/sessions", {})[1])["sessionId"]
         post(f"/api/sessions/{sid}/execute", DDL)
         q0 = time.monotonic(); post(f"/api/sessions/{sid}/execute", QUERY); cold = time.monotonic() - q0
         total_cold = time.monotonic() - t0
         w0 = time.monotonic(); post(f"/api/sessions/{sid}/execute", QUERY); warm = time.monotonic() - w0
-        rss = subprocess.run(f"ps -o rss= -p {proc.pid}", shell=True, capture_output=True, text=True).stdout.strip()
+        rss = subprocess.run(["ps", "-o", "rss=", "-p", str(proc.pid)], capture_output=True, text=True).stdout.strip()
         rss_mb = int(rss) / 1024 if rss.isdigit() else None
         logf.flush(); logf.close()
         m = re.search(r"started in ([\d.]+)s", open(f"/tmp/cold_{label}_{run}.log").read())

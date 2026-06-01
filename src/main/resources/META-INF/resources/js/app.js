@@ -264,14 +264,18 @@ async function warmUp() {
   if (!sessionId) return;
   // Don't stomp on a status the user's own query may have set if they ran one immediately.
   if (!R.running) setStatus('Warming up engine…', 'compiling');
+  // Resolves true only on a 2xx — so a misconfigured API_BASE / CORS / network / 5xx failure
+  // doesn't get mislabelled as "Engine ready".
   const probe = (mode) => fetch(api(`/api/sessions/${sessionId}/execute`), {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql: 'SELECT 1', mode })
-  }).catch(() => {});
-  await probe('BATCH');
-  await probe('STREAMING');
+  }).then((r) => r.ok).catch(() => false);
+  const okBatch = await probe('BATCH');
+  const okStream = await probe('STREAMING');
   // Don't clobber the status if the user already kicked off their own query meanwhile.
-  if (!R.running) { setStatus('Engine ready', 'ready'); setStateBadge('ready', 'ready'); }
+  if (R.running) return;
+  if (okBatch || okStream) { setStatus('Engine ready', 'ready'); setStateBadge('ready', 'ready'); }
+  else { setStatus('Backend unavailable', 'error'); setStateBadge('error', 'error'); }
 }
 
 /* ============================== Build schema ============================== */
