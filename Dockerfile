@@ -16,10 +16,14 @@ RUN ./gradlew clean quarkusBuild --no-daemon -PbuildCommit=$GIT_COMMIT -PbuildBr
 
 FROM eclipse-temurin:25.0.2_10-jre
 WORKDIR /app
-# Quarkus uber-jar: a single flat jar on the system classpath. Flink's embedded
-# MiniCluster deserializes the job graph with the system classloader, which must be
-# able to see all Flink classes — the uber-jar guarantees that (no extraction needed).
-COPY --from=build /app/build/*-runner.jar app.jar
+# Quarkus fast-jar layout. Embedded Flink resolves its job-graph classes via the app's
+# own classpath (configured as pipeline.classpaths in FlinkEnvironmentFactory), so the
+# default container-optimized fast-jar works — no uber-jar/flattening needed.
+# Copy lib/ first so the dependency layer caches across app-only rebuilds.
+COPY --from=build /app/build/quarkus-app/lib/ ./lib/
+COPY --from=build /app/build/quarkus-app/*.jar ./
+COPY --from=build /app/build/quarkus-app/app/ ./app/
+COPY --from=build /app/build/quarkus-app/quarkus/ ./quarkus/
 EXPOSE 9090
 ENTRYPOINT ["java", \
     "-Xms768m", \
@@ -28,4 +32,4 @@ ENTRYPOINT ["java", \
     "-XX:+ZGenerational", \
     "-XX:MetaspaceSize=128m", \
     "-XX:MaxMetaspaceSize=384m", \
-    "-jar", "app.jar"]
+    "-jar", "quarkus-run.jar"]

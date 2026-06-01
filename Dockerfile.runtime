@@ -1,14 +1,16 @@
-# Packages a prebuilt Quarkus uber-jar (built once, natively, in CI) into the runtime
-# image. The uber-jar is a single flat jar — no extraction needed — which avoids running
-# a full Gradle/Flink build under QEMU emulation for the arm64 image.
+# Packages a prebuilt Quarkus fast-jar (built once, natively, in CI) into the runtime
+# image. Only the lightweight copy runs per-architecture, so the arm64 image build does
+# not compile Flink under QEMU emulation.
 #
 # To build straight from source instead (Koyeb, docker compose, local), use the root
-# Dockerfile. The jar must already exist at build/*-runner.jar (run `./gradlew quarkusBuild`).
+# Dockerfile. The fast-jar must already exist at build/quarkus-app/ (run `./gradlew quarkusBuild`).
 FROM eclipse-temurin:25.0.2_10-jre
 WORKDIR /app
-# Single flat uber-jar on the system classpath so Flink's MiniCluster can load all
-# Flink classes during job-graph deserialization.
-COPY build/*-runner.jar app.jar
+# Copy lib/ first so the dependency layer caches across app-only rebuilds.
+COPY build/quarkus-app/lib/ ./lib/
+COPY build/quarkus-app/*.jar ./
+COPY build/quarkus-app/app/ ./app/
+COPY build/quarkus-app/quarkus/ ./quarkus/
 EXPOSE 9090
 ENTRYPOINT ["java", \
     "-Xms768m", \
@@ -17,4 +19,4 @@ ENTRYPOINT ["java", \
     "-XX:+ZGenerational", \
     "-XX:MetaspaceSize=128m", \
     "-XX:MaxMetaspaceSize=384m", \
-    "-jar", "app.jar"]
+    "-jar", "quarkus-run.jar"]

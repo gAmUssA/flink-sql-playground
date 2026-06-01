@@ -19,12 +19,12 @@ JVM mode, booting in **~1.4s**.
 
 | Module | Files changed | Key changes |
 |--------|--------------|-------------|
-| **build** | `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`, `application.properties` (new), `application-supabase.properties` (new), removed `application*.yaml` | Spring Boot + dependency-management plugins → `io.quarkus` plugin + `enforcedPlatform(quarkus-bom)`; starters → `quarkus-rest`, `quarkus-rest-jackson`, `quarkus-hibernate-orm-panache`, `quarkus-hibernate-validator`, `quarkus-jdbc-h2`, `quarkus-jdbc-postgresql`, `quarkus-flyway`; YAML config → `.properties` (`quarkus.*`); **`quarkus.package.jar.type=uber-jar`** (see Flink note). Kept the custom `generateBuildInfo` task and `smokeTest` split. |
+| **build** | `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`, `application.properties` (new), `application-supabase.properties` (new), removed `application*.yaml` | Spring Boot + dependency-management plugins → `io.quarkus` plugin + `enforcedPlatform(quarkus-bom)`; starters → `quarkus-rest`, `quarkus-rest-jackson`, `quarkus-hibernate-orm-panache`, `quarkus-hibernate-validator`, `quarkus-jdbc-h2`, `quarkus-jdbc-postgresql`, `quarkus-flyway`; YAML config → `.properties` (`quarkus.*`); default container-optimized **fast-jar** packaging (see Flink classloader note). Kept the custom `generateBuildInfo` task and `smokeTest` split. |
 | **code** | 5 controllers → JAX-RS resources, `GlobalExceptionHandler`, `FiddleService`/`FiddleRepository`, `SessionManager`, `SqlExecutionService`, `SqlSecurityValidator`, `FlinkEnvironmentFactory`, `FlinkProperties`/`ExecutionLimits`, new `AppConfig`/`FlinkConfig`/`ExecutionConfig`/`StartupLogger`, removed `FlinkSqlFiddleApplication`/`WebConfig` | `@RestController`→`@Path`+JAX-RS; `@Service`/`@Component`→`@ApplicationScoped`, `@Autowired`→`@Inject`; `@RestControllerAdvice`→`@ServerExceptionMapper`; Spring Data `JpaRepository`→Panache `PanacheRepositoryBase` + `@jakarta.transaction.Transactional`; `@ConfigurationProperties` records → `@ConfigMapping` interfaces mapped into the (retained) domain records by a CDI producer; `ApplicationReadyEvent`→`@Observes StartupEvent`; **NDJSON streaming `ResponseBodyEmitter`→`Multi<StreamEvent>`** (`application/x-ndjson`); Jackson 3 (`tools.jackson`)→Jackson 2 (`com.fasterxml`). |
 | **frontend** | Moved `static/**`→`META-INF/resources/**`; new `SpaResource` | Quarkus serves static assets from `META-INF/resources`; the Spring MVC `forward:/index.html` SPA controller became a JAX-RS resource serving `index.html` for `/f/**`. No CSRF (no Spring Security); DTO JSON shapes unchanged, so `app.js` needed no edits. |
 | **testing** | `ApplicationContextTest`, 3 controller tests → `*ResourceTest`, `FiddleServiceTest` | `@SpringBootTest`/`@WebMvcTest`+`MockMvc`→`@QuarkusTest`+RestAssured; `@MockitoBean`→`@InjectMock`; `FiddleServiceTest` updated for Panache (`findByIdOptional`/`persist`). Plain unit + Flink smoke tests kept as-is. |
 | **cleanup** | removed `logback-spring.xml` | Logback (Spring-only) → `quarkus.log.*` categories (incl. the Flink-noise suppressions). Zero `org.springframework`/`tools.jackson` references remain. |
-| **deploy** | `Dockerfile`, `Dockerfile.runtime`, `docker-compose.yml` (unchanged), `.github/workflows/docker-publish.yml` | `bootJar`+`jarmode extract`→`quarkusBuild` uber-jar (`*-runner.jar`, no extraction needed); CI/Docker build JVM 21→**25** (augmentation requirement). |
+| **deploy** | `Dockerfile`, `Dockerfile.runtime`, `docker-compose.yml` (unchanged), `.github/workflows/docker-publish.yml` | `bootJar`+`jarmode extract`→`quarkusBuild` fast-jar (`build/quarkus-app/`, layered copy); CI/Docker build JVM 21→**25** (augmentation requirement). |
 
 ## Validation Results
 
@@ -48,12 +48,17 @@ None. No `// TODO: Migration required` markers were left — every piece was ful
 | `logback-spring.xml` | Spring Boot Logback config | Replaced by `quarkus.log.category.*` (Quarkus uses JBoss LogManager; this file would be silently ignored). |
 
 ## Behavior Notes / Runtime Risks
-- **Uber-jar is required, not cosmetic.** Flink's embedded MiniCluster deserializes the
-  job graph with the **system classloader**. Quarkus's default fast-jar layout hides
-  dependency classes behind its `RunnerClassLoader`, producing
-  `ClassNotFoundException: org.apache.flink.table.runtime.operators.CodeGenOperatorFactory`.
-  `quarkus.package.jar.type=uber-jar` flattens everything onto the system classpath — the
-  exact analog of the former Spring Boot image's `jarmode extract` step.
+- **Embedded Flink classloading.** When a job has no user jars (always true for our embedded
+  SQL), Flink deserializes the job graph with `ClassLoader.getSystemClassLoader()`. Under
+  Quarkus — `quarkusDev` and the packaged fast-jar — Flink lives in the Quarkus classloader,
+  invisible to the system classloader, so job submission fails with
+  `ClassNotFoundException` on Flink operator factories (e.g. `CodeGenOperatorFactory`,
+  `SourceOperatorFactory`). **Fix:** `FlinkEnvironmentFactory` sets `pipeline.classpaths`
+  to the application's own code location, which makes Flink build a user-code classloader
+  whose parent is the (Quarkus) classloader that loaded Flink — resolving both the Flink
+  operator factories and the bundled faker connector. This works uniformly in dev, the
+  fast-jar, and tests, so the default container-optimized **fast-jar** packaging is used
+  (an earlier uber-jar workaround was removed once this proper fix was in place).
 - **Build JVM must be JDK 25.** Quarkus augmentation runs in the Gradle JVM and loads the
   compiled (Java 25) classes; building on JDK 21 fails with `UnsupportedClassVersionError`.
   CI and both Dockerfiles now pin JDK 25.
@@ -68,14 +73,20 @@ None. No `// TODO: Migration required` markers were left — every piece was ful
    `RestResponse.ResponseBuilder.<T>create(int).entity(...).build()` for 429/408 and the
    `WebApplicationException` passthrough.
 2. `quarkusBuild` → `UnsupportedClassVersionError` (augmentation on JDK 21) → run Gradle on JDK 25.
-3. Live query → `ClassNotFoundException` for a Flink operator factory → switched to uber-jar packaging.
+3. Live query → `ClassNotFoundException` for a Flink operator factory (embedded MiniCluster
+   deserializes the job graph with the system classloader, which under Quarkus lacks Flink)
+   → set `pipeline.classpaths` to the app's code location so Flink uses a user-code
+   classloader parented to the CL that loaded Flink. (Works in `quarkusDev` and the fast-jar.)
 4. Config warnings (`quarkus.http.cors`, deprecated `quarkus.hibernate-orm.database.generation`)
    → `quarkus.http.cors.enabled`, `quarkus.hibernate-orm.schema-management.strategy`.
 
 ## Skill Improvement Suggestions
-- **Embedded compute engines need uber-jar.** Add guidance: apps embedding Flink/Spark/etc.
-  that rely on the system classloader for (de)serialization should use
-  `quarkus.package.jar.type=uber-jar`. This was the single biggest gotcha.
+- **Embedded compute engines + classloaders.** Add guidance: engines like Flink that
+  (de)serialize work via `ClassLoader.getSystemClassLoader()` fail under Quarkus's isolated
+  classloader (dev mode and fast-jar). The robust fix is to hand the engine the application's
+  own code location (Flink: `pipeline.classpaths`) so it parents its user-code classloader to
+  the CL that loaded the engine — rather than an uber-jar, which only papers over the packaged
+  case and not `quarkusDev`. This was the single biggest gotcha.
 - **Augmentation JVM ≥ target bytecode.** The Gradle build module should note that Quarkus
   augmentation executes in the Gradle JVM, so the build must run on a JDK at least as new as
   the toolchain's target release (here Java 25), independent of the compile toolchain.
