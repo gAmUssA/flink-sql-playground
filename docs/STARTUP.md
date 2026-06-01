@@ -92,3 +92,27 @@ so the achievable ceiling is tiny. **AppCDS is not worth shipping for this app.*
    Zero engineering; the ~5 s is already acceptable for many serverless platforms.
 3. (Low value) GC-matched AOT cache — generate and run with the same GC so the AOT cache
    maps; still bounded by the small boot-class-loading ceiling above.
+
+## Implemented: mask the cold start (frontend warm-on-load)
+
+Rather than shrink an irreducible backend cold start, we **hide** it. The frontend is fully
+static, so it can be served from a CDN / static host independently of the backend — the app
+*opens* instantly regardless of backend state. The backend's first-query cost is then
+absorbed with UX:
+
+- **Warm on load** (`warmUp()` in `app.js`): on page load the frontend fires a trivial
+  bounded `SELECT 1` against both the BATCH and STREAMING engines. This starts the lazy
+  MiniCluster and compiles the Janino/Calcite code paths *while the user is still writing
+  SQL*, so the JVM is warm before their first real Run. Status shows "Warming up engine…"
+  → "Engine ready". Measured effect: a query that costs **2.69 s cold drops to ~0.96 s**
+  once warm (~64% faster) — the warmth is JVM-wide (Janino class cache, JIT, loaded
+  classes), so it benefits subsequent sessions too.
+- **Configurable backend origin** (`window.API_BASE` + `api()` in `app.js`): all `/api`
+  calls route through `api()`; empty base = same-origin (the bundled deployment), and a
+  separately-hosted frontend sets `window.API_BASE` to the backend origin. CORS is already
+  enabled on the backend (`quarkus.http.cors`).
+
+This keeps the single-jar bundled mode working unchanged while enabling a future split:
+static frontend (instant, per-PR previews) + scale-to-zero backend whose cold start is
+paid invisibly during warm-up. Splitting the deploy (static-host config, SPA fallback) is a
+deferred follow-up.
