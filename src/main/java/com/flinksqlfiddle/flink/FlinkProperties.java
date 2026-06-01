@@ -1,10 +1,12 @@
 package com.flinksqlfiddle.flink;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
-
 import java.time.Duration;
 
-@ConfigurationProperties(prefix = "flink")
+/**
+ * Plain domain record holding the effective Flink settings. Bound from
+ * configuration via {@link FlinkConfig} + {@code AppConfig}; directly
+ * instantiable in tests.
+ */
 public record FlinkProperties(
         int parallelism,
         String networkMemory,

@@ -6,77 +6,95 @@ import com.flinksqlfiddle.fiddle.FiddleNotFoundException;
 import com.flinksqlfiddle.security.ForbiddenSqlException;
 import com.flinksqlfiddle.session.SessionLimitExceededException;
 import com.flinksqlfiddle.session.SessionNotFoundException;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.ws.rs.WebApplicationException;
+import org.jboss.resteasy.reactive.RestResponse;
+import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice
+import java.util.stream.Collectors;
+
+/**
+ * Maps application exceptions to JSON {@link ErrorResponse} bodies with the right HTTP
+ * status — the Quarkus REST equivalent of the former Spring {@code @RestControllerAdvice}.
+ * Each {@code @ServerExceptionMapper} method handles one exception type; the most specific
+ * match wins, so the catch-all {@code RuntimeException} mapper only fires for unmapped errors.
+ */
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    @ExceptionHandler(ForbiddenSqlException.class)
-    @ResponseStatus(HttpStatus.FORBIDDEN)
-    public ErrorResponse handleForbiddenSql(ForbiddenSqlException e) {
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleForbiddenSql(ForbiddenSqlException e) {
         log.warn("Security violation: {}", e.getMessage());
-        return new ErrorResponse(e.getMessage(), "SECURITY_VIOLATION");
+        return RestResponse.status(RestResponse.Status.FORBIDDEN,
+                new ErrorResponse(e.getMessage(), "SECURITY_VIOLATION"));
     }
 
-    @ExceptionHandler(SessionNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public ErrorResponse handleSessionNotFound(SessionNotFoundException e) {
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleSessionNotFound(SessionNotFoundException e) {
         log.warn("Session not found: {}", e.getMessage());
-        return new ErrorResponse(e.getMessage(), "SESSION_NOT_FOUND");
+        return RestResponse.status(RestResponse.Status.NOT_FOUND,
+                new ErrorResponse(e.getMessage(), "SESSION_NOT_FOUND"));
     }
 
-    @ExceptionHandler(FiddleNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public ErrorResponse handleFiddleNotFound(FiddleNotFoundException e) {
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleFiddleNotFound(FiddleNotFoundException e) {
         log.warn("Fiddle not found: {}", e.getMessage());
-        return new ErrorResponse(e.getMessage(), "FIDDLE_NOT_FOUND");
+        return RestResponse.status(RestResponse.Status.NOT_FOUND,
+                new ErrorResponse(e.getMessage(), "FIDDLE_NOT_FOUND"));
     }
 
-    @ExceptionHandler(SessionLimitExceededException.class)
-    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
-    public ErrorResponse handleSessionLimitExceeded(SessionLimitExceededException e) {
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleSessionLimitExceeded(SessionLimitExceededException e) {
         log.warn("Session limit exceeded: {}", e.getMessage());
-        return new ErrorResponse(e.getMessage(), "SESSION_LIMIT_EXCEEDED");
+        // 429 Too Many Requests
+        return RestResponse.ResponseBuilder.<ErrorResponse>create(429)
+                .entity(new ErrorResponse(e.getMessage(), "SESSION_LIMIT_EXCEEDED"))
+                .build();
     }
 
-    @ExceptionHandler(ExecutionTimeoutException.class)
-    @ResponseStatus(HttpStatus.REQUEST_TIMEOUT)
-    public ErrorResponse handleExecutionTimeout(ExecutionTimeoutException e) {
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleExecutionTimeout(ExecutionTimeoutException e) {
         log.warn("Execution timeout: {}", e.getMessage());
-        return new ErrorResponse(e.getMessage(), "EXECUTION_TIMEOUT");
+        // 408 Request Timeout
+        return RestResponse.ResponseBuilder.<ErrorResponse>create(408)
+                .entity(new ErrorResponse(e.getMessage(), "EXECUTION_TIMEOUT"))
+                .build();
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ErrorResponse handleValidationException(MethodArgumentNotValidException e) {
-        String message = e.getBindingResult().getFieldErrors().stream()
-                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
-                .reduce((a, b) -> a + "; " + b)
-                .orElse(e.getMessage());
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleValidation(ConstraintViolationException e) {
+        String message = e.getConstraintViolations().stream()
+                .map(GlobalExceptionHandler::formatViolation)
+                .collect(Collectors.joining("; "));
         log.warn("Validation error: {}", message);
-        return new ErrorResponse(message, "VALIDATION_ERROR");
+        return RestResponse.status(RestResponse.Status.BAD_REQUEST,
+                new ErrorResponse(message, "VALIDATION_ERROR"));
     }
 
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ErrorResponse handleMessageNotReadable(HttpMessageNotReadableException e) {
-        log.warn("Bad request: {}", e.getMessage());
-        return new ErrorResponse(e.getMessage(), "BAD_REQUEST");
-    }
-
-    @ExceptionHandler(Exception.class)
-    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public ErrorResponse handleGenericException(Exception e) {
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleRuntime(RuntimeException e) {
+        // Preserve framework-generated responses (404 for unknown routes, 405, etc.)
+        // rather than masking them as 500s — WebApplicationException carries its own status.
+        if (e instanceof WebApplicationException wae) {
+            int status = wae.getResponse().getStatus();
+            return RestResponse.ResponseBuilder.<ErrorResponse>create(status)
+                    .entity(new ErrorResponse(e.getMessage(), "ERROR"))
+                    .build();
+        }
         log.error("Unexpected error: {}", e.getMessage(), e);
-        return new ErrorResponse(e.getMessage(), "INTERNAL_ERROR");
+        return RestResponse.status(RestResponse.Status.INTERNAL_SERVER_ERROR,
+                new ErrorResponse(e.getMessage(), "INTERNAL_ERROR"));
+    }
+
+    private static String formatViolation(ConstraintViolation<?> v) {
+        String path = v.getPropertyPath().toString();
+        // Keep only the leaf field name (e.g. "execute.request.sql" -> "sql").
+        int lastDot = path.lastIndexOf('.');
+        String field = lastDot >= 0 ? path.substring(lastDot + 1) : path;
+        return field + ": " + v.getMessage();
     }
 }

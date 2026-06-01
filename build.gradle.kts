@@ -1,14 +1,16 @@
 import java.time.Instant
-import org.gradle.api.tasks.bundling.Jar
 
 plugins {
     java
-    id("org.springframework.boot") version "4.0.6"
-    id("io.spring.dependency-management") version "1.1.7"
+    id("io.quarkus")
 }
 
 group = "com.flinksqlfiddle"
 version = "0.1.0-SNAPSHOT"
+
+val quarkusPlatformGroupId: String by project
+val quarkusPlatformArtifactId: String by project
+val quarkusPlatformVersion: String by project
 
 java {
     toolchain {
@@ -63,12 +65,6 @@ val generateBuildInfo by tasks.registering {
     }
 }
 
-// Spring Boot's bootJar is the artifact we ship. The plain library jar is unused and
-// its presence makes build/libs ambiguous for the Docker `COPY *.jar` glob.
-tasks.named<Jar>("jar") {
-    enabled = false
-}
-
 sourceSets.named("main") {
     resources.srcDir(buildInfoDir)
 }
@@ -80,16 +76,22 @@ tasks.named("processResources") {
 val flinkVersion = "2.2.1"
 
 dependencies {
-    // Spring Boot
-    implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.springframework.boot:spring-boot-starter-validation")
-    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
-    runtimeOnly("com.h2database:h2")
-    runtimeOnly("org.postgresql:postgresql")
-    implementation("org.springframework.boot:spring-boot-starter-flyway")
-    implementation("org.flywaydb:flyway-database-postgresql")
+    implementation(enforcedPlatform("$quarkusPlatformGroupId:$quarkusPlatformArtifactId:$quarkusPlatformVersion"))
 
-    // Caffeine cache
+    // Quarkus core + REST (JAX-RS) with Jackson JSON
+    implementation("io.quarkus:quarkus-rest")
+    implementation("io.quarkus:quarkus-rest-jackson")
+
+    // Validation (jakarta.validation)
+    implementation("io.quarkus:quarkus-hibernate-validator")
+
+    // Persistence: Hibernate ORM + Panache, H2 (default) and PostgreSQL (supabase profile)
+    implementation("io.quarkus:quarkus-hibernate-orm-panache")
+    implementation("io.quarkus:quarkus-jdbc-h2")
+    implementation("io.quarkus:quarkus-jdbc-postgresql")
+    implementation("io.quarkus:quarkus-flyway")
+
+    // Caffeine cache (used directly by SessionManager, not via any cache abstraction)
     implementation("com.github.ben-manes.caffeine:caffeine:3.2.4")
 
     // Apache Flink
@@ -105,13 +107,20 @@ dependencies {
     implementation("net.datafaker:datafaker:2.5.4")
 
     // Test
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testImplementation("io.quarkus:quarkus-junit5")
+    testImplementation("io.quarkus:quarkus-junit5-mockito")
+    testImplementation("io.rest-assured:rest-assured")
 }
 
-// Shared test logging helper — applied inline to each Test task so there
-// is no withType<Test> ordering issue.
+tasks.compileJava {
+    options.encoding = "UTF-8"
+    options.compilerArgs.add("-parameters")
+}
+
+// Shared test logging helper — applied inline to each Test task.
 fun Test.configureTestLogging(streams: Boolean = false) {
+    // Quarkus tests require the JBoss LogManager to be installed before any logging happens.
+    systemProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager")
     testLogging {
         events("passed", "skipped", "failed")
         showExceptions = true
@@ -136,7 +145,6 @@ tasks.test {
     useJUnitPlatform {
         excludeTags("smoke")
     }
-    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
     configureTestLogging()
 }
 

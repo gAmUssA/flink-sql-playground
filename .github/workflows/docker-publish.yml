@@ -25,17 +25,19 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
+          # Quarkus augmentation runs in the Gradle JVM and loads the compiled
+          # (Java 25) classes, so the build must run on JDK 25.
+          java-version: '25'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      # Build the (platform-independent) jar ONCE on the native runner. This keeps the
-      # arm64 image build from compiling under QEMU emulation — the cause of the prior
-      # 6-hour timeouts. The git SHA/branch are injected so the deployed-build footer is
-      # accurate (the Docker context has no .git).
+      # Build the (platform-independent) Quarkus fast-jar (build/quarkus-app/) ONCE on the
+      # native runner. This keeps the arm64 image build from compiling under QEMU emulation —
+      # the cause of the prior 6-hour timeouts. The git SHA/branch are injected so the
+      # deployed-build footer is accurate (the Docker context has no .git).
       - name: Build application jar
-        run: ./gradlew bootJar --no-daemon -PbuildCommit=${{ github.sha }} -PbuildBranch=${{ github.ref_name }}
+        run: ./gradlew quarkusBuild --no-daemon -PbuildCommit=${{ github.sha }} -PbuildBranch=${{ github.ref_name }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
