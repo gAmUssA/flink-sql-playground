@@ -250,8 +250,10 @@ svg { display: block; }
 .tb-sep { width: 1px; height: 22px; background: var(--border-2); margin: 0 2px; }
 .tb-spacer { flex: 1; }
 .segmented { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border-2); border-radius: var(--r-md); background: var(--surface-2); }
-.segmented button { font-size: 12.5px; font-weight: 600; padding: 6px 13px; border-radius: calc(var(--r-md) - 3px); color: var(--text-2); transition: all .15s; }
-.segmented button.is-on { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 6px -2px rgba(0,0,0,0.4); border: 1px solid var(--border-2); padding: 5px 12px; }
+/* Constant box model across states (transparent border always present, fixed
+   padding) so toggling only animates colors — no layout shift / jank. */
+.segmented button { font-size: 12.5px; font-weight: 600; padding: 6px 13px; border: 1px solid transparent; border-radius: calc(var(--r-md) - 3px); color: var(--text-2); transition: background-color .15s, color .15s, border-color .15s, box-shadow .15s; }
+.segmented button.is-on { background: var(--surface-3); color: var(--text); border-color: var(--border-2); box-shadow: 0 1px 6px -2px rgba(0,0,0,0.4); }
 .tb-select { position: relative; display: inline-flex; align-items: center; }
 .tb-select select {
   appearance: none; -webkit-appearance: none; font-family: var(--ui); font-size: 12.5px; font-weight: 600; color: var(--text);

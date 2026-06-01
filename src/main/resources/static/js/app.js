@@ -95,11 +95,26 @@ const TWEAK_DEFAULTS = { theme: 'nebula', accent: '#3b82f6', glow: true, density
 
 let tweaks = { ...TWEAK_DEFAULTS };
 
+// Default theme follows the OS until the user explicitly picks one:
+// dark → Nebula, light → Cobalt.
+function systemTheme() {
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'nebula' : 'cobalt';
+}
+
 function loadTweaks() {
   try {
     const saved = JSON.parse(localStorage.getItem(TWEAKS_KEY) || '{}');
     tweaks = { ...TWEAK_DEFAULTS, ...saved };
-  } catch (e) { tweaks = { ...TWEAK_DEFAULTS }; }
+    // No explicit theme choice yet → derive from system preference.
+    if (!saved.themeExplicit) tweaks.theme = systemTheme();
+  } catch (e) { tweaks = { ...TWEAK_DEFAULTS, theme: systemTheme() }; }
+}
+
+// Re-derive theme on OS change, but only while the user hasn't pinned one.
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (!tweaks.themeExplicit) { tweaks.theme = systemTheme(); applyTweaks(); buildTweaksPanel(); }
+  });
 }
 
 function saveTweaks() {
@@ -128,6 +143,8 @@ function applyMonacoTheme() {
 
 function setTweak(key, val) {
   tweaks[key] = val;
+  // Any explicit theme pick stops the app from following the OS preference.
+  if (key === 'theme') tweaks.themeExplicit = true;
   saveTweaks();
   applyTweaks();
   buildTweaksPanel();
