@@ -341,5 +341,56 @@ SELECT
     SUM(\`val\`) AS total_value
 FROM events
 GROUP BY category;`
+    },
+    {
+        title: "Transactions: Batch vs Streaming (Faker)",
+        mode: "BATCH",
+        schema: `-- The cold open: the SAME query, two fates. One rule explains everything —
+-- BATCH needs a BOUNDED source ('number-of-rows'); STREAMING accepts an unbounded
+-- one (omit it). Querying an unbounded table in BATCH fails on purpose.
+
+-- Bounded twin -> legal in BATCH and STREAMING (batch returns; streaming completes).
+CREATE TEMPORARY TABLE txns (
+    txn_id  STRING,
+    card_id INT,
+    amount  DOUBLE,
+    country STRING,
+    city    STRING
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '200',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.country.expression' = '#{Address.countryCode}',
+    'fields.city.expression' = '#{Address.city}'
+);
+
+-- Unbounded twin (identical fields, NO 'number-of-rows') -> STREAMING only.
+-- Swap txns -> txns_live in the query and run STREAMING to watch it never end.
+CREATE TEMPORARY TABLE txns_live (
+    txn_id  STRING,
+    card_id INT,
+    amount  DOUBLE,
+    country STRING,
+    city    STRING
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '5',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.country.expression' = '#{Address.countryCode}',
+    'fields.city.expression' = '#{Address.city}'
+);`,
+        query: `-- BATCH: one final answer, the prompt returns (a photograph).
+-- Toggle to STREAMING: the SAME query emits a +I / -U / +U changelog, then
+--   completes because the source is bounded. Swap txns -> txns_live and it never ends.
+SELECT
+    card_id,
+    COUNT(*) AS n,
+    ROUND(SUM(amount), 2) AS total
+FROM txns
+GROUP BY card_id;`
     }
 ];
