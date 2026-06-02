@@ -23,7 +23,8 @@ const ICONS = {
   minimize: '<path d="M9 3v4a2 2 0 0 1-2 2H3"/><path d="M21 9h-4a2 2 0 0 1-2-2V3"/><path d="M3 15h4a2 2 0 0 1 2 2v4"/><path d="M15 21v-4a2 2 0 0 1 2-2h4"/>',
   dot: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
-  filter: '<path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/>'
+  filter: '<path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>'
 };
 
 function iconSvg(name, size = 16) {
@@ -175,6 +176,8 @@ const R = {
   executionTimeMs: 0,
   jobNodes: ['Source', 'Operator', 'Sink: collect'],
   filters: {},               // colIndex -> { op, v, v2 }
+  clMuted: {},               // changelog: op -> true when that op type is muted/hidden
+  clSearch: '',              // changelog: free-text search query
   err: null
 };
 const MAX_LOG = 400;
@@ -416,6 +419,7 @@ function resetResults() {
   R.materialized = new Map(); R.log = []; R.samples = [];
   R.truncated = false; R.executionTimeMs = 0; R.err = null;
   R.filters = {};
+  R.clMuted = {}; R.clSearch = '';
   closeFilterPopover();
   flashKeys = new Set(); rowsSinceSample = 0;
   updateStatusBar();
@@ -485,7 +489,12 @@ function scheduleRender() {
   renderScheduled = true;
   requestAnimationFrame(() => {
     renderScheduled = false;
-    if (activeTab === 'table' || activeTab === 'changelog' || activeTab === 'graph') renderActiveView();
+    if (activeTab === 'table' || activeTab === 'graph') renderActiveView();
+    // Changelog: patch only the rows + counts so the live search input keeps focus
+    // while the user types and rows stream in. Full render only when the bar isn't up yet.
+    else if (activeTab === 'changelog') {
+      if (document.querySelector('.rv-log-wrap')) refreshChangelogRows(); else renderActiveView();
+    }
     flashKeys = new Set();
   });
 }
@@ -523,7 +532,7 @@ function renderActiveView() {
   if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); return; }
   switch (activeTab) {
     case 'table': body.innerHTML = renderTable(); break;
-    case 'changelog': body.innerHTML = renderChangelog(); body.scrollTop = body.scrollHeight; break;
+    case 'changelog': body.innerHTML = renderChangelog(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
     case 'throughput': body.innerHTML = renderThroughput(); break;
     case 'graph': body.innerHTML = renderJobGraph(); break;
   }
@@ -681,14 +690,114 @@ function openFilterPopover(colIdx, anchorRect) {
   pop._cleanup = () => { document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey); };
 }
 
-function renderChangelog() {
-  if (!R.log.length) return emptyState('pulse', 'Changelog idle', 'Streaming queries emit +I / -U / +U / -D row operations here.');
+// Changelog stream-control filter: op-type toggle pills + free-text highlight search.
+// Deliberately different from the table's per-column filter — it filters the raw +I/-U/+U/-D
+// event stream by operation type and by a value/column substring match.
+const CL_PILL_ORDER = ['+I', '-U', '+U', '-D'];
+const fmtCount = (n) => (n || 0).toLocaleString('en-US');
+
+function clSearching() { return R.clSearch.trim().length > 0; }
+
+// Per-op counts (over the full log), which pills to show, and the filtered rows.
+function clComputed() {
+  const counts = {};
+  R.log.forEach((e) => { counts[e.op] = (counts[e.op] || 0) + 1; });
+  // Always show the core three ops; add -D only when delete events actually occur.
+  const ops = CL_PILL_ORDER.filter((op) => op !== '-D' || counts[op]);
+  const ql = R.clSearch.trim().toLowerCase();
   const cols = R.columns;
-  return `<div class="rv-log">${R.log.map((e) => {
+  const rows = R.log
+    .filter((e) => !R.clMuted[e.op])
+    .filter((e) => !ql || e.values.some((v, j) =>
+      String(v == null ? '' : v).toLowerCase().includes(ql) ||
+      String(cols[j] || '').toLowerCase().includes(ql)));
+  return { counts, ops, rows, total: R.log.length, ql };
+}
+
+function clCountText(c) {
+  return (c.ql || c.rows.length !== c.total)
+    ? `${fmtCount(c.rows.length)} / ${fmtCount(c.total)}`
+    : `${fmtCount(c.total)} events`;
+}
+
+// Escape a string, wrapping the first case-insensitive match of `ql` in a highlight mark.
+function highlightTextHtml(s, ql) {
+  s = String(s);
+  if (!ql) return escapeHtml(s);
+  const idx = s.toLowerCase().indexOf(ql);
+  if (idx === -1) return escapeHtml(s);
+  return escapeHtml(s.slice(0, idx)) +
+    '<mark class="rv-mark">' + escapeHtml(s.slice(idx, idx + ql.length)) + '</mark>' +
+    escapeHtml(s.slice(idx + ql.length));
+}
+
+// Display a cell value, escaping it and highlighting any search match.
+function highlightCellHtml(v, ql) {
+  if (v === null || v === undefined) return '<span class="rv-null">NULL</span>';
+  const s = (typeof v === 'number')
+    ? (Number.isInteger(v) ? v.toLocaleString('en-US')
+      : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+    : String(v);
+  return highlightTextHtml(s, ql);
+}
+
+function renderClToggles(c) {
+  return c.ops.map((op) => {
+    const meta = OP_META[op] || { cls: '', label: op };
+    const on = !R.clMuted[op];
+    return `<button class="rv-op-toggle ${meta.cls} ${on ? 'is-on' : 'is-off'}" data-clop="${escapeAttr(op)}" title="${on ? 'Hide' : 'Show'} ${escapeAttr(meta.label)} rows">`
+      + `<span class="rv-op-toggle-mark">${escapeHtml(op)}</span>`
+      + `<span class="rv-op-toggle-label">${escapeHtml(meta.label)}</span>`
+      + `<span class="rv-op-toggle-n">${fmtCount(c.counts[op])}</span></button>`;
+  }).join('');
+}
+
+function renderClBar(c) {
+  const clearX = R.clSearch
+    ? `<button class="rv-log-search-x" data-clclear title="Clear search">${iconSvg('x', 12)}</button>` : '';
+  return `<div class="rv-log-bar">`
+    + `<div class="rv-op-toggles">${renderClToggles(c)}</div>`
+    + `<div class="rv-log-search">${iconSvg('search', 14)}`
+    + `<input id="cl-search" class="rv-log-search-input" type="text" placeholder="Search values…" value="${escapeAttr(R.clSearch)}" autocomplete="off" spellcheck="false" aria-label="Search changelog">`
+    + `${clearX}</div>`
+    + `<span class="rv-log-count" id="cl-count">${clCountText(c)}</span></div>`;
+}
+
+function renderClRows(c) {
+  if (!R.log.length) return emptyState('pulse', 'Changelog idle', 'Streaming queries emit +I / -U / +U / -D row operations here.');
+  if (!c.rows.length) {
+    const q = R.clSearch.trim();
+    return `<div class="rv-log-empty">No events match${q ? ` “<b>${escapeHtml(q)}</b>”` : ' the active filters'}.</div>`;
+  }
+  const cols = R.columns;
+  return `<div class="rv-log" id="cl-log">${c.rows.map((e) => {
     const meta = OP_META[e.op] || { cls: '', label: e.op };
-    const vals = e.values.map((v, j) => `<span class="rv-log-cell"><i>${escapeHtml(cols[j] || ('c' + j))}</i>${fmtVal(v)}</span>`).join('');
+    const vals = e.values.map((v, j) => `<span class="rv-log-cell"><i>${highlightTextHtml(cols[j] || ('c' + j), c.ql)}</i>${highlightCellHtml(v, c.ql)}</span>`).join('');
     return `<div class="rv-log-row ${meta.cls}"><span class="rv-op">${escapeHtml(e.op)}</span><span class="rv-op-label">${meta.label}</span><span class="rv-log-vals">${vals}</span></div>`;
   }).join('')}</div>`;
+}
+
+function renderChangelog() {
+  const c = clComputed();
+  return `<div class="rv-log-wrap">${renderClBar(c)}${renderClRows(c)}</div>`;
+}
+
+// Patch only the rows + counts, leaving the control bar (and the focused search input) intact.
+function refreshChangelogRows() {
+  const wrap = document.querySelector('.rv-log-wrap');
+  if (!wrap) { renderActiveView(); return; }
+  const c = clComputed();
+  // Rebuild the toggle pills (not just their counts) so a pill for a newly-seen op type
+  // — e.g. -D once delete events start arriving mid-stream — appears. The pills hold no
+  // focus, so rebuilding them is safe; is-on/off state is derived from R.clMuted.
+  const togglesEl = wrap.querySelector('.rv-op-toggles');
+  if (togglesEl) togglesEl.innerHTML = renderClToggles(c);
+  const cnt = wrap.querySelector('#cl-count');
+  if (cnt) cnt.textContent = clCountText(c);
+  const old = wrap.querySelector('.rv-log, .rv-log-empty, .rv-empty');
+  if (old) old.outerHTML = renderClRows(c); else wrap.insertAdjacentHTML('beforeend', renderClRows(c));
+  const body = document.getElementById('results-container');
+  if (body && !clSearching()) body.scrollTop = body.scrollHeight;
 }
 
 function renderThroughput() {
@@ -995,6 +1104,10 @@ function renderTour() {
 function escapeHtml(text) {
   return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+// For values placed inside double-quoted HTML attributes — also neutralize quotes.
+function escapeAttr(text) {
+  return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 /* ============================== Init ============================== */
 loadTweaks();
@@ -1026,6 +1139,24 @@ document.addEventListener('DOMContentLoaded', () => {
   // Delegated handling for column-filter affordances in the Table view (the
   // results body is re-rendered on every streamed row, so we bind once here).
   document.getElementById('results-container').addEventListener('click', (e) => {
+    // Changelog: op-type toggle pills + clear-search button
+    const clop = e.target.closest('.rv-op-toggle');
+    if (clop) {
+      const op = clop.dataset.clop;
+      R.clMuted[op] = !R.clMuted[op];
+      clop.classList.toggle('is-on'); clop.classList.toggle('is-off');
+      refreshChangelogRows();
+      return;
+    }
+    if (e.target.closest('[data-clclear]')) {
+      R.clSearch = '';
+      const inp = document.getElementById('cl-search');
+      if (inp) { inp.value = ''; inp.focus(); }
+      const x = e.target.closest('.rv-log-search-x');
+      if (x) x.remove();
+      refreshChangelogRows();
+      return;
+    }
     const chipX = e.target.closest('.rv-chip-x');
     if (chipX) { e.stopPropagation(); removeFilter(parseInt(chipX.dataset.chipx, 10)); return; }
     if (e.target.closest('[data-clearall]')) { clearAllFilters(); return; }
@@ -1033,6 +1164,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (chip) { toggleFilter(parseInt(chip.dataset.chip, 10), chip.getBoundingClientRect()); return; }
     const th = e.target.closest('.th-btn');
     if (th) { toggleFilter(parseInt(th.dataset.col, 10), th.closest('th').getBoundingClientRect()); return; }
+  });
+  // Changelog free-text search — update rows in place so the input keeps focus while typing.
+  document.getElementById('results-container').addEventListener('input', (e) => {
+    const inp = e.target.closest('.rv-log-search-input');
+    if (!inp) return;
+    R.clSearch = inp.value;
+    const search = inp.closest('.rv-log-search');
+    const x = search.querySelector('.rv-log-search-x');
+    if (R.clSearch && !x) search.insertAdjacentHTML('beforeend', `<button class="rv-log-search-x" data-clclear title="Clear search">${iconSvg('x', 12)}</button>`);
+    else if (!R.clSearch && x) x.remove();
+    refreshChangelogRows();
   });
   document.getElementById('theme-toggle').addEventListener('click', () => {
     setTweak('theme', tweaks.theme === 'cobalt' ? 'nebula' : 'cobalt');
