@@ -229,4 +229,38 @@ class SqlExecutionServiceTest {
         assertFalse(SqlExecutionService.isDdl("INSERT INTO t SELECT 1"));
         assertFalse(SqlExecutionService.isDdl("EXPLAIN SELECT * FROM t"));
     }
+
+    @Test
+    void isDdlDetectsStatementsWithLeadingComments() {
+        // Leading line comment(s)
+        assertTrue(SqlExecutionService.isDdl("-- a note\nCREATE TABLE t (id INT)"));
+        assertTrue(SqlExecutionService.isDdl("-- one\n-- two\n  CREATE TEMPORARY TABLE t (id INT)"));
+        assertTrue(SqlExecutionService.isDdl("-- comment with a ; semicolon\nDROP TABLE t"));
+        // Leading block comment + whitespace
+        assertTrue(SqlExecutionService.isDdl("/* block\n comment */\nCREATE TABLE t (id INT)"));
+        assertTrue(SqlExecutionService.isDdl("   \n  -- indented\n   CREATE VIEW v AS SELECT 1"));
+        // A comment that merely mentions CREATE is still not DDL on its own
+        assertFalse(SqlExecutionService.isDdl("-- CREATE TABLE in a comment\nSELECT * FROM t"));
+    }
+
+    @Test
+    void dropStatementForHandlesLeadingComments() {
+        assertEquals(Optional.of("DROP TABLE IF EXISTS orders"),
+                SqlExecutionService.dropStatementFor("-- create the orders table\nCREATE TABLE orders (id INT)"));
+        assertEquals(Optional.of("DROP TABLE IF EXISTS orders"),
+                SqlExecutionService.dropStatementFor("/* setup */ CREATE TEMPORARY TABLE orders (id INT)"));
+    }
+
+    @Test
+    void stripLeadingCommentsRemovesOnlyLeadingComments() {
+        assertEquals("CREATE TABLE t (id INT)",
+                SqlExecutionService.stripLeadingComments("-- note\nCREATE TABLE t (id INT)"));
+        assertEquals("CREATE TABLE t (id INT)",
+                SqlExecutionService.stripLeadingComments("  -- a\n  -- b\n  CREATE TABLE t (id INT)"));
+        assertEquals("CREATE TABLE t (id INT)",
+                SqlExecutionService.stripLeadingComments("/* a */ CREATE TABLE t (id INT)"));
+        // No leading comment -> unchanged; trailing comment preserved
+        assertEquals("SELECT 1 -- trailing", SqlExecutionService.stripLeadingComments("SELECT 1 -- trailing"));
+        assertEquals("", SqlExecutionService.stripLeadingComments(null));
+    }
 }
