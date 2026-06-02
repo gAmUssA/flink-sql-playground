@@ -720,13 +720,9 @@ function clCountText(c) {
     : `${fmtCount(c.total)} events`;
 }
 
-// Display a cell value, escaping it and wrapping the first case-insensitive search match.
-function highlightCellHtml(v, ql) {
-  if (v === null || v === undefined) return '<span class="rv-null">NULL</span>';
-  const s = (typeof v === 'number')
-    ? (Number.isInteger(v) ? v.toLocaleString('en-US')
-      : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
-    : String(v);
+// Escape a string, wrapping the first case-insensitive match of `ql` in a highlight mark.
+function highlightTextHtml(s, ql) {
+  s = String(s);
   if (!ql) return escapeHtml(s);
   const idx = s.toLowerCase().indexOf(ql);
   if (idx === -1) return escapeHtml(s);
@@ -735,21 +731,34 @@ function highlightCellHtml(v, ql) {
     escapeHtml(s.slice(idx + ql.length));
 }
 
-function renderClBar(c) {
-  const toggles = c.ops.map((op) => {
+// Display a cell value, escaping it and highlighting any search match.
+function highlightCellHtml(v, ql) {
+  if (v === null || v === undefined) return '<span class="rv-null">NULL</span>';
+  const s = (typeof v === 'number')
+    ? (Number.isInteger(v) ? v.toLocaleString('en-US')
+      : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+    : String(v);
+  return highlightTextHtml(s, ql);
+}
+
+function renderClToggles(c) {
+  return c.ops.map((op) => {
     const meta = OP_META[op] || { cls: '', label: op };
     const on = !R.clMuted[op];
-    return `<button class="rv-op-toggle ${meta.cls} ${on ? 'is-on' : 'is-off'}" data-clop="${escapeHtml(op)}" title="${on ? 'Hide' : 'Show'} ${meta.label} rows">`
+    return `<button class="rv-op-toggle ${meta.cls} ${on ? 'is-on' : 'is-off'}" data-clop="${escapeAttr(op)}" title="${on ? 'Hide' : 'Show'} ${escapeAttr(meta.label)} rows">`
       + `<span class="rv-op-toggle-mark">${escapeHtml(op)}</span>`
-      + `<span class="rv-op-toggle-label">${meta.label}</span>`
+      + `<span class="rv-op-toggle-label">${escapeHtml(meta.label)}</span>`
       + `<span class="rv-op-toggle-n">${fmtCount(c.counts[op])}</span></button>`;
   }).join('');
+}
+
+function renderClBar(c) {
   const clearX = R.clSearch
     ? `<button class="rv-log-search-x" data-clclear title="Clear search">${iconSvg('x', 12)}</button>` : '';
   return `<div class="rv-log-bar">`
-    + `<div class="rv-op-toggles">${toggles}</div>`
+    + `<div class="rv-op-toggles">${renderClToggles(c)}</div>`
     + `<div class="rv-log-search">${iconSvg('search', 14)}`
-    + `<input id="cl-search" class="rv-log-search-input" type="text" placeholder="Search values…" value="${escapeHtml(R.clSearch)}" autocomplete="off" spellcheck="false" aria-label="Search changelog">`
+    + `<input id="cl-search" class="rv-log-search-input" type="text" placeholder="Search values…" value="${escapeAttr(R.clSearch)}" autocomplete="off" spellcheck="false" aria-label="Search changelog">`
     + `${clearX}</div>`
     + `<span class="rv-log-count" id="cl-count">${clCountText(c)}</span></div>`;
 }
@@ -763,7 +772,7 @@ function renderClRows(c) {
   const cols = R.columns;
   return `<div class="rv-log" id="cl-log">${c.rows.map((e) => {
     const meta = OP_META[e.op] || { cls: '', label: e.op };
-    const vals = e.values.map((v, j) => `<span class="rv-log-cell"><i>${escapeHtml(cols[j] || ('c' + j))}</i>${highlightCellHtml(v, c.ql)}</span>`).join('');
+    const vals = e.values.map((v, j) => `<span class="rv-log-cell"><i>${highlightTextHtml(cols[j] || ('c' + j), c.ql)}</i>${highlightCellHtml(v, c.ql)}</span>`).join('');
     return `<div class="rv-log-row ${meta.cls}"><span class="rv-op">${escapeHtml(e.op)}</span><span class="rv-op-label">${meta.label}</span><span class="rv-log-vals">${vals}</span></div>`;
   }).join('')}</div>`;
 }
@@ -778,10 +787,11 @@ function refreshChangelogRows() {
   const wrap = document.querySelector('.rv-log-wrap');
   if (!wrap) { renderActiveView(); return; }
   const c = clComputed();
-  wrap.querySelectorAll('.rv-op-toggle').forEach((btn) => {
-    const n = btn.querySelector('.rv-op-toggle-n');
-    if (n) n.textContent = fmtCount(c.counts[btn.dataset.clop]);
-  });
+  // Rebuild the toggle pills (not just their counts) so a pill for a newly-seen op type
+  // — e.g. -D once delete events start arriving mid-stream — appears. The pills hold no
+  // focus, so rebuilding them is safe; is-on/off state is derived from R.clMuted.
+  const togglesEl = wrap.querySelector('.rv-op-toggles');
+  if (togglesEl) togglesEl.innerHTML = renderClToggles(c);
   const cnt = wrap.querySelector('#cl-count');
   if (cnt) cnt.textContent = clCountText(c);
   const old = wrap.querySelector('.rv-log, .rv-log-empty, .rv-empty');
@@ -1093,6 +1103,10 @@ function renderTour() {
 /* ============================== Utils ============================== */
 function escapeHtml(text) {
   return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+// For values placed inside double-quoted HTML attributes — also neutralize quotes.
+function escapeAttr(text) {
+  return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 /* ============================== Init ============================== */
