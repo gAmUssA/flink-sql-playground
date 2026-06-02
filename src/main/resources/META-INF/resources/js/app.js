@@ -282,6 +282,41 @@ async function warmUp() {
 }
 
 /* ============================== Build schema ============================== */
+// Split a multi-statement SQL script on ';' — but only on *real* separators, not the
+// ';' inside line/block comments, single-quoted strings, or backtick identifiers. Also
+// drops comment-only / blank chunks (a trailing comment is kept attached to its statement).
+// A naive split(';') breaks on e.g. a comment like "-- needs 'number-of-rows'; see docs".
+function splitSqlStatements(sql) {
+  const out = [];
+  let cur = '', hasContent = false, i = 0;
+  const n = sql.length;
+  const flush = () => { if (hasContent) out.push(cur.trim()); cur = ''; hasContent = false; };
+  while (i < n) {
+    const c = sql[i], c2 = sql[i + 1];
+    if (c === '-' && c2 === '-') {                       // line comment -> end of line
+      const nl = sql.indexOf('\n', i); const e = nl === -1 ? n : nl + 1;
+      cur += sql.slice(i, e); i = e; continue;
+    }
+    if (c === '/' && c2 === '*') {                       // block comment
+      const cl = sql.indexOf('*/', i + 2); const e = cl === -1 ? n : cl + 2;
+      cur += sql.slice(i, e); i = e; continue;
+    }
+    if (c === "'") {                                     // single-quoted string ('' escapes)
+      let j = i + 1;
+      while (j < n) { if (sql[j] === "'") { if (sql[j + 1] === "'") { j += 2; continue; } j++; break; } j++; }
+      cur += sql.slice(i, j); hasContent = true; i = j; continue;
+    }
+    if (c === '`') {                                     // backtick-quoted identifier
+      const cl = sql.indexOf('`', i + 1); const e = cl === -1 ? n : cl + 1;
+      cur += sql.slice(i, e); hasContent = true; i = e; continue;
+    }
+    if (c === ';') { flush(); i++; continue; }
+    cur += c; if (!/\s/.test(c)) hasContent = true; i++;
+  }
+  flush();
+  return out;
+}
+
 async function buildSchema() {
   if (!sessionId) { setStatus('No active session', 'error'); return; }
   const btn = document.getElementById('build-schema-btn');
@@ -289,8 +324,9 @@ async function buildSchema() {
   setStatus('Building schema…', 'compiling');
   try {
     const schema = schemaEditor.getValue().trim();
-    if (!schema) { setStatus('No schema to build', 'ready'); return; }
-    const statements = schema.split(';').map((s) => s.trim()).filter((s) => s.length > 0);
+    const statements = schema ? splitSqlStatements(schema) : [];
+    // Empty input OR comments-only input both mean "nothing to run" — don't claim success.
+    if (!statements.length) { setStatus('No schema to build', 'ready'); return; }
     for (const stmt of statements) {
       const res = await fetch(api(`/api/sessions/${sessionId}/execute`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

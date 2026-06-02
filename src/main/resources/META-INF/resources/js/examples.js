@@ -346,7 +346,7 @@ GROUP BY category;`
         title: "Transactions: Batch vs Streaming (Faker)",
         mode: "BATCH",
         schema: `-- The cold open: the SAME query, two fates. One rule explains everything —
--- BATCH needs a BOUNDED source ('number-of-rows'); STREAMING accepts an unbounded
+-- BATCH needs a BOUNDED source ('number-of-rows') — STREAMING accepts an unbounded
 -- one (omit it). Querying an unbounded table in BATCH fails on purpose.
 
 -- Bounded twin -> legal in BATCH and STREAMING (batch returns; streaming completes).

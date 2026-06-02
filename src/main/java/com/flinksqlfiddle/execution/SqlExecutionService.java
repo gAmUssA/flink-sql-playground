@@ -143,7 +143,7 @@ public class SqlExecutionService {
      * statement that makes re-execution safe. Empty for any other statement.
      */
     static Optional<String> dropStatementFor(String sql) {
-        Matcher matcher = CREATE_TABLE_PATTERN.matcher(sql);
+        Matcher matcher = CREATE_TABLE_PATTERN.matcher(stripLeadingComments(sql));
         if (!matcher.find()) {
             return Optional.empty();
         }
@@ -151,7 +151,39 @@ public class SqlExecutionService {
     }
 
     static boolean isDdl(String sql) {
-        return DDL_PATTERN.matcher(sql).find();
+        return DDL_PATTERN.matcher(stripLeadingComments(sql)).find();
+    }
+
+    /**
+     * Strips leading line ({@code --}) and block ({@code /* *}{@code /}) comments and
+     * whitespace so the DDL/CREATE-TABLE patterns (anchored at the start) still match a
+     * statement that opens with a comment. Without this, a statement like
+     * {@code "-- note\nCREATE TABLE ..."} is not recognized as DDL, so it never gets synced
+     * to both the batch and streaming environments — and toggling modes then fails to find
+     * the table. Only used for pattern matching; the original SQL (comments intact) is what
+     * runs.
+     */
+    static String stripLeadingComments(String sql) {
+        if (sql == null) {
+            return "";
+        }
+        int i = 0;
+        int n = sql.length();
+        while (i < n) {
+            while (i < n && Character.isWhitespace(sql.charAt(i))) {
+                i++;
+            }
+            if (i + 1 < n && sql.charAt(i) == '-' && sql.charAt(i + 1) == '-') {
+                int nl = sql.indexOf('\n', i);
+                i = (nl == -1) ? n : nl + 1;
+            } else if (i + 1 < n && sql.charAt(i) == '/' && sql.charAt(i + 1) == '*') {
+                int close = sql.indexOf("*/", i + 2);
+                i = (close == -1) ? n : close + 2;
+            } else {
+                break;
+            }
+        }
+        return sql.substring(Math.min(i, n));
     }
 
     /**
