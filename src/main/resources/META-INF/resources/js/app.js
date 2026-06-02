@@ -324,8 +324,9 @@ async function buildSchema() {
   setStatus('Building schema…', 'compiling');
   try {
     const schema = schemaEditor.getValue().trim();
-    if (!schema) { setStatus('No schema to build', 'ready'); return; }
-    const statements = splitSqlStatements(schema);
+    const statements = schema ? splitSqlStatements(schema) : [];
+    // Empty input OR comments-only input both mean "nothing to run" — don't claim success.
+    if (!statements.length) { setStatus('No schema to build', 'ready'); return; }
     for (const stmt of statements) {
       const res = await fetch(api(`/api/sessions/${sessionId}/execute`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
