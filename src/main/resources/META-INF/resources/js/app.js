@@ -158,6 +158,12 @@ let activeStreamController = null;
 let currentMode = 'STREAMING';
 let activeTab = 'table';
 
+// Backend API base. Empty string = same-origin (the bundled deployment). When the static
+// frontend is hosted separately from the backend, set `window.API_BASE` to the backend
+// origin (e.g. via a small config.js loaded before app.js); every /api call goes through api().
+const API_BASE = (window.API_BASE || '').replace(/\/+$/, '');
+function api(path) { return API_BASE + path; }
+
 // Results model
 const R = {
   columns: [], columnTypes: [], aligns: [],
@@ -235,7 +241,7 @@ require(['vs/editor/editor.main'], function () {
 /* ============================== Session ============================== */
 async function createSession() {
   try {
-    const res = await fetch('/api/sessions', { method: 'POST' });
+    const res = await fetch(api('/api/sessions'), { method: 'POST' });
     if (res.status === 429) { setStatus('Session limit reached — try later', 'error'); return; }
     if (!res.ok) throw new Error('Failed to create session');
     const data = await res.json();
@@ -249,6 +255,29 @@ async function createSession() {
   }
 }
 
+/* ============================== Warm-up ============================== */
+// Pre-warm the backend the moment the page loads: a trivial bounded query forces the lazy
+// Flink MiniCluster to start and the Janino/Calcite code paths to compile while the user is
+// still writing SQL — so their first real Run mostly skips the ~cold-start cost. Best-effort
+// and silent; probes both modes to warm the batch and streaming TableEnvironments.
+async function warmUp() {
+  if (!sessionId) return;
+  // Don't stomp on a status the user's own query may have set if they ran one immediately.
+  if (!R.running) setStatus('Warming up engine…', 'compiling');
+  // Resolves true only on a 2xx — so a misconfigured API_BASE / CORS / network / 5xx failure
+  // doesn't get mislabelled as "Engine ready".
+  const probe = (mode) => fetch(api(`/api/sessions/${sessionId}/execute`), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql: 'SELECT 1', mode })
+  }).then((r) => r.ok).catch(() => false);
+  const okBatch = await probe('BATCH');
+  const okStream = await probe('STREAMING');
+  // Don't clobber the status if the user already kicked off their own query meanwhile.
+  if (R.running) return;
+  if (okBatch || okStream) { setStatus('Engine ready', 'ready'); setStateBadge('ready', 'ready'); }
+  else { setStatus('Backend unavailable', 'error'); setStateBadge('error', 'error'); }
+}
+
 /* ============================== Build schema ============================== */
 async function buildSchema() {
   if (!sessionId) { setStatus('No active session', 'error'); return; }
@@ -260,7 +289,7 @@ async function buildSchema() {
     if (!schema) { setStatus('No schema to build', 'ready'); return; }
     const statements = schema.split(';').map((s) => s.trim()).filter((s) => s.length > 0);
     for (const stmt of statements) {
-      const res = await fetch(`/api/sessions/${sessionId}/execute`, {
+      const res = await fetch(api(`/api/sessions/${sessionId}/execute`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql: stmt, mode: getMode() })
       });
@@ -302,7 +331,7 @@ async function runBatchQuery(query) {
   setRunningUI(true);
   setStateBadge('running', 'live');
   try {
-    const res = await fetch(`/api/sessions/${sessionId}/execute`, {
+    const res = await fetch(api(`/api/sessions/${sessionId}/execute`), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: query, mode: 'BATCH' })
     });
@@ -333,7 +362,7 @@ async function runStreamingQuery(query) {
   startThroughput();
   let firstRow = true;
   try {
-    const res = await fetch(`/api/sessions/${sessionId}/execute/stream`, {
+    const res = await fetch(api(`/api/sessions/${sessionId}/execute/stream`), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: query, mode: 'STREAMING' }),
       signal: activeStreamController.signal
@@ -719,7 +748,7 @@ async function refreshSchemaBrowser() {
   const list = document.getElementById('schema-browser-list');
   const empty = document.getElementById('schema-browser-empty');
   try {
-    const res = await fetch(`/api/sessions/${sessionId}/tables`);
+    const res = await fetch(api(`/api/sessions/${sessionId}/tables`));
     if (!res.ok) return;
     const data = await res.json();
     list.innerHTML = '';
@@ -743,7 +772,7 @@ function shortType(t) { return String(t || '').replace(/\s+NOT NULL/i, '').repla
 async function shareFiddle() {
   if (!schemaEditor || !queryEditor) return;
   try {
-    const res = await fetch('/api/fiddles', {
+    const res = await fetch(api('/api/fiddles'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ schema: schemaEditor.getValue(), query: queryEditor.getValue(), mode: getMode() })
     });
@@ -759,7 +788,7 @@ async function loadFiddleFromUrl() {
   const match = window.location.pathname.match(/^\/f\/([a-f0-9]+)$/);
   if (!match) return;
   try {
-    const res = await fetch(`/api/fiddles/${match[1]}`);
+    const res = await fetch(api(`/api/fiddles/${match[1]}`));
     if (!res.ok) { setStatus('Fiddle not found', 'error'); return; }
     const fiddle = await res.json();
     if (schemaEditor) schemaEditor.setValue(fiddle.schema);
@@ -775,7 +804,7 @@ async function loadBuildInfo() {
   const el = document.getElementById('status-build');
   if (!el) return;
   try {
-    const res = await fetch('/api/build-info');
+    const res = await fetch(api('/api/build-info'));
     if (!res.ok) return;
     const info = await res.json();
     el.textContent = `build ${info.commit}`;
@@ -976,7 +1005,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setRunningUI(false);
   applyTweaks();
   populateExamples();
-  createSession();
+  createSession().then(warmUp);
   loadBuildInfo();
   initMaximize();
   renderActiveView();
