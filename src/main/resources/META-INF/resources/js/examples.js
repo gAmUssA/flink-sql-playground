@@ -341,5 +341,214 @@ SELECT
     SUM(\`val\`) AS total_value
 FROM events
 GROUP BY category;`
+    },
+    {
+        title: "Transactions: Batch vs Streaming (Faker)",
+        mode: "BATCH",
+        schema: `-- The cold open: the SAME query, two fates. One rule explains everything —
+-- BATCH needs a BOUNDED source ('number-of-rows'); STREAMING accepts an unbounded
+-- one (omit it). Querying an unbounded table in BATCH fails on purpose.
+
+-- Bounded twin -> legal in BATCH and STREAMING (batch returns; streaming completes).
+CREATE TEMPORARY TABLE txns (
+    txn_id  STRING,
+    card_id INT,
+    amount  DOUBLE,
+    country STRING,
+    city    STRING
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '200',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.country.expression' = '#{Address.countryCode}',
+    'fields.city.expression' = '#{Address.city}'
+);
+
+-- Unbounded twin (identical fields, NO 'number-of-rows') -> STREAMING only.
+-- Swap txns -> txns_live in the query and run STREAMING to watch it never end.
+CREATE TEMPORARY TABLE txns_live (
+    txn_id  STRING,
+    card_id INT,
+    amount  DOUBLE,
+    country STRING,
+    city    STRING
+) WITH (
+    'connector' = 'faker',
+    'rows-per-second' = '5',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.country.expression' = '#{Address.countryCode}',
+    'fields.city.expression' = '#{Address.city}'
+);`,
+        query: `-- BATCH: one final answer, the prompt returns (a photograph).
+-- Toggle to STREAMING: the SAME query emits a +I / -U / +U changelog, then
+--   completes because the source is bounded. Swap txns -> txns_live and it never ends.
+SELECT
+    card_id,
+    COUNT(*) AS n,
+    ROUND(SUM(amount), 2) AS total
+FROM txns
+GROUP BY card_id;`
+    },
+    {
+        title: "Stream-Stream Join (Faker)",
+        mode: "STREAMING",
+        schema: `-- Two independent streams, joined on a shared key ("joining two rivers").
+CREATE TEMPORARY TABLE txns (
+    txn_id  STRING,
+    card_id INT,
+    amount  DOUBLE
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '50',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}'
+);
+
+CREATE TEMPORARY TABLE shipments (
+    shipment_id STRING,
+    card_id     INT,
+    carrier     STRING
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '20',
+    'fields.shipment_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.carrier.expression' = '#{Company.name}'
+);`,
+        query: `SELECT t.txn_id, t.card_id, t.amount, s.carrier
+FROM txns AS t
+JOIN shipments AS s ON t.card_id = s.card_id;
+-- GOTCHA: an unbounded stream-stream equi-join keeps BOTH sides in state forever.
+--         Fine for a demo; in prod you bound it (interval / temporal join / state TTL)
+--         or state grows without limit.`
+    },
+    {
+        title: "Tumbling & Hopping Windows (Faker)",
+        mode: "STREAMING",
+        schema: `-- Event-time table with a WATERMARK. faker's date.past yields slightly
+-- out-of-order timestamps — exactly what makes watermarks interesting.
+CREATE TEMPORARY TABLE txn_events (
+    txn_id     STRING,
+    card_id    INT,
+    amount     DOUBLE,
+    ccy        STRING,
+    country    STRING,
+    event_time TIMESTAMP(3),
+    WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '500',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
+    'fields.country.expression' = '#{Address.countryCode}',
+    'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
+);`,
+        query: `-- Tumbling: fixed, non-overlapping 10s buckets.
+SELECT window_start, window_end, COUNT(*) AS txns, ROUND(SUM(amount), 2) AS total
+FROM TABLE(TUMBLE(TABLE txn_events, DESCRIPTOR(event_time), INTERVAL '10' SECOND))
+GROUP BY window_start, window_end;
+
+-- Hopping (overlapping, slide 10s / size 30s) — swap the query above for this:
+-- SELECT window_start, window_end, COUNT(*) AS txns
+-- FROM TABLE(HOP(TABLE txn_events, DESCRIPTOR(event_time), INTERVAL '10' SECOND, INTERVAL '30' SECOND))
+-- GROUP BY window_start, window_end;
+
+-- GOTCHA: the current form is the windowing TVF — TABLE(TUMBLE(TABLE t, DESCRIPTOR(ts), ...)).
+--         The old GROUP BY TUMBLE(rowtime, ...) is legacy. And the WATERMARK is a
+--         latency-vs-completeness dial: too tight and Flink SILENTLY DROPS late rows.`
+    },
+    {
+        title: "Temporal Join — enrich at event time (Faker)",
+        mode: "STREAMING",
+        schema: `-- Fact stream (event-time + watermark).
+CREATE TEMPORARY TABLE txn_events (
+    txn_id     STRING,
+    card_id    INT,
+    amount     DOUBLE,
+    ccy        STRING,
+    event_time TIMESTAMP(3),
+    WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '500',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
+    'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
+);
+
+-- A VERSIONED dimension table: needs a PRIMARY KEY and its own WATERMARK.
+CREATE TEMPORARY TABLE fx_rates (
+    ccy         STRING,
+    rate_to_eur DOUBLE,
+    rate_time   TIMESTAMP(3),
+    WATERMARK FOR rate_time AS rate_time - INTERVAL '5' SECOND,
+    PRIMARY KEY (ccy) NOT ENFORCED
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '50',
+    'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
+    'fields.rate_to_eur.expression' = '#{Number.randomDouble ''3'',''0'',''2''}',
+    'fields.rate_time.expression' = '#{date.past ''20'',''SECONDS''}'
+);`,
+        query: `-- Enrich each txn with the FX rate as it was AT THE TXN'S EVENT TIME.
+SELECT
+    t.txn_id,
+    t.amount,
+    r.rate_to_eur,
+    ROUND(t.amount * r.rate_to_eur, 2) AS amount_eur
+FROM txn_events AS t
+JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
+  ON t.ccy = r.ccy;
+-- GOTCHA: the right side MUST be versioned — PRIMARY KEY + WATERMARK. Forget the
+--         watermark on the dimension and Flink can't reconstruct "the rate as of 9:42",
+--         so the join just refuses. People blame the join; it's the DDL.`
+    },
+    {
+        title: "Fraud: Impossible Travel (MATCH_RECOGNIZE)",
+        mode: "STREAMING",
+        schema: `-- Same card, two different countries, within 10 seconds -> impossible travel.
+CREATE TEMPORARY TABLE txn_events (
+    txn_id     STRING,
+    card_id    INT,
+    amount     DOUBLE,
+    country    STRING,
+    event_time TIMESTAMP(3),
+    WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '500',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.country.expression' = '#{Address.countryCode}',
+    'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
+);`,
+        query: `SELECT *
+FROM txn_events
+MATCH_RECOGNIZE (
+    PARTITION BY card_id
+    ORDER BY event_time
+    MEASURES
+        A.country    AS country_1,
+        B.country    AS country_2,
+        A.event_time AS t1,
+        B.event_time AS t2
+    ONE ROW PER MATCH
+    AFTER MATCH SKIP PAST LAST ROW
+    PATTERN (A B) WITHIN INTERVAL '10' SECOND
+    DEFINE
+        B AS B.country <> A.country
+) AS impossible_travel;
+-- GOTCHA: WITHIN INTERVAL '10' SECOND isn't just a filter — it BOUNDS THE STATE Flink
+--         keeps per card. Drop it and you ask Flink to remember every card forever.`
     }
 ];
