@@ -920,14 +920,14 @@ function renderSchemaBrowser() {
     const head = `<div class="tbl-card-head">`
       + `<span class="tbl-name">${iconSvg('table', 13)} ${escapeHtml(table.name)}</span>`
       + `<span class="tbl-kind">table</span>`
-      + `<button class="tbl-drop" data-drop="${escapeAttr(table.name)}" title="Drop ${escapeAttr(table.name)}">${iconSvg('trash', 13)}</button>`
+      + `<button class="tbl-drop" data-drop="${escapeAttr(table.name)}" aria-label="Drop table ${escapeAttr(table.name)}" title="Drop ${escapeAttr(table.name)}">${iconSvg('trash', 13)}</button>`
       + `</div>`;
     let body;
     if (confirming) {
       body = `<div class="tbl-confirm">`
         + `<div class="tbl-confirm-ic">${iconSvg('trash', 16)}</div>`
         + `<p class="tbl-confirm-q">Drop this table?</p>`
-        + `<code class="tbl-confirm-sql"><span class="tk-kw">DROP TEMPORARY TABLE</span> ${escapeHtml(table.name)}<span class="tk-pun">;</span></code>`
+        + `<code class="tbl-confirm-sql"><span class="tk-kw">DROP TEMPORARY TABLE IF EXISTS</span> \`${escapeHtml(table.name)}\`<span class="tk-pun">;</span></code>`
         + `<span class="tbl-confirm-note">This removes it from the session catalog.</span>`
         + `<div class="tbl-confirm-actions">`
         + `<button class="btn ghost sm" data-drop-cancel>Cancel</button>`
@@ -947,7 +947,9 @@ function renderSchemaBrowser() {
 // to both the batch and streaming envs), then refresh the catalog.
 async function dropTable(name) {
   confirmingDrop = null;
-  const card = document.querySelector(`.tbl-card[data-table="${(window.CSS && CSS.escape) ? CSS.escape(name) : name}"]`);
+  // Find the card by scanning datasets — avoids building an attribute selector from an
+  // arbitrary table name (which could contain selector-breaking characters like " or ]).
+  const card = [...document.querySelectorAll('.tbl-card')].find((c) => c.dataset.table === name);
   if (card) card.classList.add('is-dropping');
   await new Promise((r) => setTimeout(r, 320));
   try {
