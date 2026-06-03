@@ -225,6 +225,9 @@ class SqlExecutionServiceTest {
         assertTrue(SqlExecutionService.isDdl("CREATE TEMPORARY VIEW v AS SELECT 1"));
         assertTrue(SqlExecutionService.isDdl("DROP TABLE t"));
         assertTrue(SqlExecutionService.isDdl("DROP VIEW v"));
+        assertTrue(SqlExecutionService.isDdl("DROP TEMPORARY TABLE t"));
+        assertTrue(SqlExecutionService.isDdl("DROP TEMPORARY VIEW v"));
+        assertTrue(SqlExecutionService.isDdl("DROP TEMPORARY TABLE IF EXISTS t"));
         assertFalse(SqlExecutionService.isDdl("SELECT * FROM t"));
         assertFalse(SqlExecutionService.isDdl("INSERT INTO t SELECT 1"));
         assertFalse(SqlExecutionService.isDdl("EXPLAIN SELECT * FROM t"));

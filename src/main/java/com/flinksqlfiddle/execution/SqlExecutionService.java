@@ -54,7 +54,7 @@ public class SqlExecutionService {
             });
 
     private static final Pattern DDL_PATTERN = Pattern.compile(
-            "^\\s*(CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)|DROP\\s+(TABLE|VIEW))\\b",
+            "^\\s*(CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)|DROP\\s+(TEMPORARY\\s+)?(TABLE|VIEW))\\b",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(

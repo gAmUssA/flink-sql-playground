@@ -222,6 +222,48 @@ svg { display: block; }
 .tbl-col-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tbl-col-type { color: var(--tk-ty); font-size: 11px; white-space: nowrap; }
 
+/* ---- Drop-table affordance + inline confirm ---- */
+.tbl-card-head { justify-content: flex-start; gap: 8px; }
+.tbl-name { margin-right: auto; min-width: 0; }
+.tbl-card.is-confirming {
+  border-color: color-mix(in oklab, #ef4444 55%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, #ef4444 35%, transparent), 0 10px 30px -12px rgba(239, 68, 68, 0.5);
+}
+.tbl-card.is-dropping { opacity: 0; transform: translateX(-12px) scale(.96); }
+.tbl-drop {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto;
+  border: none; background: transparent; border-radius: var(--r-sm); color: var(--text-3); cursor: pointer;
+  opacity: 0; transform: scale(.85);
+  transition: opacity .15s, transform .15s, color .15s, background .15s;
+}
+.tbl-card:hover .tbl-drop, .tbl-card.is-confirming .tbl-drop { opacity: 1; transform: scale(1); }
+.tbl-drop:hover { color: #fff; background: #ef4444; }
+.tbl-confirm {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 16px 14px; text-align: center;
+  border-top: 1px solid color-mix(in oklab, #ef4444 30%, var(--border));
+  background: color-mix(in oklab, #ef4444 7%, var(--surface));
+  animation: confirmIn .18s ease both;
+}
+@keyframes confirmIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.tbl-confirm-ic {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  color: #f87171; background: color-mix(in oklab, #ef4444 16%, transparent);
+  border: 1px solid color-mix(in oklab, #ef4444 38%, transparent);
+}
+.tbl-confirm-q { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.tbl-confirm-sql {
+  font-family: var(--mono); font-size: 11px; color: var(--text); line-height: 1.4;
+  padding: 5px 9px; border-radius: var(--r-sm); background: var(--bg-1); border: 1px solid var(--border-2);
+  overflow-wrap: anywhere;
+}
+.tbl-confirm-sql .tk-kw { color: var(--tk-kw); font-weight: 600; }
+.tbl-confirm-sql .tk-pun { color: var(--tk-pun); }
+.tbl-confirm-note { font-size: 11px; line-height: 1.45; color: var(--text-3); max-width: 200px; }
+.tbl-confirm-actions { display: flex; gap: 8px; margin-top: 4px; }
+.btn.danger { color: #fff; background: linear-gradient(140deg, #ef4444, #b91c1c); border: 1px solid #991b1b; box-shadow: 0 6px 18px -8px #ef4444; }
+.btn.danger:hover:not(:disabled) { filter: brightness(1.08); }
+
 /* ============================== EDITORS ============================== */
 .editors { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .editor-row { flex: 1 1 56%; display: flex; min-height: 0; }
