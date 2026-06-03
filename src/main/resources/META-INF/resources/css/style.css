@@ -236,8 +236,11 @@ svg { display: block; }
   opacity: 0; transform: scale(.85);
   transition: opacity .15s, transform .15s, color .15s, background .15s;
 }
-.tbl-card:hover .tbl-drop, .tbl-card.is-confirming .tbl-drop { opacity: 1; transform: scale(1); }
+.tbl-card:hover .tbl-drop, .tbl-card.is-confirming .tbl-drop, .tbl-drop:focus-visible { opacity: 1; transform: scale(1); }
 .tbl-drop:hover { color: #fff; background: #ef4444; }
+.tbl-drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Touch devices have no hover — keep the drop affordance always visible. */
+@media (hover: none) { .tbl-drop { opacity: 1; transform: scale(1); } }
 .tbl-confirm {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   padding: 16px 14px; text-align: center;
