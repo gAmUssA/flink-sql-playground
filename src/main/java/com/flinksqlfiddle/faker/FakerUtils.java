@@ -14,7 +14,6 @@ import org.apache.flink.table.types.logical.MultisetType;
 import org.apache.flink.table.types.logical.RowType;
 
 import java.math.BigDecimal;
-import java.sql.Date;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -24,13 +23,16 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
-public class FakerUtils {
+public final class FakerUtils {
 
   private static final DateTimeFormatter FORMATTER =
       new DateTimeFormatterBuilder()
           .appendPattern("uuuu-MM-dd HH:mm:ss")
           .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
           .toFormatter(Locale.US);
+
+  private FakerUtils() {
+  }
 
   static Object stringValueToType(String[] stringArray, LogicalType logicalType) {
     String value = stringArray.length > 0 ? stringArray[0] : "";
@@ -58,9 +60,11 @@ public class FakerUtils {
       case DOUBLE:
         return Double.parseDouble(value);
       case DATE:
+        // Flink represents DATE as an int count of days since the epoch. toEpochMilli() is
+        // exactly what the old java.sql.Date.from(instant).getTime() returned, so this is a
+        // behavior-preserving drop of the legacy java.sql.Date dependency.
         return (int)
-            (Date.from(Instant.from(FORMATTER.withZone(ZoneId.systemDefault()).parse(value)))
-                 .getTime()
+            (Instant.from(FORMATTER.withZone(ZoneId.systemDefault()).parse(value)).toEpochMilli()
              / (86400 * 1000));
       case TIME_WITHOUT_TIME_ZONE:
         return (int) (Long.parseLong(value) / 1000_000L);
