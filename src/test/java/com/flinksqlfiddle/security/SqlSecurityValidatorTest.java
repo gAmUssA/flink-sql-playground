@@ -174,4 +174,79 @@ class SqlSecurityValidatorTest {
         assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("Add Jar '/tmp/evil.jar'"));
     }
+
+    // --- Comment-bypass regression (start-anchored checks must ignore leading comments) ---
+
+    @Test
+    void blockCreateFunctionBehindBlockComment() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("/* sneaky */ CREATE FUNCTION myudf AS 'com.evil.Udf'"));
+    }
+
+    @Test
+    void blockCreateFunctionBehindLineComment() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("-- sneaky\nCREATE TEMPORARY SYSTEM FUNCTION myudf AS 'com.evil.Udf'"));
+    }
+
+    @Test
+    void blockSetBehindLeadingComments() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("-- a\n/* b */ SET 'execution.runtime-mode' = 'batch'"));
+    }
+
+    @Test
+    void blockAddJarBehindBlockComment() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("/**/ADD JAR '/tmp/evil.jar'"));
+    }
+
+    @Test
+    void blockForbiddenConnectorBehindLeadingComment() {
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("/* x */ CREATE TABLE t (id INT) WITH ('connector' = 'filesystem', 'path' = '/etc/passwd')"));
+        assertTrue(ex.getMessage().contains("filesystem"));
+    }
+
+    @Test
+    void blockForbiddenConnectorBehindLineComment() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("-- note\nCREATE TABLE t (id INT) WITH ('connector' = 'jdbc')"));
+    }
+
+    @Test
+    void allowedConnectorStillPassesBehindComment() {
+        assertDoesNotThrow(() ->
+                validator.validate("-- share this fiddle\nCREATE TABLE t (id INT) WITH ('connector' = 'datagen')"));
+    }
+
+    // --- Fail-closed connector policy ---
+
+    @Test
+    void blockCreateTableWithClauseButNoConnector() {
+        // A WITH block with no recognizable connector must fail closed rather than pass.
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('scan.startup.mode' = 'earliest-offset')"));
+    }
+
+    @Test
+    void blockConnectorObfuscatedWithInlineComment() {
+        // 'connector'/* */='jdbc' does not match the connector option, so no allowlisted
+        // connector is found in the WITH block — fail closed.
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('connector'/* */= 'jdbc')"));
+    }
+
+    @Test
+    void allowSchemaOnlyCreateTableWithoutWithClause() {
+        // No WITH clause => no connector I/O possible => allowed.
+        assertDoesNotThrow(() ->
+                validator.validate("CREATE TABLE t (id INT, name STRING)"));
+    }
+
+    @Test
+    void allowCreateTableAsSelect() {
+        assertDoesNotThrow(() ->
+                validator.validate("CREATE TABLE snapshot AS SELECT * FROM src"));
+    }
 }

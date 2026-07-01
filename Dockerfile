@@ -26,14 +26,19 @@ RUN QUARKUS_PROFILE=$QUARKUS_PROFILE ./gradlew clean quarkusBuild --no-daemon \
 
 FROM eclipse-temurin:25.0.2_10-jre
 WORKDIR /app
+# Run as a non-root user. This process compiles and executes untrusted user SQL in an
+# embedded Flink MiniCluster in-JVM, so dropping root limits the blast radius of any
+# sandbox escape. UID 10001 is arbitrary and unprivileged.
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin appuser
 # Quarkus fast-jar layout. Embedded Flink resolves its job-graph classes via the app's
 # own classpath (configured as pipeline.classpaths in FlinkEnvironmentFactory), so the
 # default container-optimized fast-jar works — no uber-jar/flattening needed.
 # Copy lib/ first so the dependency layer caches across app-only rebuilds.
-COPY --from=build /app/build/quarkus-app/lib/ ./lib/
-COPY --from=build /app/build/quarkus-app/*.jar ./
-COPY --from=build /app/build/quarkus-app/app/ ./app/
-COPY --from=build /app/build/quarkus-app/quarkus/ ./quarkus/
+COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/lib/ ./lib/
+COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/*.jar ./
+COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/app/ ./app/
+COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/quarkus/ ./quarkus/
+USER appuser
 EXPOSE 9090
 ENTRYPOINT ["java", \
     "-Xms768m", \
