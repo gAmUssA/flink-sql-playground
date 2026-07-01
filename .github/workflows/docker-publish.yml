@@ -1,8 +1,12 @@
 name: Build and Push Docker Image
 
+# Publishes the portable ghcr image on RELEASE TAGS only (not every main push).
+# Rationale: Railway builds & deploys from source on push, so the registry image
+# isn't in the deploy path. Its job is offline/local demos — `docker pull` a cached,
+# H2-only image and run it on a laptop with no network and no rebuild. Cutting a
+# `v*` tag (or a manual dispatch) is when that image needs refreshing.
 on:
   push:
-    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
@@ -57,12 +61,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Tag-triggered, so emit version tags + a moving `latest` that always
+          # points at the newest release (convenient for `pull ...:latest` on a laptop).
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
 
       # Packages the prebuilt jar (Dockerfile.runtime). Only the lightweight jar
       # extraction runs per-arch, so the arm64 leg finishes in seconds under QEMU.
