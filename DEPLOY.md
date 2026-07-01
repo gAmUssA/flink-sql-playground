@@ -34,9 +34,23 @@ environments plus scale-to-zero. Config lives in [`railway.json`](railway.json)
 5. **Domain**: generate a `*.up.railway.app` domain (Settings → Networking), then
    add a custom domain if desired (free TLS).
 
-The deployed-build footer reads build-time args. To populate it, set
-`GIT_COMMIT` and `GIT_BRANCH` as build args in the service settings; otherwise it
-shows `unknown`.
+### Deployed-build footer
+
+The footer (`/api/build-info`) reads build-time args baked into the image. Inside
+the Docker build there's no `.git`, so without these it shows `unknown`. Railway
+injects git metadata and passes variables into the build as args, so add two
+**service variables** mapping Railway's git vars onto the ARG names the Dockerfile
+already declares:
+
+```
+GIT_COMMIT = ${{ RAILWAY_GIT_COMMIT_SHA }}
+GIT_BRANCH = ${{ RAILWAY_GIT_BRANCH }}
+```
+
+Define your **own** variables referencing `RAILWAY_GIT_*` via `${{ }}` rather than
+consuming `RAILWAY_GIT_COMMIT_SHA` directly in the Dockerfile — user-defined vars
+are reliably passed as build args, whereas the raw Railway-provided ones can be
+unavailable at build time.
 
 For persistent fiddle storage, add the Supabase env vars below.
 
