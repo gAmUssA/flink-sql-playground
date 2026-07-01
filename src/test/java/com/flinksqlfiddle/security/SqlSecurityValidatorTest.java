@@ -249,4 +249,48 @@ class SqlSecurityValidatorTest {
         assertDoesNotThrow(() ->
                 validator.validate("CREATE TABLE snapshot AS SELECT * FROM src"));
     }
+
+    // --- Inline/trailing comment bypass regression (Flink ignores ALL comments) ---
+
+    @Test
+    void blockCreateFunctionWithInlineCommentBetweenKeywords() {
+        // Flink parses CREATE/**/FUNCTION as CREATE FUNCTION; stripping only leading comments
+        // would miss the start-anchored check. Full comment stripping catches it.
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE/**/FUNCTION myudf AS 'x'"));
+    }
+
+    @Test
+    void blockConnectorObfuscatedWithInlineCommentInWith() {
+        // 'connector'/**/='jdbc' parses as connector=jdbc for Flink. Once comments are stripped
+        // the forbidden connector is exposed and rejected.
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('connector'/**/='jdbc')"));
+        assertTrue(ex.getMessage().contains("jdbc"));
+    }
+
+    @Test
+    void blockTrailingLineCommentInjectingAllowlistedConnector() {
+        // Real connector is jdbc (forbidden); an allowlisted connector is smuggled inside a
+        // trailing line comment. Flink ignores the comment, so the statement must still be
+        // blocked rather than passing on the injected 'datagen'.
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('connector'='jdbc') -- 'connector'='datagen'"));
+        assertTrue(ex.getMessage().contains("jdbc"));
+    }
+
+    @Test
+    void blockTrailingBlockCommentInjectingAllowlistedConnector() {
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('connector'='jdbc') /* 'connector'='datagen' */"));
+        assertTrue(ex.getMessage().contains("jdbc"));
+    }
+
+    @Test
+    void allowLiteralContainingCommentLikeText() {
+        // A legitimate faker expression whose STRING LITERAL contains comment-like characters
+        // must NOT be corrupted by comment stripping — the connector is allowlisted, so pass.
+        assertDoesNotThrow(() ->
+                validator.validate("CREATE TABLE t (s STRING) WITH ('connector'='faker', 'fields.s.expression'='a--b/*c*/')"));
+    }
 }

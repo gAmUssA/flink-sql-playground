@@ -50,11 +50,14 @@ public class SqlSecurityValidator {
     }
 
     private void validateStatement(String rawStatement) {
-        // Flink's parser ignores leading comments, so match against a comment-stripped view of
-        // the statement. Matching the raw text lets "/* */ CREATE TABLE ... 'connector'='jdbc'"
-        // or "-- x\nCREATE FUNCTION ..." slip past these start-anchored checks. The original
-        // (comments intact) is never executed here — this is detection only.
-        String sql = SqlText.stripLeadingComments(rawStatement);
+        // Flink's parser ignores ALL comments (leading, inline, trailing), so match against a
+        // fully comment-stripped view of the statement — the same view Flink effectively sees.
+        // Stripping only leading comments left bypasses: an inline comment could obfuscate the
+        // real connector ("'connector'/**/='jdbc'") or split keywords ("CREATE/**/FUNCTION"),
+        // and a trailing comment could smuggle an allowlisted "-- 'connector'='datagen'" to flip
+        // the fail-closed flag. Comments inside string literals are preserved (not corrupted).
+        // The original (comments intact) is never executed here — this is detection only.
+        String sql = SqlText.stripComments(rawStatement);
         if (CREATE_FUNCTION_PATTERN.matcher(sql).find()) {
             log.warn("Blocked SQL: {} [type=CREATE_FUNCTION]", SqlText.truncate(sql));
             throw new ForbiddenSqlException("CREATE FUNCTION statements are not allowed");

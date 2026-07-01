@@ -29,7 +29,8 @@ WORKDIR /app
 # Run as a non-root user. This process compiles and executes untrusted user SQL in an
 # embedded Flink MiniCluster in-JVM, so dropping root limits the blast radius of any
 # sandbox escape. UID 10001 is arbitrary and unprivileged.
-RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin appuser
+RUN groupadd --gid 10001 appuser \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin appuser
 # Quarkus fast-jar layout. Embedded Flink resolves its job-graph classes via the app's
 # own classpath (configured as pipeline.classpaths in FlinkEnvironmentFactory), so the
 # default container-optimized fast-jar works — no uber-jar/flattening needed.
