@@ -106,6 +106,11 @@ dependencies {
     // DataFaker (used by ported flink-faker connector)
     implementation("net.datafaker:datafaker:2.5.4")
 
+    // BootUI dev console (github.com/jdubois/boot-ui). Wires itself up only in Quarkus
+    // dev/test launch modes and stays dark in production — safe on the classpath. The
+    // matching bootui-quarkus-deployment is pulled in automatically. Served at /bootui.
+    implementation("com.julien-dubois.bootui:bootui-quarkus:1.8.0")
+
     // Test
     testImplementation("io.quarkus:quarkus-junit5")
     testImplementation("io.quarkus:quarkus-junit5-mockito")
