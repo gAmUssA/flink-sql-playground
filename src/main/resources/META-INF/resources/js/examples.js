@@ -430,8 +430,9 @@ JOIN shipments AS s ON t.card_id = s.card_id;
     {
         title: "Tumbling & Hopping Windows (Faker)",
         mode: "STREAMING",
-        schema: `-- Event-time table with a WATERMARK. faker's date.past yields slightly
--- out-of-order timestamps — exactly what makes watermarks interesting.
+        schema: `-- Event-time table with a WATERMARK. faker's date.past scatters timestamps
+-- across 15s, so the watermark tolerates 15s of lateness — wide enough to keep
+-- every row. (Tighten it and Flink starts dropping late rows: see "Late Data" below.)
 CREATE TEMPORARY TABLE txn_events (
     txn_id     STRING,
     card_id    INT,
@@ -439,7 +440,7 @@ CREATE TEMPORARY TABLE txn_events (
     ccy        STRING,
     country    STRING,
     event_time TIMESTAMP(3),
-    WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
+    WATERMARK FOR event_time AS event_time - INTERVAL '15' SECOND
 ) WITH (
     'connector' = 'faker',
     'number-of-rows' = '500',
@@ -465,6 +466,34 @@ GROUP BY window_start, window_end;
 --         latency-vs-completeness dial: too tight and Flink SILENTLY DROPS late rows.`
     },
     {
+        title: "Late Data & the Watermark Dial (Faker)",
+        mode: "STREAMING",
+        schema: `-- The SAME 15s-scattered faker data, but a DELIBERATELY TIGHT 5s watermark.
+-- Rows whose event_time is older than (max_seen - 5s) arrive "late" and get
+-- dropped before they reach the window. This is the completeness/latency dial.
+CREATE TEMPORARY TABLE txn_events (
+    txn_id     STRING,
+    card_id    INT,
+    amount     DOUBLE,
+    event_time TIMESTAMP(3),
+    WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
+) WITH (
+    'connector' = 'faker',
+    'number-of-rows' = '500',
+    'fields.txn_id.expression' = '#{Internet.UUID}',
+    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+    'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
+);`,
+        query: `-- Add up the per-window "txns" counts: the total comes out LESS than the 500 rows
+-- generated, because late rows were silently dropped. Run it twice — it even moves.
+SELECT window_start, window_end, COUNT(*) AS txns
+FROM TABLE(TUMBLE(TABLE txn_events, DESCRIPTOR(event_time), INTERVAL '10' SECOND))
+GROUP BY window_start, window_end;
+-- FIX: widen the WATERMARK to cover the real spread — event_time - INTERVAL '15' SECOND —
+--      and the counts add back up to 500. Tight watermark = lower latency, more loss.`
+    },
+    {
         title: "Temporal Join — enrich at event time (Faker)",
         mode: "STREAMING",
         schema: `-- Fact stream (event-time + watermark).
@@ -474,7 +503,7 @@ CREATE TEMPORARY TABLE txn_events (
     amount     DOUBLE,
     ccy        STRING,
     event_time TIMESTAMP(3),
-    WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
+    WATERMARK FOR event_time AS event_time - INTERVAL '15' SECOND
 ) WITH (
     'connector' = 'faker',
     'number-of-rows' = '500',
@@ -490,7 +519,7 @@ CREATE TEMPORARY TABLE fx_rates (
     ccy         STRING,
     rate_to_eur DOUBLE,
     rate_time   TIMESTAMP(3),
-    WATERMARK FOR rate_time AS rate_time - INTERVAL '5' SECOND,
+    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND,
     PRIMARY KEY (ccy) NOT ENFORCED
 ) WITH (
     'connector' = 'faker',
@@ -522,7 +551,7 @@ CREATE TEMPORARY TABLE txn_events (
     amount     DOUBLE,
     country    STRING,
     event_time TIMESTAMP(3),
-    WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
+    WATERMARK FOR event_time AS event_time - INTERVAL '15' SECOND
 ) WITH (
     'connector' = 'faker',
     'number-of-rows' = '500',
