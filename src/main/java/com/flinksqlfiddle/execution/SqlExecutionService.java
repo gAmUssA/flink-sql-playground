@@ -54,12 +54,15 @@ public class SqlExecutionService {
             });
 
     private static final Pattern DDL_PATTERN = Pattern.compile(
-            "^\\s*(CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)|DROP\\s+(TABLE|VIEW))\\b",
+            "^\\s*(CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)|DROP\\s+(TEMPORARY\\s+)?(TABLE|VIEW))\\b",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "^\\s*CREATE\\s+(?:TEMPORARY\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(`[^`]+`|\\S+)",
             Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern CREATE_TEMPORARY_TABLE_PATTERN = Pattern.compile(
+            "^\\s*CREATE\\s+TEMPORARY\\s+TABLE\\b", Pattern.CASE_INSENSITIVE);
 
     private static final Map<RowKind, String> ROW_KIND_LABELS = Map.of(
             RowKind.INSERT, "+I",
@@ -143,11 +146,18 @@ public class SqlExecutionService {
      * statement that makes re-execution safe. Empty for any other statement.
      */
     static Optional<String> dropStatementFor(String sql) {
-        Matcher matcher = CREATE_TABLE_PATTERN.matcher(stripLeadingComments(sql));
+        String normalized = stripLeadingComments(sql);
+        Matcher matcher = CREATE_TABLE_PATTERN.matcher(normalized);
         if (!matcher.find()) {
             return Optional.empty();
         }
-        return Optional.of("DROP TABLE IF EXISTS " + matcher.group(1));
+        // A temporary table must be dropped with DROP TEMPORARY TABLE — DROP TABLE only
+        // targets the permanent catalog, so it would no-op here and the re-CREATE would then
+        // fail with "table already exists". Match the idempotent DROP to the CREATE's kind.
+        String keyword = CREATE_TEMPORARY_TABLE_PATTERN.matcher(normalized).find()
+                ? "DROP TEMPORARY TABLE IF EXISTS "
+                : "DROP TABLE IF EXISTS ";
+        return Optional.of(keyword + matcher.group(1));
     }
 
     static boolean isDdl(String sql) {
