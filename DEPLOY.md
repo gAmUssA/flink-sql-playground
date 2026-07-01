@@ -8,6 +8,38 @@ docker compose up --build
 
 Application will be available at `http://localhost:9090`.
 
+## Railway (primary)
+
+Railway builds the app from the repo `Dockerfile` and gives per-PR preview
+environments plus scale-to-zero. Config lives in [`railway.json`](railway.json)
+(Dockerfile builder + `/api/build-info` health check).
+
+### First deploy
+
+1. Create a project and connect the GitHub repo:
+   ```bash
+   npm i -g @railway/cli && railway login
+   railway init
+   railway up          # or connect the repo in the dashboard for auto-deploys
+   ```
+   In the dashboard, connect the GitHub repo so pushes to `main` deploy and PRs
+   get preview environments.
+2. **Memory**: set the service to **at least 2 GB** (Flink MiniCluster). 4 GB is
+   comfortable. The container caps the JVM at `-Xmx1536m`.
+3. **Port**: none needed — Railway injects `$PORT` and the app binds it
+   (`quarkus.http.port=${PORT:9090}`).
+4. **Scale-to-zero**: enable serverless / app-sleep in the service settings. The
+   frontend warms the backend on load (`SELECT 1`), so the cold start is masked
+   behind the loading state.
+5. **Domain**: generate a `*.up.railway.app` domain (Settings → Networking), then
+   add a custom domain if desired (free TLS).
+
+The deployed-build footer reads build-time args. To populate it, set
+`GIT_COMMIT` and `GIT_BRANCH` as build args in the service settings; otherwise it
+shows `unknown`.
+
+For persistent fiddle storage, add the Supabase env vars below.
+
 ## Fly.io
 
 ```bash
@@ -16,7 +48,7 @@ fly scale memory 2048
 fly deploy
 ```
 
-The app listens on port 9090. Configure in `fly.toml`:
+The app listens on `$PORT` (falls back to 9090). Configure in `fly.toml`:
 
 ```toml
 [http_service]
@@ -40,69 +72,44 @@ The app listens on port 9090. Configure in `fly.toml`:
    ufw allow 9090/tcp
    ```
 
-## Koyeb
-
-1. Install the [Koyeb CLI](https://www.koyeb.com/docs/build-and-deploy/cli/installation):
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-   koyeb login
-   ```
-
-2. Create the app and deploy from your GitHub repo:
-   ```bash
-   koyeb app create flink-sql-fiddle
-   koyeb service create flink-sql-fiddle \
-     --app flink-sql-fiddle \
-     --git github.com/<your-org>/flink-sql-playground \
-     --git-branch main \
-     --git-builder docker \
-     --instance-type eco-medium \
-     --ports 9090:http \
-     --checks 9090:http:/ \
-     --checks-grace-period 0=60
-   ```
-
-**Instance type**: `eco-medium` provides 2 GB RAM / 1 vCPU ($0.0144/hr). Use `medium` (2 GB / 2 vCPU, $0.0288/hr) for better CPU if needed.
-
-**Health check**: The `--checks 9090:http:/` configures an HTTP health check on port 9090. The 60-second grace period allows time for the JVM and Flink MiniCluster to start.
-
-**Note**: Koyeb may cold-start instances after inactivity on lower-tier plans, causing a ~30–60s delay on first request. This is acceptable for a playground/demo deployment.
-
 ## Supabase (Persistent Fiddle Storage)
 
-By default, fiddles are stored in an in-memory H2 database (lost on restart). To persist fiddles across deployments, activate the `supabase` Spring profile with a Supabase PostgreSQL database.
+By default, fiddles are stored in an in-memory H2 database (lost on restart). To
+persist fiddles across deployments, activate the `supabase` Quarkus profile with
+a Supabase PostgreSQL database.
 
 ### Required Environment Variables
 
-| Variable                 | Description                                            | Example                                                        |
-|--------------------------|--------------------------------------------------------|----------------------------------------------------------------|
-| `SPRING_PROFILES_ACTIVE` | Activate Supabase profile                              | `supabase`                                                     |
-| `SUPABASE_DB_URL`        | JDBC connection URL (Transaction pooler, port 6543) | `jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres` |
-| `SUPABASE_DB_USER`       | Database user                                          | `postgres.<project-ref>`                                       |
-| `SUPABASE_DB_PASSWORD`   | Database password                                      | `<your-password>`                                              |
+| Variable               | Description                                         | Example                                                        |
+|------------------------|-----------------------------------------------------|----------------------------------------------------------------|
+| `QUARKUS_PROFILE`      | Activate Supabase profile                           | `supabase`                                                     |
+| `SUPABASE_DB_URL`      | JDBC connection URL (Transaction pooler, port 6543) | `jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres` |
+| `SUPABASE_DB_USER`     | Database user                                        | `postgres.<project-ref>`                                       |
+| `SUPABASE_DB_PASSWORD` | Database password                                   | `<your-password>`                                              |
 
 ### Setup
 
 1. Create a [Supabase](https://supabase.com) project
 2. Copy the **Transaction pooler** connection string from **Settings > Database > Connection string > JDBC** (select "Transaction pooler" / port 6543)
-3. Set the environment variables in your deployment platform (Koyeb, Fly.io, Docker, etc.)
+3. Set the environment variables in your deployment platform (Railway, Fly.io, Docker, etc.)
 
-### Koyeb Example
+### Railway Example
+
+Set these in the service **Variables** tab (or via CLI):
 
 ```bash
-koyeb service update flink-sql-fiddle \
-  --app flink-sql-fiddle \
-  --env SPRING_PROFILES_ACTIVE=supabase \
-  --env SUPABASE_DB_URL=jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres \
-  --env SUPABASE_DB_USER=postgres.<ref> \
-  --env SUPABASE_DB_PASSWORD=<password>
+railway variables \
+  --set QUARKUS_PROFILE=supabase \
+  --set SUPABASE_DB_URL=jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres \
+  --set SUPABASE_DB_USER=postgres.<ref> \
+  --set SUPABASE_DB_PASSWORD=<password>
 ```
 
 ### Docker Example
 
 ```bash
 docker run -p 9090:9090 \
-  -e SPRING_PROFILES_ACTIVE=supabase \
+  -e QUARKUS_PROFILE=supabase \
   -e SUPABASE_DB_URL=jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres \
   -e SUPABASE_DB_USER=postgres.<ref> \
   -e SUPABASE_DB_PASSWORD=<password> \
@@ -120,10 +127,12 @@ docker run -p 9090:9090 \
 
 | Component              | Memory          |
 |------------------------|-----------------|
-| JVM heap               | 512 MB - 1.5 GB |
-| JVM metaspace          | 128 MB          |
+| JVM heap               | 768 MB - 1.5 GB |
+| JVM metaspace          | 128 MB - 384 MB |
 | Flink MiniCluster (x5) | ~500 MB         |
 | OS / overhead          | ~200 MB         |
 | **Total**              | **~2 GB**       |
 
-The JVM is configured with `-Xms512m -Xmx1536m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m`. SerialGC minimizes memory overhead for a single-user playground.
+The JVM is configured with `-Xms768m -Xmx1536m -XX:+UseZGC -XX:+ZGenerational
+-XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m` (see `Dockerfile`). Provision
+the platform with at least 2 GB; 4 GB gives headroom for concurrent sessions.
