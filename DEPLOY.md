@@ -92,6 +92,17 @@ By default, fiddles are stored in an in-memory H2 database (lost on restart). To
 persist fiddles across deployments, activate the `supabase` Quarkus profile with
 a Supabase PostgreSQL database.
 
+> **Important — the profile must be active at BUILD time, not just runtime.**
+> Quarkus fixes the JDBC driver from `quarkus.datasource.db-kind` during
+> augmentation (both the H2 and PostgreSQL drivers are on the classpath). A
+> runtime-only `QUARKUS_PROFILE=supabase` swaps the URL to Postgres but leaves the
+> H2 driver baked in, so boot fails with *"Driver does not support the provided
+> URL"*. The image must be **built** with `QUARKUS_PROFILE=supabase` so the
+> PostgreSQL driver is baked in. The `Dockerfile` exposes this as a build arg
+> (`ARG QUARKUS_PROFILE`); on Railway the `QUARKUS_PROFILE` service variable is
+> forwarded to the build automatically, so build and runtime stay in sync. For a
+> manual `docker build`, pass `--build-arg QUARKUS_PROFILE=supabase`.
+
 ### Required Environment Variables
 
 | Variable               | Description                                         | Example                                                        |
@@ -121,7 +132,12 @@ railway variables \
 
 ### Docker Example
 
+Build the image with the profile (bakes the PostgreSQL driver), then run it with
+the matching runtime env:
+
 ```bash
+docker build --build-arg QUARKUS_PROFILE=supabase -t flink-sql-fiddle .
+
 docker run -p 9090:9090 \
   -e QUARKUS_PROFILE=supabase \
   -e SUPABASE_DB_URL=jdbc:postgresql://<region>.pooler.supabase.com:6543/postgres \

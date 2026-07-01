@@ -12,7 +12,17 @@ COPY src/ src/
 # classes, so the build stage must run on a JDK >= 25 (this image is JDK 25).
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
-RUN ./gradlew clean quarkusBuild --no-daemon -PbuildCommit=$GIT_COMMIT -PbuildBranch=$GIT_BRANCH
+# Quarkus derives the JDBC driver/dialect from quarkus.datasource.db-kind at BUILD
+# time (both quarkus-jdbc-h2 and quarkus-jdbc-postgresql are on the classpath, so
+# the kind is fixed during augmentation and CANNOT be switched by a runtime profile).
+# The deploy profile must therefore be active at build: pass QUARKUS_PROFILE=supabase
+# to bake the PostgreSQL driver. Defaults to prod (H2) for local `docker compose`.
+# On Railway, the QUARKUS_PROFILE service variable is forwarded here as a build arg.
+# The runtime profile must match the build profile (Railway sets both from the same var).
+ARG QUARKUS_PROFILE=prod
+RUN QUARKUS_PROFILE=$QUARKUS_PROFILE ./gradlew clean quarkusBuild --no-daemon \
+    -Dquarkus.profile=$QUARKUS_PROFILE \
+    -PbuildCommit=$GIT_COMMIT -PbuildBranch=$GIT_BRANCH
 
 FROM eclipse-temurin:25.0.2_10-jre
 WORKDIR /app
