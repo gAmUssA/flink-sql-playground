@@ -163,6 +163,7 @@ docker run -p 9090:9090 \
 | OS / overhead          | ~200 MB         |
 | **Total**              | **~2 GB**       |
 
-The JVM is configured with `-Xms768m -Xmx1536m -XX:+UseZGC -XX:+ZGenerational
--XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m` (see `Dockerfile`). Provision
-the platform with at least 2 GB; 4 GB gives headroom for concurrent sessions.
+The JVM is configured with `-Xms768m -Xmx1536m -XX:+UseZGC
+-XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m` (see `Dockerfile`). ZGC is
+generational by default on JDK 24+, so no extra flag is needed. Provision the
+platform with at least 2 GB; 4 GB gives headroom for concurrent sessions.

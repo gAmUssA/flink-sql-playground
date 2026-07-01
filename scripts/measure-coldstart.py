@@ -21,7 +21,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JAR_DIR = os.path.join(REPO, "build", "quarkus-app")
 JAVA = os.path.join(os.environ["JAVA_HOME"], "bin", "java") if os.environ.get("JAVA_HOME") else "java"
 BASE = "http://localhost:9090"
-PROD_FLAGS = ["-Xms768m", "-Xmx1536m", "-XX:+UseZGC", "-XX:+ZGenerational",
+PROD_FLAGS = ["-Xms768m", "-Xmx1536m", "-XX:+UseZGC",
               "-XX:MetaspaceSize=128m", "-XX:MaxMetaspaceSize=384m"]
 
 DDL = {"mode": "BATCH", "sql": "CREATE TEMPORARY TABLE orders (user_id INT, amount DOUBLE) WITH "
