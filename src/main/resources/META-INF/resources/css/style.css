@@ -236,9 +236,13 @@ svg { display: block; }
   opacity: 0; transform: scale(.85);
   transition: opacity .15s, transform .15s, color .15s, background .15s;
 }
-.tbl-card:hover .tbl-drop, .tbl-card.is-confirming .tbl-drop, .tbl-drop:focus-visible { opacity: 1; transform: scale(1); }
+.tbl-card:hover .tbl-drop, .tbl-card.is-confirming .tbl-drop { opacity: 1; transform: scale(1); }
 .tbl-drop:hover { color: #fff; background: #ef4444; }
-.tbl-drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Keep :focus-visible in its OWN rule: a browser that can't parse it (Safari <15.4)
+   discards the whole rule it appears in, so bundling it with the :hover reveal above
+   would hide the drop button entirely in older Safari. Isolated, only this keyboard
+   nicety is lost there. */
+.tbl-drop:focus-visible { opacity: 1; transform: scale(1); outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Touch devices have no hover — keep the drop affordance always visible. */
 @media (hover: none) { .tbl-drop { opacity: 1; transform: scale(1); } }
 .tbl-confirm {
