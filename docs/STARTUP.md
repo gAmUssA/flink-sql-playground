@@ -22,7 +22,7 @@ So the startup work targets the **JVM**: AppCDS, JVM tuning, and possibly CRaC.
 
 Measured with [`scripts/measure-coldstart.py`](../scripts/measure-coldstart.py) on the
 packaged fast-jar, using the production JVM flags from the `Dockerfile`
-(`-Xms768m -Xmx1536m -XX:+UseZGC -XX:+ZGenerational -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m`).
+(`-Xms768m -Xmx1536m -XX:+UseZGC -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m`).
 Environment: Apple Silicon, JDK 25 (Temurin), warm disk, median of 3 runs.
 
 | Phase | Median |
