@@ -31,6 +31,8 @@ public final class FakerUtils {
           .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
           .toFormatter(Locale.US);
 
+  private static final long MILLIS_PER_DAY = 86_400_000L;
+
   private FakerUtils() {
   }
 
@@ -65,7 +67,7 @@ public final class FakerUtils {
         // behavior-preserving drop of the legacy java.sql.Date dependency.
         return (int)
             (Instant.from(FORMATTER.withZone(ZoneId.systemDefault()).parse(value)).toEpochMilli()
-             / (86400 * 1000));
+             / MILLIS_PER_DAY);
       case TIME_WITHOUT_TIME_ZONE:
         return (int) (Long.parseLong(value) / 1000_000L);
       case TIMESTAMP_WITHOUT_TIME_ZONE:
