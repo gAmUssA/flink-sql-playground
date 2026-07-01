@@ -24,7 +24,8 @@ const ICONS = {
   dot: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
   filter: '<path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>'
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>',
+  trash: '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>'
 };
 
 function iconSvg(name, size = 16) {
@@ -888,28 +889,84 @@ function renderJobGraph() {
 }
 
 /* ============================== Schema browser (sidebar) ============================== */
+let schemaTables = [];        // last-known tables (so confirm toggles don't re-fetch)
+let confirmingDrop = null;    // table name whose drop confirm is open
+
 async function refreshSchemaBrowser() {
   if (!sessionId) return;
-  const list = document.getElementById('schema-browser-list');
-  const empty = document.getElementById('schema-browser-empty');
   try {
     const res = await fetch(api(`/api/sessions/${sessionId}/tables`));
     if (!res.ok) return;
     const data = await res.json();
-    list.innerHTML = '';
-    if (!data.tables || !data.tables.length) { empty.style.display = ''; list.style.display = 'none'; return; }
-    empty.style.display = 'none'; list.style.display = '';
-    data.tables.forEach((table, i) => {
-      const card = document.createElement('div');
-      card.className = 'tbl-card';
-      card.style.animationDelay = (i * 80) + 'ms';
+    schemaTables = data.tables || [];
+    confirmingDrop = null;
+    renderSchemaBrowser();
+  } catch (e) { /* convenience feature */ }
+}
+
+function renderSchemaBrowser() {
+  const list = document.getElementById('schema-browser-list');
+  const empty = document.getElementById('schema-browser-empty');
+  if (!list || !empty) return;
+  list.innerHTML = '';
+  if (!schemaTables.length) { empty.style.display = ''; list.style.display = 'none'; return; }
+  empty.style.display = 'none'; list.style.display = '';
+  schemaTables.forEach((table, i) => {
+    const confirming = confirmingDrop === table.name;
+    const card = document.createElement('div');
+    card.className = 'tbl-card' + (confirming ? ' is-confirming' : '');
+    card.dataset.table = table.name;
+    card.style.animationDelay = (i * 80) + 'ms';
+    const head = `<div class="tbl-card-head">`
+      + `<span class="tbl-name">${iconSvg('table', 13)} ${escapeHtml(table.name)}</span>`
+      + `<span class="tbl-kind">table</span>`
+      + `<button class="tbl-drop" data-drop="${escapeAttr(table.name)}" aria-label="Drop table ${escapeAttr(table.name)}" title="Drop ${escapeAttr(table.name)}">${iconSvg('trash', 13)}</button>`
+      + `</div>`;
+    let body;
+    if (confirming) {
+      body = `<div class="tbl-confirm">`
+        + `<div class="tbl-confirm-ic">${iconSvg('trash', 16)}</div>`
+        + `<p class="tbl-confirm-q">Drop this table?</p>`
+        + `<code class="tbl-confirm-sql"><span class="tk-kw">DROP TEMPORARY TABLE IF EXISTS</span> \`${escapeHtml(table.name)}\`<span class="tk-pun">;</span></code>`
+        + `<span class="tbl-confirm-note">This removes it from the session catalog.</span>`
+        + `<div class="tbl-confirm-actions">`
+        + `<button class="btn ghost sm" data-drop-cancel>Cancel</button>`
+        + `<button class="btn danger sm" data-drop-commit="${escapeAttr(table.name)}">${iconSvg('trash', 13)} Drop</button>`
+        + `</div></div>`;
+    } else {
       const cols = (table.columns || []).map((c) =>
         `<div class="tbl-col"><span class="tbl-col-name">${escapeHtml(c.name)}</span><span class="tbl-col-type">${escapeHtml(shortType(c.type))}</span></div>`).join('');
-      card.innerHTML = `<div class="tbl-card-head"><span class="tbl-name">${iconSvg('table', 13)} ${escapeHtml(table.name)}</span><span class="tbl-kind">table</span></div><div class="tbl-cols">${cols}</div>`;
-      card.querySelector('.tbl-card-head').addEventListener('click', () => card.classList.toggle('collapsed'));
-      list.appendChild(card);
+      body = `<div class="tbl-cols">${cols}</div>`;
+    }
+    card.innerHTML = head + body;
+    list.appendChild(card);
+  });
+}
+
+// Drop a table: animate the card out, run DROP TEMPORARY TABLE on the backend (which syncs
+// to both the batch and streaming envs), then refresh the catalog.
+async function dropTable(name) {
+  confirmingDrop = null;
+  // Find the card by scanning datasets — avoids building an attribute selector from an
+  // arbitrary table name (which could contain selector-breaking characters like " or ]).
+  const card = [...document.querySelectorAll('.tbl-card')].find((c) => c.dataset.table === name);
+  if (card) card.classList.add('is-dropping');
+  await new Promise((r) => setTimeout(r, 320));
+  try {
+    const res = await fetch(api(`/api/sessions/${sessionId}/execute`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql: 'DROP TEMPORARY TABLE IF EXISTS `' + name + '`', mode: getMode() })
     });
-  } catch (e) { /* convenience feature */ }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setStatus('Drop failed: ' + (err.error || res.status), 'error');
+    } else {
+      setStatus(`Dropped ${name}`, 'ready');
+    }
+  } catch (e) {
+    setStatus('Drop failed: ' + e.message, 'error');
+  }
+  await refreshSchemaBrowser();
 }
 function shortType(t) { return String(t || '').replace(/\s+NOT NULL/i, '').replace(/\(.*\)/, '').trim(); }
 
@@ -1218,5 +1275,25 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('schema-browser-toggle').addEventListener('click', (e) => {
     const collapsed = document.getElementById('schema-browser').classList.toggle('collapsed');
     e.currentTarget.title = collapsed ? 'Expand tables' : 'Collapse';
+  });
+
+  // Tables window: drop affordance + inline confirm + card collapse (delegated)
+  document.getElementById('schema-browser-list').addEventListener('click', (e) => {
+    const drop = e.target.closest('.tbl-drop');
+    if (drop) { e.stopPropagation(); confirmingDrop = drop.dataset.drop; renderSchemaBrowser(); return; }
+    if (e.target.closest('[data-drop-cancel]')) { confirmingDrop = null; renderSchemaBrowser(); return; }
+    const commit = e.target.closest('[data-drop-commit]');
+    if (commit) { dropTable(commit.dataset.dropCommit); return; }
+    const head = e.target.closest('.tbl-card-head');
+    if (head) head.closest('.tbl-card').classList.toggle('collapsed');
+  });
+  // Back out of the drop confirm on click-away or Esc.
+  document.addEventListener('click', (e) => {
+    if (!confirmingDrop) return;
+    if (e.target.closest('.tbl-card.is-confirming') || e.target.closest('.tbl-drop')) return;
+    confirmingDrop = null; renderSchemaBrowser();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && confirmingDrop) { confirmingDrop = null; renderSchemaBrowser(); }
   });
 });

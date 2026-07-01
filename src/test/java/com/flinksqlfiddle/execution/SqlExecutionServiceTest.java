@@ -199,7 +199,7 @@ class SqlExecutionServiceTest {
     @Test
     void dropStatementForTemporaryTable() {
         String sql = "CREATE TEMPORARY TABLE temp_orders (id INT) WITH ('connector' = 'datagen')";
-        assertEquals(Optional.of("DROP TABLE IF EXISTS temp_orders"),
+        assertEquals(Optional.of("DROP TEMPORARY TABLE IF EXISTS temp_orders"),
                 SqlExecutionService.dropStatementFor(sql));
     }
 
@@ -225,6 +225,9 @@ class SqlExecutionServiceTest {
         assertTrue(SqlExecutionService.isDdl("CREATE TEMPORARY VIEW v AS SELECT 1"));
         assertTrue(SqlExecutionService.isDdl("DROP TABLE t"));
         assertTrue(SqlExecutionService.isDdl("DROP VIEW v"));
+        assertTrue(SqlExecutionService.isDdl("DROP TEMPORARY TABLE t"));
+        assertTrue(SqlExecutionService.isDdl("DROP TEMPORARY VIEW v"));
+        assertTrue(SqlExecutionService.isDdl("DROP TEMPORARY TABLE IF EXISTS t"));
         assertFalse(SqlExecutionService.isDdl("SELECT * FROM t"));
         assertFalse(SqlExecutionService.isDdl("INSERT INTO t SELECT 1"));
         assertFalse(SqlExecutionService.isDdl("EXPLAIN SELECT * FROM t"));
@@ -247,7 +250,7 @@ class SqlExecutionServiceTest {
     void dropStatementForHandlesLeadingComments() {
         assertEquals(Optional.of("DROP TABLE IF EXISTS orders"),
                 SqlExecutionService.dropStatementFor("-- create the orders table\nCREATE TABLE orders (id INT)"));
-        assertEquals(Optional.of("DROP TABLE IF EXISTS orders"),
+        assertEquals(Optional.of("DROP TEMPORARY TABLE IF EXISTS orders"),
                 SqlExecutionService.dropStatementFor("/* setup */ CREATE TEMPORARY TABLE orders (id INT)"));
     }
 
