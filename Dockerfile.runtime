@@ -6,11 +6,16 @@
 # Dockerfile. The fast-jar must already exist at build/quarkus-app/ (run `./gradlew quarkusBuild`).
 FROM eclipse-temurin:25.0.2_10-jre
 WORKDIR /app
+# Run as a non-root user — this process executes untrusted user SQL in-JVM (embedded Flink),
+# so dropping root limits the blast radius of any sandbox escape.
+RUN groupadd --gid 10001 appuser \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin appuser
 # Copy lib/ first so the dependency layer caches across app-only rebuilds.
-COPY build/quarkus-app/lib/ ./lib/
-COPY build/quarkus-app/*.jar ./
-COPY build/quarkus-app/app/ ./app/
-COPY build/quarkus-app/quarkus/ ./quarkus/
+COPY --chown=appuser:appuser build/quarkus-app/lib/ ./lib/
+COPY --chown=appuser:appuser build/quarkus-app/*.jar ./
+COPY --chown=appuser:appuser build/quarkus-app/app/ ./app/
+COPY --chown=appuser:appuser build/quarkus-app/quarkus/ ./quarkus/
+USER appuser
 EXPOSE 9090
 ENTRYPOINT ["java", \
     "-Xms768m", \

@@ -28,6 +28,10 @@ public class SqlSecurityValidator {
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "^\\s*CREATE\\s+(TEMPORARY\\s+)?TABLE\\b", Pattern.CASE_INSENSITIVE);
 
+    // A WITH option block — the only place a CREATE TABLE can attach a connector.
+    private static final Pattern WITH_CLAUSE_PATTERN = Pattern.compile(
+            "\\bWITH\\s*\\(", Pattern.CASE_INSENSITIVE);
+
     private static final Pattern CONNECTOR_PATTERN = Pattern.compile(
             "'connector'\\s*=\\s*'([^']+)'", Pattern.CASE_INSENSITIVE);
 
@@ -45,7 +49,15 @@ public class SqlSecurityValidator {
         }
     }
 
-    private void validateStatement(String sql) {
+    private void validateStatement(String rawStatement) {
+        // Flink's parser ignores ALL comments (leading, inline, trailing), so match against a
+        // fully comment-stripped view of the statement — the same view Flink effectively sees.
+        // Stripping only leading comments left bypasses: an inline comment could obfuscate the
+        // real connector ("'connector'/**/='jdbc'") or split keywords ("CREATE/**/FUNCTION"),
+        // and a trailing comment could smuggle an allowlisted "-- 'connector'='datagen'" to flip
+        // the fail-closed flag. Comments inside string literals are preserved (not corrupted).
+        // The original (comments intact) is never executed here — this is detection only.
+        String sql = SqlText.stripComments(rawStatement);
         if (CREATE_FUNCTION_PATTERN.matcher(sql).find()) {
             log.warn("Blocked SQL: {} [type=CREATE_FUNCTION]", SqlText.truncate(sql));
             throw new ForbiddenSqlException("CREATE FUNCTION statements are not allowed");
@@ -68,9 +80,24 @@ public class SqlSecurityValidator {
         log.debug("Validation passed: {}", SqlText.truncate(sql));
     }
 
+    /**
+     * Fail-closed connector policy for CREATE TABLE. A CREATE TABLE with a {@code WITH (...)}
+     * option block must declare a {@code 'connector' = '<allowed>'}; if no recognizable
+     * allowlisted connector is found, the statement is rejected. This blocks both forbidden
+     * connectors and attempts to obfuscate the connector option (e.g. an inline comment
+     * {@code 'connector'/*x*}{@code /='jdbc'}) — obfuscation just means "no allowlisted
+     * connector found", which now fails rather than passes. Statements without a WITH block
+     * (schema-only DDL, {@code CREATE TABLE ... AS SELECT}, {@code ... LIKE}) declare no
+     * connector and so cannot perform connector I/O; they pass.
+     */
     private void validateConnector(String sql) {
+        if (!WITH_CLAUSE_PATTERN.matcher(sql).find()) {
+            return;
+        }
         Matcher matcher = CONNECTOR_PATTERN.matcher(sql);
-        if (matcher.find()) {
+        boolean sawConnector = false;
+        while (matcher.find()) {
+            sawConnector = true;
             String connector = matcher.group(1);
             if (!SecurityConstants.ALLOWED_CONNECTORS.contains(connector)) {
                 log.warn("Blocked SQL: {} [type=FORBIDDEN_CONNECTOR, connector={}]", SqlText.truncate(sql), connector);
@@ -78,6 +105,12 @@ public class SqlSecurityValidator {
                         "Connector '" + connector + "' is not allowed. Allowed connectors: "
                                 + SecurityConstants.ALLOWED_CONNECTORS);
             }
+        }
+        if (!sawConnector) {
+            log.warn("Blocked SQL: {} [type=MISSING_CONNECTOR]", SqlText.truncate(sql));
+            throw new ForbiddenSqlException(
+                    "CREATE TABLE with a WITH clause must declare an allowed connector. "
+                            + "Allowed connectors: " + SecurityConstants.ALLOWED_CONNECTORS);
         }
     }
 }

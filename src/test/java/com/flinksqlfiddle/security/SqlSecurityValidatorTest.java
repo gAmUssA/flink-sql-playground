@@ -174,4 +174,123 @@ class SqlSecurityValidatorTest {
         assertThrows(ForbiddenSqlException.class, () ->
                 validator.validate("Add Jar '/tmp/evil.jar'"));
     }
+
+    // --- Comment-bypass regression (start-anchored checks must ignore leading comments) ---
+
+    @Test
+    void blockCreateFunctionBehindBlockComment() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("/* sneaky */ CREATE FUNCTION myudf AS 'com.evil.Udf'"));
+    }
+
+    @Test
+    void blockCreateFunctionBehindLineComment() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("-- sneaky\nCREATE TEMPORARY SYSTEM FUNCTION myudf AS 'com.evil.Udf'"));
+    }
+
+    @Test
+    void blockSetBehindLeadingComments() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("-- a\n/* b */ SET 'execution.runtime-mode' = 'batch'"));
+    }
+
+    @Test
+    void blockAddJarBehindBlockComment() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("/**/ADD JAR '/tmp/evil.jar'"));
+    }
+
+    @Test
+    void blockForbiddenConnectorBehindLeadingComment() {
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("/* x */ CREATE TABLE t (id INT) WITH ('connector' = 'filesystem', 'path' = '/etc/passwd')"));
+        assertTrue(ex.getMessage().contains("filesystem"));
+    }
+
+    @Test
+    void blockForbiddenConnectorBehindLineComment() {
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("-- note\nCREATE TABLE t (id INT) WITH ('connector' = 'jdbc')"));
+    }
+
+    @Test
+    void allowedConnectorStillPassesBehindComment() {
+        assertDoesNotThrow(() ->
+                validator.validate("-- share this fiddle\nCREATE TABLE t (id INT) WITH ('connector' = 'datagen')"));
+    }
+
+    // --- Fail-closed connector policy ---
+
+    @Test
+    void blockCreateTableWithClauseButNoConnector() {
+        // A WITH block with no recognizable connector must fail closed rather than pass.
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('scan.startup.mode' = 'earliest-offset')"));
+    }
+
+    @Test
+    void blockConnectorObfuscatedWithInlineComment() {
+        // 'connector'/* */='jdbc' does not match the connector option, so no allowlisted
+        // connector is found in the WITH block — fail closed.
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('connector'/* */= 'jdbc')"));
+    }
+
+    @Test
+    void allowSchemaOnlyCreateTableWithoutWithClause() {
+        // No WITH clause => no connector I/O possible => allowed.
+        assertDoesNotThrow(() ->
+                validator.validate("CREATE TABLE t (id INT, name STRING)"));
+    }
+
+    @Test
+    void allowCreateTableAsSelect() {
+        assertDoesNotThrow(() ->
+                validator.validate("CREATE TABLE snapshot AS SELECT * FROM src"));
+    }
+
+    // --- Inline/trailing comment bypass regression (Flink ignores ALL comments) ---
+
+    @Test
+    void blockCreateFunctionWithInlineCommentBetweenKeywords() {
+        // Flink parses CREATE/**/FUNCTION as CREATE FUNCTION; stripping only leading comments
+        // would miss the start-anchored check. Full comment stripping catches it.
+        assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE/**/FUNCTION myudf AS 'x'"));
+    }
+
+    @Test
+    void blockConnectorObfuscatedWithInlineCommentInWith() {
+        // 'connector'/**/='jdbc' parses as connector=jdbc for Flink. Once comments are stripped
+        // the forbidden connector is exposed and rejected.
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('connector'/**/='jdbc')"));
+        assertTrue(ex.getMessage().contains("jdbc"));
+    }
+
+    @Test
+    void blockTrailingLineCommentInjectingAllowlistedConnector() {
+        // Real connector is jdbc (forbidden); an allowlisted connector is smuggled inside a
+        // trailing line comment. Flink ignores the comment, so the statement must still be
+        // blocked rather than passing on the injected 'datagen'.
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('connector'='jdbc') -- 'connector'='datagen'"));
+        assertTrue(ex.getMessage().contains("jdbc"));
+    }
+
+    @Test
+    void blockTrailingBlockCommentInjectingAllowlistedConnector() {
+        ForbiddenSqlException ex = assertThrows(ForbiddenSqlException.class, () ->
+                validator.validate("CREATE TABLE t (id INT) WITH ('connector'='jdbc') /* 'connector'='datagen' */"));
+        assertTrue(ex.getMessage().contains("jdbc"));
+    }
+
+    @Test
+    void allowLiteralContainingCommentLikeText() {
+        // A legitimate faker expression whose STRING LITERAL contains comment-like characters
+        // must NOT be corrupted by comment stripping — the connector is allowlisted, so pass.
+        assertDoesNotThrow(() ->
+                validator.validate("CREATE TABLE t (s STRING) WITH ('connector'='faker', 'fields.s.expression'='a--b/*c*/')"));
+    }
 }

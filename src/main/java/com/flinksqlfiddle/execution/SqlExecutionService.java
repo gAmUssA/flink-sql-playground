@@ -165,35 +165,15 @@ public class SqlExecutionService {
     }
 
     /**
-     * Strips leading line ({@code --}) and block ({@code /* *}{@code /}) comments and
-     * whitespace so the DDL/CREATE-TABLE patterns (anchored at the start) still match a
-     * statement that opens with a comment. Without this, a statement like
+     * Strips leading comments/whitespace so the DDL/CREATE-TABLE patterns (anchored at the
+     * start) still match a statement that opens with a comment. Without this, a statement like
      * {@code "-- note\nCREATE TABLE ..."} is not recognized as DDL, so it never gets synced
      * to both the batch and streaming environments — and toggling modes then fails to find
-     * the table. Only used for pattern matching; the original SQL (comments intact) is what
-     * runs.
+     * the table. Delegates to {@link SqlText#stripLeadingComments(String)}, the single
+     * implementation shared with {@link SqlSecurityValidator}.
      */
     static String stripLeadingComments(String sql) {
-        if (sql == null) {
-            return "";
-        }
-        int i = 0;
-        int n = sql.length();
-        while (i < n) {
-            while (i < n && Character.isWhitespace(sql.charAt(i))) {
-                i++;
-            }
-            if (i + 1 < n && sql.charAt(i) == '-' && sql.charAt(i + 1) == '-') {
-                int nl = sql.indexOf('\n', i);
-                i = (nl == -1) ? n : nl + 1;
-            } else if (i + 1 < n && sql.charAt(i) == '/' && sql.charAt(i + 1) == '*') {
-                int close = sql.indexOf("*/", i + 2);
-                i = (close == -1) ? n : close + 2;
-            } else {
-                break;
-            }
-        }
-        return sql.substring(Math.min(i, n));
+        return SqlText.stripLeadingComments(sql);
     }
 
     /**
