@@ -1,7 +1,5 @@
 package com.flinksqlfiddle.execution;
 
-import com.flinksqlfiddle.api.dto.ColumnInfo;
-import com.flinksqlfiddle.api.dto.TableInfo;
 import com.flinksqlfiddle.security.SqlSecurityValidator;
 import com.flinksqlfiddle.session.FlinkSession;
 import com.flinksqlfiddle.util.SqlText;

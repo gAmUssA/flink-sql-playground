@@ -1,7 +1,7 @@
 package com.flinksqlfiddle.api;
 
-import com.flinksqlfiddle.api.dto.ColumnInfo;
-import com.flinksqlfiddle.api.dto.TableInfo;
+import com.flinksqlfiddle.execution.ColumnInfo;
+import com.flinksqlfiddle.execution.TableInfo;
 import com.flinksqlfiddle.execution.SqlExecutionService;
 import com.flinksqlfiddle.session.FlinkSession;
 import com.flinksqlfiddle.session.SessionLimitExceededException;

@@ -1,9 +1,19 @@
 package com.flinksqlfiddle.fiddle;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Immutable;
+
 import java.time.Instant;
 
+/**
+ * A saved fiddle, addressed by a content hash of its (schema, query, mode). Rows are only
+ * ever inserted (see {@code FiddleService.save}, which inserts-if-absent) and never mutated —
+ * there are no setters. {@link Immutable} makes that contract explicit to Hibernate: it skips
+ * dirty-checking/UPDATE generation for this entity, which also sidesteps the optimistic-locking
+ * concern (no {@code @Version} needed, since concurrent updates cannot occur by design).
+ */
 @Entity
+@Immutable
 @Table(name = "fiddles")
 public class Fiddle {
 
