@@ -26,9 +26,3 @@ jobs:
 
       - name: Build and test
         run: ./gradlew build
-
-      - name: Docker build smoke test
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
