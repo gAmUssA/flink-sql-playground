@@ -42,12 +42,45 @@ public class BuildInfoResource {
         } catch (IOException e) {
             log.warn("Failed to read build-info.properties: {}", e.getMessage());
         }
-        return new BuildInfoResponse(
-                props.getProperty("build.commit", "dev"),
-                props.getProperty("build.commitFull", "dev"),
-                props.getProperty("build.branch", "unknown"),
-                props.getProperty("build.version", "unknown"),
-                props.getProperty("build.time", "unknown")
-        );
+        String commit = props.getProperty("build.commit", "dev");
+        String commitFull = props.getProperty("build.commitFull", "dev");
+        String branch = props.getProperty("build.branch", "unknown");
+        String version = props.getProperty("build.version", "unknown");
+        String time = props.getProperty("build.time", "unknown");
+
+        // Runtime fallback for source builds that carry no build metadata — e.g. Railway
+        // builds the Dockerfile with no GIT_COMMIT/GIT_BRANCH args. Git-triggered Railway
+        // deploys inject RAILWAY_GIT_* into the container env, which is far more reliable
+        // than resolving those vars at build time. Only used when the baked value is absent,
+        // so CI-built images (real SHA baked in) are unaffected.
+        if (isPlaceholder(commit)) {
+            String sha = firstEnv("RAILWAY_GIT_COMMIT_SHA", "GIT_COMMIT", "SOURCE_COMMIT");
+            if (sha != null) {
+                commitFull = sha;
+                commit = sha.length() > 7 ? sha.substring(0, 7) : sha;
+            }
+        }
+        if (isPlaceholder(branch)) {
+            String b = firstEnv("RAILWAY_GIT_BRANCH", "GIT_BRANCH");
+            if (b != null) {
+                branch = b;
+            }
+        }
+        return new BuildInfoResponse(commit, commitFull, branch, version, time);
+    }
+
+    private static boolean isPlaceholder(String value) {
+        return value == null || value.isBlank() || value.equals("dev") || value.equals("unknown");
+    }
+
+    // First non-blank value among the given environment variables, or null.
+    private static String firstEnv(String... names) {
+        for (String name : names) {
+            String value = System.getenv(name);
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 }
