@@ -594,4 +594,116 @@ class ExampleQueriesSmokeTest {
         result.rowKinds().forEach(kind ->
                 assertTrue(validKinds.contains(kind), "Unexpected RowKind: " + kind));
     }
+
+    // --- Event-time faker examples (examples.js "Faker" set). These run the SHIPPED SQL
+    //     verbatim (faker + real watermarks), unlike the deterministic rewrites above, to
+    //     guard that the widened watermarks keep producing output. faker is random, so we
+    //     assert only that rows come back — the widened watermark makes rowCount > 0 stable. ---
+
+    @Test
+    void fakerTumblingWindowEventTime() {
+        FlinkSession session = new FlinkSession("smoke-faker-tumble", factory);
+        executeDdl(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE txn_events (
+                    txn_id     STRING, card_id INT, amount DOUBLE, ccy STRING, country STRING,
+                    event_time TIMESTAMP(3),
+                    WATERMARK FOR event_time AS event_time - INTERVAL '15' SECOND
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '500',
+                    'fields.txn_id.expression' = '#{Internet.UUID}',
+                    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+                    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+                    'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
+                    'fields.country.expression' = '#{Address.countryCode}',
+                    'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
+                )
+                """);
+
+        QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
+                SELECT window_start, window_end, COUNT(*) AS txns, ROUND(SUM(amount), 2) AS total
+                FROM TABLE(TUMBLE(TABLE txn_events, DESCRIPTOR(event_time), INTERVAL '10' SECOND))
+                GROUP BY window_start, window_end
+                """);
+
+        assertTrue(result.columnNames().containsAll(List.of("window_start", "window_end", "txns")));
+        assertTrue(result.rowCount() > 0, "Expected at least one tumbling-window row");
+    }
+
+    @Test
+    void fakerTemporalJoinEventTime() {
+        FlinkSession session = new FlinkSession("smoke-faker-temporal", factory);
+        executeDdl(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE txn_events (
+                    txn_id     STRING, card_id INT, amount DOUBLE, ccy STRING,
+                    event_time TIMESTAMP(3),
+                    WATERMARK FOR event_time AS event_time - INTERVAL '15' SECOND
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '500',
+                    'fields.txn_id.expression' = '#{Internet.UUID}',
+                    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+                    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+                    'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
+                    'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
+                );
+                CREATE TEMPORARY TABLE fx_rates (
+                    ccy STRING, rate_to_eur DOUBLE, rate_time TIMESTAMP(3),
+                    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND,
+                    PRIMARY KEY (ccy) NOT ENFORCED
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '50',
+                    'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
+                    'fields.rate_to_eur.expression' = '#{Number.randomDouble ''3'',''0'',''2''}',
+                    'fields.rate_time.expression' = '#{date.past ''20'',''SECONDS''}'
+                )
+                """);
+
+        QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
+                SELECT t.txn_id, t.amount, r.rate_to_eur, ROUND(t.amount * r.rate_to_eur, 2) AS amount_eur
+                FROM txn_events AS t
+                JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
+                  ON t.ccy = r.ccy
+                """);
+
+        assertTrue(result.columnNames().containsAll(List.of("txn_id", "amount_eur")));
+        assertTrue(result.rowCount() > 0, "Expected at least one temporally-joined row");
+    }
+
+    @Test
+    void fakerMatchRecognizeImpossibleTravel() {
+        FlinkSession session = new FlinkSession("smoke-faker-match", factory);
+        executeDdl(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE txn_events (
+                    txn_id     STRING, card_id INT, amount DOUBLE, country STRING,
+                    event_time TIMESTAMP(3),
+                    WATERMARK FOR event_time AS event_time - INTERVAL '15' SECOND
+                ) WITH (
+                    'connector' = 'faker',
+                    'number-of-rows' = '500',
+                    'fields.txn_id.expression' = '#{Internet.UUID}',
+                    'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
+                    'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
+                    'fields.country.expression' = '#{Address.countryCode}',
+                    'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
+                )
+                """);
+
+        QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
+                SELECT *
+                FROM txn_events
+                MATCH_RECOGNIZE (
+                    PARTITION BY card_id
+                    ORDER BY event_time
+                    MEASURES A.country AS country_1, B.country AS country_2
+                    ONE ROW PER MATCH
+                    AFTER MATCH SKIP PAST LAST ROW
+                    PATTERN (A B) WITHIN INTERVAL '10' SECOND
+                    DEFINE B AS B.country <> A.country
+                ) AS impossible_travel
+                """);
+
+        assertTrue(result.rowCount() > 0, "Expected at least one MATCH_RECOGNIZE match");
+    }
 }
