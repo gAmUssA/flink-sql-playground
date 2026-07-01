@@ -39,7 +39,6 @@ ENTRYPOINT ["java", \
     "-Xms768m", \
     "-Xmx1536m", \
     "-XX:+UseZGC", \
-    "-XX:+ZGenerational", \
     "-XX:MetaspaceSize=128m", \
     "-XX:MaxMetaspaceSize=384m", \
     "-jar", "quarkus-run.jar"]

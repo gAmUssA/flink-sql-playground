@@ -164,7 +164,7 @@ Multi-stage build:
 2. **Runtime stage** (`eclipse-temurin:25-jre`) — copy the fast-jar layout (`build/quarkus-app/`, `lib/` first for layer caching), run `quarkus-run.jar` with tuned JVM flags
 
 ```
-JVM: -Xms768m -Xmx1536m -XX:+UseZGC -XX:+ZGenerational
+JVM: -Xms768m -Xmx1536m -XX:+UseZGC
      -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m
 ```
 
