@@ -82,6 +82,11 @@ dependencies {
     implementation("io.quarkus:quarkus-rest")
     implementation("io.quarkus:quarkus-rest-jackson")
 
+    // Health: MicroProfile Health via SmallRye. Aggregates liveness/readiness/startup checks
+    // (incl. the automatic Agroal datasource readiness check) at /q/health*; BootUI's Health
+    // panel reads the same report in-process.
+    implementation("io.quarkus:quarkus-smallrye-health")
+
     // Validation (jakarta.validation)
     implementation("io.quarkus:quarkus-hibernate-validator")
 
