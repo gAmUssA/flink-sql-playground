@@ -233,18 +233,26 @@ export function optionCandidates(ctx) {
 
 const NOT_ALIASES = /^(on|using|where|join|inner|left|right|full|cross|outer|natural|lateral|group|order|limit|having|window|union|except|intersect|for|match_recognize|tablesample|as)$/i;
 
-/** Lower-cased alias → table name map for `FROM t a`, `JOIN t AS a`; each table also maps to itself. */
+/**
+ * Lower-cased alias → table name map for `FROM t a`, `JOIN t AS a` and backticked aliases such as
+ * FROM t AS `order`; each table also maps to itself.
+ */
 export function tableAliases(text) {
   const masked = maskSql(text);
   const aliases = Object.create(null); // a table may be named __proto__
-  const re = /\b(?:from|join)\s+((?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*)(?:\s+(?:as\s+)?([\w$]+))?/gi;
+  const re = /\b(?:from|join)\s+((?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*)(?:\s+(?:as\s+)?(`(?:[^`]|``)*`|[\w$]+))?/gi;
   let m;
   while ((m = re.exec(masked)) !== null) {
     const nameEnd = m.index + m[0].indexOf(m[1]) + m[1].length;
     const table = lastIdentifier(text.slice(nameEnd - m[1].length, nameEnd));
     if (!table || /^table$/i.test(table)) continue;
     aliases[table.toLowerCase()] = table;
-    if (m[2] && !NOT_ALIASES.test(m[2])) aliases[m[2].toLowerCase()] = table;
+    if (!m[2]) continue;
+    const end = m.index + m[0].length;
+    const raw = text.slice(end - m[2].length, end);
+    // A backticked alias may be any word, a reserved one included.
+    if (raw.startsWith('`')) aliases[lastIdentifier(raw).toLowerCase()] = table;
+    else if (!NOT_ALIASES.test(raw)) aliases[raw.toLowerCase()] = table;
   }
   return aliases;
 }

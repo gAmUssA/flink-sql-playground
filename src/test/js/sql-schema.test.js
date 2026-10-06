@@ -120,6 +120,8 @@ test('tableAliases maps aliases and table names, ignoring clause keywords', asyn
     { orders: 'orders', o: 'orders', users: 'users', u: 'users' });
   assert.deepEqual(plain('SELECT * FROM Orders WHERE x = 1'), { orders: 'Orders' });
   assert.equal(tableAliases('SELECT * FROM __proto__ p').__proto__, '__proto__');
+  assert.deepEqual(plain('SELECT * FROM trades AS `order` WHERE `order`.ven'), { trades: 'trades', order: 'trades' });
+  assert.deepEqual(plain('SELECT * FROM trades `select` WHERE `select`.ven'), { trades: 'trades', select: 'trades' });
 });
 
 test('expectsTableName is true only right after FROM, JOIN, TABLE or INTO', async () => {
