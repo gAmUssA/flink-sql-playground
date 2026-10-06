@@ -134,6 +134,11 @@ test('optionCandidates expands per-column options for the declared connector', a
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'fields.id.kind' }), ['random', 'sequence']);
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'number-of-rows' }), []);
   assert.deepEqual(optionCandidates(null), []);
+  for (const connector of ['constructor', '__proto__', 'toString']) {
+    assert.deepEqual(optionCandidates({ kind: 'key', connector, columns: [] }), ['connector']);
+  }
+  assert.deepEqual(optionCandidates({ kind: 'value', key: 'constructor' }), []);
+  assert.deepEqual(optionCandidates({ kind: 'value', key: 'fields.id.__proto__' }), []);
 });
 
 test('tableAliases maps aliases and table names, ignoring clause keywords', async () => {

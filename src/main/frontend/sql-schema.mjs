@@ -15,6 +15,9 @@ export const CONNECTOR_OPTIONS = {
 /** Values worth offering for a few options; keys match CONNECTOR_OPTIONS after `#` expansion. */
 const OPTION_VALUES = { 'kind': ['random', 'sequence'], 'standard-error': ['true', 'false'], 'var-len': ['true', 'false'] };
 
+// Object.hasOwn needs Safari 15.4; the bundle targets Safari 15.
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+
 const NOT_COLUMNS = /^(watermark|primary|constraint|period|like|unique|foreign|check|index)$/i;
 
 /** Blanks comments and string contents with spaces, keeping offsets and the quotes themselves. */
@@ -306,9 +309,10 @@ export function optionCandidates(ctx) {
   if (ctx.kind === 'value') {
     if (ctx.key === 'connector') return Object.keys(CONNECTOR_OPTIONS);
     const last = ctx.key.split('.').pop();
-    return OPTION_VALUES[last] || [];
+    return hasOwn(OPTION_VALUES, last) ? OPTION_VALUES[last] : [];
   }
-  const templates = ctx.connector ? CONNECTOR_OPTIONS[ctx.connector] || [] : [];
+  // Own properties only: a connector named constructor or __proto__ must not reach Object.prototype.
+  const templates = ctx.connector && hasOwn(CONNECTOR_OPTIONS, ctx.connector) ? CONNECTOR_OPTIONS[ctx.connector] : [];
   const keys = ['connector'];
   templates.forEach((t) => {
     if (!t.includes('#')) keys.push(t);
