@@ -92,6 +92,19 @@ class SharedMiniClusterTest {
     }
 
     @Test
+    void waitingAfterCloseFailsFastInsteadOfTimingOut() throws Exception {
+        FlinkProperties slowTimeout = new FlinkProperties(
+                1, "8m", "32m", 1, null, true, 1, "32m", Duration.ofSeconds(30));
+        SharedMiniCluster closed = new SharedMiniCluster(slowTimeout);
+        closed.close();
+
+        long begin = System.nanoTime();
+        IllegalStateException e = assertThrows(IllegalStateException.class, closed::awaitRestAddress);
+        assertTrue(Duration.ofNanos(System.nanoTime() - begin).toSeconds() < 5, "should not wait for the start timeout");
+        assertTrue(e.getMessage().contains("closed"), e.getMessage());
+    }
+
+    @Test
     void startFailureSurfacesAsIllegalState() {
         FlinkProperties broken = new FlinkProperties(
                 1, "8m", "32m", 1, null, true, 1, "not-a-size", Duration.ofSeconds(10));

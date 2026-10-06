@@ -64,13 +64,15 @@ public class SharedMiniCluster implements AutoCloseable {
             mc = new MiniCluster(clusterConfiguration());
             mc.start();
             URI uri = mc.getRestAddress().get(properties.clusterStartTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            // Publish under the monitor so close() either runs first (and this start fails)
+            // or sees the cluster and stops it; it can never stop a cluster already handed out.
             synchronized (this) {
                 if (closed) {
                     throw new IllegalStateException("closed while starting");
                 }
                 cluster = mc;
+                restAddress.complete(uri);
             }
-            restAddress.complete(uri);
             log.info("Shared MiniCluster started in {}ms [slots={}, network={}, managed/slot={}, rest={}]",
                     System.currentTimeMillis() - begin, properties.clusterSlots(),
                     properties.clusterNetworkMemory(), properties.managedMemory(), uri);
@@ -154,6 +156,7 @@ public class SharedMiniCluster implements AutoCloseable {
             closed = true;
             mc = cluster;
             cluster = null;
+            restAddress.completeExceptionally(new IllegalStateException("cluster closed"));
         }
         if (mc != null) {
             mc.close();
