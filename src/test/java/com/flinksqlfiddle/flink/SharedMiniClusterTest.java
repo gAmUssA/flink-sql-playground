@@ -1,5 +1,10 @@
 package com.flinksqlfiddle.flink;
 
+import com.flinksqlfiddle.execution.ExecutionLimits;
+import com.flinksqlfiddle.execution.ExecutionMode;
+import com.flinksqlfiddle.execution.SqlExecutionService;
+import com.flinksqlfiddle.security.SqlSecurityValidator;
+import com.flinksqlfiddle.session.FlinkSession;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.TableResult;
 import org.apache.flink.types.Row;
@@ -67,6 +72,31 @@ class SharedMiniClusterTest {
         for (int i = 0; i < 5; i++) {
             assertEquals(3, collectRows(env.executeSql("SELECT id FROM seq_src")).size(),
                     "query " + i + " should get a slot after earlier jobs finished");
+        }
+    }
+
+    @Test
+    void jobsRunInProcessWithoutTheRestEndpoint() {
+        TableEnvironment env = factory.createBatchEnvironment();
+        String target = ((org.apache.flink.table.api.internal.TableEnvironmentImpl) env).getConfig()
+                .get(org.apache.flink.configuration.DeploymentOptions.TARGET);
+        assertEquals(SharedClusterExecutorFactory.NAME, target);
+    }
+
+    @Test
+    void runtimeFailureReportsItsCauseQuickly() {
+        SqlExecutionService service = new SqlExecutionService(new SqlSecurityValidator(), ExecutionLimits.defaults());
+        FlinkSession session = new FlinkSession("runtime-failure", factory);
+        try {
+            service.execute(session, ExecutionMode.BATCH, boundedSource("fail_src", 3));
+            long begin = System.nanoTime();
+            RuntimeException e = assertThrows(RuntimeException.class, () -> service.execute(session, ExecutionMode.BATCH,
+                    "SELECT CAST(CONCAT(CAST(id AS STRING), 'x') AS INT) AS bad FROM fail_src"));
+            long seconds = Duration.ofNanos(System.nanoTime() - begin).toSeconds();
+            assertTrue(seconds < 5, "failure took " + seconds + "s to report");
+            assertTrue(e.getMessage().contains("NumberFormatException"), e.getMessage());
+        } finally {
+            session.close();
         }
     }
 
