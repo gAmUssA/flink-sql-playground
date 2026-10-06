@@ -39,6 +39,21 @@ async function layoutState(page) {
   });
 }
 
+/**
+ * Visible tabs and topbar/toolbar controls whose box leaves the window, or whose label is cut
+ * off. .app has overflow: hidden, so such a control is unreachable without making the page scroll.
+ */
+async function controlsOutsideWindow(page) {
+  return page.evaluate(() => [...document.querySelectorAll('.m-views [role="tab"], .topbar button, .toolbar button, .toolbar select')]
+    .filter((el) => getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0)
+    .filter((el) => {
+      const r = el.getBoundingClientRect();
+      const outside = r.left < 0 || r.top < 0 || r.right > window.innerWidth || r.bottom > window.innerHeight;
+      return outside || el.scrollWidth > el.clientWidth + 1;
+    })
+    .map((el) => { const r = el.getBoundingClientRect(); return `${el.id || el.textContent.trim()} ${Math.round(r.left)}..${Math.round(r.right)}`; }));
+}
+
 const PHONE = { jsPhone: true, tabs: true, drawerButton: true, dockedSidebar: false, sideBySideEditors: false, panelsAreTabpanels: true };
 const DESKTOP = { jsPhone: false, tabs: false, drawerButton: false, dockedSidebar: true, sideBySideEditors: true, panelsAreTabpanels: false };
 
@@ -47,4 +62,4 @@ function layoutOf(state) {
   return Object.fromEntries(Object.keys(PHONE).map((k) => [k, state[k]]));
 }
 
-module.exports = { openApp, layoutState, layoutOf, PHONE, DESKTOP };
+module.exports = { openApp, layoutState, layoutOf, controlsOutsideWindow, PHONE, DESKTOP };
