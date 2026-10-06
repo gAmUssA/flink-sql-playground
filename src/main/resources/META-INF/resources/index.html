@@ -35,9 +35,9 @@
 
     <!-- ===== Phone view switcher (hidden on wider screens) ===== -->
     <nav class="m-views" role="tablist" aria-label="Panel">
-        <button type="button" role="tab" data-mview="schema" aria-selected="false">Schema</button>
-        <button type="button" role="tab" data-mview="query" aria-selected="true">Query</button>
-        <button type="button" role="tab" data-mview="results" aria-selected="false">Results <span class="m-views-count" id="m-views-count" hidden>0</span></button>
+        <button type="button" role="tab" id="m-tab-schema" data-mview="schema" aria-controls="schema-panel" aria-selected="false" tabindex="-1">Schema</button>
+        <button type="button" role="tab" id="m-tab-query" data-mview="query" aria-controls="query-panel" aria-selected="true" tabindex="0">Query</button>
+        <button type="button" role="tab" id="m-tab-results" data-mview="results" aria-controls="results-panel" aria-selected="false" tabindex="-1">Results <span class="m-views-count" id="m-views-count" hidden>0</span></button>
     </nav>
 
     <!-- ===== Workspace ===== -->

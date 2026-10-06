@@ -228,12 +228,52 @@ const PHONE_QUERY = '(max-width: 767px)';
 function isPhoneLayout() { return !!(window.matchMedia && window.matchMedia(PHONE_QUERY).matches); }
 function isCoarsePointer() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
 
+const PHONE_PANELS = { schema: 'schema-panel', query: 'query-panel', results: 'results-panel' };
+
 // Below 768px the Schema, Query and Results panels share the screen; one is shown at a time.
+// The switcher follows the ARIA tabs pattern: only the selected tab is a Tab stop.
 function setPhoneView(view) {
   document.querySelector('.app').dataset.mview = view;
-  document.querySelectorAll('.m-views [data-mview]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mview === view)));
+  document.querySelectorAll('.m-views [data-mview]').forEach((b) => {
+    const selected = b.dataset.mview === view;
+    b.setAttribute('aria-selected', String(selected));
+    b.tabIndex = selected ? 0 : -1;
+  });
   if (view !== 'results') closeFilterPopover();
   requestAnimationFrame(() => { if (schemaEditor) schemaEditor.layout(); if (queryEditor) queryEditor.layout(); });
+}
+
+// Arrow keys, Home and End move between the view tabs and select the one they land on.
+function onPhoneTabKey(e) {
+  const tabs = [...document.querySelectorAll('.m-views [role="tab"]')];
+  const i = tabs.indexOf(e.currentTarget);
+  const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (next === undefined) return;
+  e.preventDefault();
+  const target = tabs[(next + tabs.length) % tabs.length];
+  setPhoneView(target.dataset.mview);
+  target.focus();
+}
+
+// The panels are tabpanels only while the phone switcher is in use; on wider screens they
+// are ordinary regions shown side by side.
+function syncPhoneSemantics() {
+  const phone = isPhoneLayout();
+  Object.entries(PHONE_PANELS).forEach(([view, id]) => {
+    const panel = document.getElementById(id);
+    if (phone) { panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', `m-tab-${view}`); }
+    else { panel.removeAttribute('role'); panel.removeAttribute('aria-labelledby'); }
+  });
+  const drawerOpen = document.querySelector('.app').classList.contains('drawer-open');
+  setDrawerInert(phone && !drawerOpen);
+}
+
+// A closed drawer is only moved off-screen, so it must also leave the tab order and the
+// accessibility tree.
+function setDrawerInert(hidden) {
+  const sidebar = document.getElementById('schema-browser');
+  sidebar.inert = hidden;
+  if (hidden) sidebar.setAttribute('aria-hidden', 'true'); else sidebar.removeAttribute('aria-hidden');
 }
 
 function updatePhoneResultCount() {
@@ -244,10 +284,16 @@ function updatePhoneResultCount() {
   badge.hidden = n === 0;
 }
 
-function setTablesDrawer(open) {
-  document.querySelector('.app').classList.toggle('drawer-open', open);
+function setTablesDrawer(open, { restoreFocus = false } = {}) {
+  const app = document.querySelector('.app');
+  const wasOpen = app.classList.contains('drawer-open');
+  app.classList.toggle('drawer-open', open);
   document.getElementById('drawer-backdrop').hidden = !open;
-  document.getElementById('tables-drawer-btn').setAttribute('aria-expanded', String(open));
+  const trigger = document.getElementById('tables-drawer-btn');
+  trigger.setAttribute('aria-expanded', String(open));
+  setDrawerInert(isPhoneLayout() && !open);
+  if (open) document.getElementById('schema-browser-toggle').focus();
+  else if (wasOpen && restoreFocus) trigger.focus();
 }
 
 /* ============================== Monaco setup ============================== */
@@ -1344,7 +1390,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTweak('theme', tweaks.theme === 'cobalt' ? 'nebula' : 'cobalt');
   });
   document.getElementById('schema-browser-toggle').addEventListener('click', (e) => {
-    if (isPhoneLayout()) { setTablesDrawer(false); return; }
+    if (isPhoneLayout()) { setTablesDrawer(false, { restoreFocus: true }); return; }
     const collapsed = document.getElementById('schema-browser').classList.toggle('collapsed');
     e.currentTarget.title = collapsed ? 'Expand tables' : 'Collapse';
   });
@@ -1352,13 +1398,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // Phone layout: view switcher and the Tables drawer.
   document.querySelectorAll('.m-views [data-mview]').forEach((b) => {
     b.addEventListener('click', () => setPhoneView(b.dataset.mview));
+    b.addEventListener('keydown', onPhoneTabKey);
   });
+  syncPhoneSemantics();
   document.getElementById('tables-drawer-btn').addEventListener('click', () => {
     setTablesDrawer(!document.querySelector('.app').classList.contains('drawer-open'));
   });
   document.getElementById('drawer-backdrop').addEventListener('click', () => setTablesDrawer(false));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setTablesDrawer(false); });
-  if (window.matchMedia) window.matchMedia(PHONE_QUERY).addEventListener('change', (e) => { if (!e.matches) setTablesDrawer(false); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.querySelector('.app').classList.contains('drawer-open')) setTablesDrawer(false, { restoreFocus: true });
+  });
+  if (window.matchMedia) window.matchMedia(PHONE_QUERY).addEventListener('change', (e) => {
+    if (!e.matches) setTablesDrawer(false);
+    syncPhoneSemantics();
+  });
 
   // Tables window: drop affordance + inline confirm + card collapse (delegated)
   document.getElementById('schema-browser-list').addEventListener('click', (e) => {

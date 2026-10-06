@@ -24,7 +24,10 @@ test('sidebar, editors, toolbar and results keep the desktop arrangement', async
       sidebarWidth: Math.round(box('#schema-browser').width),
       schemaLeftOfQuery: box('#schema-panel').right <= box('#query-panel').left + 1,
       sameRow: Math.abs(box('#schema-panel').top - box('#query-panel').top) < 1,
-      toolbarOneRow: new Set(tb.map((el) => Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2))).size <= 2,
+      toolbarOneRow: (() => {
+        const centers = tb.map((el) => el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2);
+        return Math.max(...centers) - Math.min(...centers) < 2; // every item on the same row
+      })(),
       resultsBelowToolbar: box('#results-panel').top >= box('.toolbar').bottom - 1,
       editorFontPx: parseFloat(getComputedStyle(document.querySelector('.view-line')).fontSize),
       buttonHeight: Math.round(box('#run-query-btn').height),
@@ -39,3 +42,12 @@ test('the sidebar still collapses to a rail', async ({ page }) => {
   await page.click('#schema-browser-toggle');
   await expect.poll(() => page.locator('#schema-browser').evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(44);
 });
+
+test('desktop panels are plain regions and the sidebar is fully reachable', async ({ page }) => {
+  for (const id of ['schema-panel', 'query-panel', 'results-panel']) {
+    await expect(page.locator(`#${id}`)).not.toHaveAttribute('role', 'tabpanel');
+  }
+  expect(await page.locator('#schema-browser').evaluate((el) => el.inert)).toBe(false);
+  await expect(page.locator('#schema-browser')).not.toHaveAttribute('aria-hidden', 'true');
+});
+

@@ -203,3 +203,45 @@ test('wide results keep the first column pinned and scroll inside the panel', as
   expect(Math.round(after.x)).toBe(Math.round(before.x));
   await expectNoHorizontalScroll(page);
 });
+
+test('view tabs follow the ARIA tabs pattern with arrow-key navigation', async ({ page }) => {
+  const tab = (v) => page.locator(`.m-views [data-mview="${v}"]`);
+  for (const [v, panel] of [['schema', 'schema-panel'], ['query', 'query-panel'], ['results', 'results-panel']]) {
+    await expect(tab(v)).toHaveAttribute('aria-controls', panel);
+    await expect(page.locator(`#${panel}`)).toHaveAttribute('role', 'tabpanel');
+    await expect(page.locator(`#${panel}`)).toHaveAttribute('aria-labelledby', `m-tab-${v}`);
+  }
+  // Only the selected tab is a Tab stop.
+  await expect(tab('query')).toHaveAttribute('tabindex', '0');
+  await expect(tab('schema')).toHaveAttribute('tabindex', '-1');
+
+  await tab('query').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(tab('results')).toHaveAttribute('aria-selected', 'true');
+  await expect(tab('results')).toBeFocused();
+  await expect(page.locator('#results-panel')).toBeVisible();
+  await page.keyboard.press('ArrowRight'); // wraps around
+  await expect(tab('schema')).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(tab('results')).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(tab('schema')).toHaveAttribute('aria-selected', 'true');
+  await expect(tab('schema')).toHaveAttribute('tabindex', '0');
+  await expect(tab('results')).toHaveAttribute('tabindex', '-1');
+});
+
+test('the closed drawer is out of the tab order; Esc closes it and returns focus', async ({ page }) => {
+  const drawer = page.locator('#schema-browser');
+  expect(await drawer.evaluate((el) => el.inert)).toBe(true);
+  await expect(drawer).toHaveAttribute('aria-hidden', 'true');
+
+  await page.locator('#tables-drawer-btn').tap();
+  expect(await drawer.evaluate((el) => el.inert)).toBe(false);
+  await expect(drawer).not.toHaveAttribute('aria-hidden', 'true');
+  expect(await page.evaluate(() => document.getElementById('schema-browser').contains(document.activeElement))).toBe(true);
+
+  await page.keyboard.press('Escape');
+  expect(await drawer.evaluate((el) => el.inert)).toBe(true);
+  await expect(page.locator('#tables-drawer-btn')).toBeFocused();
+});
+
