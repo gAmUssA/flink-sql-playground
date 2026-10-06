@@ -223,6 +223,33 @@ function setMode(mode) {
   if (sm) sm.textContent = currentMode === 'BATCH' ? 'Batch' : 'Streaming';
 }
 
+/* ============================== Phone layout ============================== */
+const PHONE_QUERY = '(max-width: 767px)';
+function isPhoneLayout() { return !!(window.matchMedia && window.matchMedia(PHONE_QUERY).matches); }
+function isCoarsePointer() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
+
+// Below 768px the Schema, Query and Results panels share the screen; one is shown at a time.
+function setPhoneView(view) {
+  document.querySelector('.app').dataset.mview = view;
+  document.querySelectorAll('.m-views [data-mview]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mview === view)));
+  if (view !== 'results') closeFilterPopover();
+  requestAnimationFrame(() => { if (schemaEditor) schemaEditor.layout(); if (queryEditor) queryEditor.layout(); });
+}
+
+function updatePhoneResultCount() {
+  const badge = document.getElementById('m-views-count');
+  if (!badge) return;
+  const n = R.materialized ? R.materialized.size : 0;
+  badge.textContent = String(n);
+  badge.hidden = n === 0;
+}
+
+function setTablesDrawer(open) {
+  document.querySelector('.app').classList.toggle('drawer-open', open);
+  document.getElementById('drawer-backdrop').hidden = !open;
+  document.getElementById('tables-drawer-btn').setAttribute('aria-expanded', String(open));
+}
+
 /* ============================== Monaco setup ============================== */
 require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
 require(['vs/editor/editor.main'], function () {
@@ -231,7 +258,8 @@ require(['vs/editor/editor.main'], function () {
   const fontFamily = tweaks.mono.replace(/'/g, '') + ', JetBrains Mono, monospace';
   const opts = {
     language: 'sql', theme: 'fsf-' + tweaks.theme, minimap: { enabled: false },
-    fontFamily, fontSize: 13.5, lineHeight: 22, lineNumbers: 'on',
+    // 16px on touch screens: iOS zooms the page when focusing text smaller than that.
+    fontFamily, fontSize: isCoarsePointer() ? 16 : 13.5, lineHeight: isCoarsePointer() ? 24 : 22, lineNumbers: 'on',
     scrollBeyondLastLine: false, automaticLayout: true, padding: { top: 12, bottom: 12 },
     renderLineHighlight: 'line', scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
   };
@@ -366,6 +394,7 @@ async function runQuery() {
   const query = queryEditor.getValue().trim();
   if (!query) { setStatus('No query to execute', 'ready'); return; }
   resetResults();
+  if (isPhoneLayout()) setPhoneView('results');
   if (getMode() === 'STREAMING') await runStreamingQuery(query);
   else await runBatchQuery(query);
 }
@@ -568,6 +597,7 @@ function fmtVal(v) {
 const OP_META = { '+I': { cls: 'op-i', label: 'INSERT' }, '+U': { cls: 'op-uu', label: 'UPDATE' }, '-U': { cls: 'op-du', label: 'RETRACT' }, '-D': { cls: 'op-d', label: 'DELETE' } };
 
 function renderActiveView() {
+  updatePhoneResultCount();
   const body = document.getElementById('results-container');
   if (!body) return;
   if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); return; }
@@ -1314,9 +1344,21 @@ document.addEventListener('DOMContentLoaded', () => {
     setTweak('theme', tweaks.theme === 'cobalt' ? 'nebula' : 'cobalt');
   });
   document.getElementById('schema-browser-toggle').addEventListener('click', (e) => {
+    if (isPhoneLayout()) { setTablesDrawer(false); return; }
     const collapsed = document.getElementById('schema-browser').classList.toggle('collapsed');
     e.currentTarget.title = collapsed ? 'Expand tables' : 'Collapse';
   });
+
+  // Phone layout: view switcher and the Tables drawer.
+  document.querySelectorAll('.m-views [data-mview]').forEach((b) => {
+    b.addEventListener('click', () => setPhoneView(b.dataset.mview));
+  });
+  document.getElementById('tables-drawer-btn').addEventListener('click', () => {
+    setTablesDrawer(!document.querySelector('.app').classList.contains('drawer-open'));
+  });
+  document.getElementById('drawer-backdrop').addEventListener('click', () => setTablesDrawer(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setTablesDrawer(false); });
+  if (window.matchMedia) window.matchMedia(PHONE_QUERY).addEventListener('change', (e) => { if (!e.matches) setTablesDrawer(false); });
 
   // Tables window: drop affordance + inline confirm + card collapse (delegated)
   document.getElementById('schema-browser-list').addEventListener('click', (e) => {
