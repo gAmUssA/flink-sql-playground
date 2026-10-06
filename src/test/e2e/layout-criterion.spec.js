@@ -9,6 +9,7 @@ const CASES = [
   { name: 'iPhone 13 landscape', use: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true }, want: PHONE },
   { name: 'Pixel 7 landscape', use: { viewport: { width: 915, height: 412 }, isMobile: true, hasTouch: true }, want: PHONE },
   { name: 'iPhone 13 portrait', use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, want: PHONE },
+  { name: 'iPhone SE landscape', use: { viewport: { width: 667, height: 375 }, isMobile: true, hasTouch: true }, want: PHONE },
   // An upright phone with the on-screen keyboard open: interactive-widget=resizes-content shrinks
   // the viewport, so it is short but still taller than wide.
   { name: 'upright phone, keyboard open', use: { viewport: { width: 412, height: 450 }, isMobile: true, hasTouch: true }, want: PHONE },
@@ -61,5 +62,19 @@ test.describe('upright phone, keyboard open', () => {
       expect(t.right, `${t.tab} right edge`).toBeLessThanOrEqual(g.innerWidth);
     }
     expect(await controlsOutsideWindow(page)).toEqual([]);
+  });
+});
+
+test.describe('iPhone SE landscape', () => {
+  test.use({ viewport: { width: 667, height: 375 }, isMobile: true, hasTouch: true });
+
+  test('every tab and toolbar control is inside the window, 44px and unclipped', async ({ page }) => {
+    await openApp(page);
+    expect(await controlsOutsideWindow(page)).toEqual([]);
+    const small = await page.evaluate(() => [...document.querySelectorAll('.m-views [role="tab"], .topbar button, .toolbar button, .toolbar select')]
+      .filter((el) => el.getBoundingClientRect().width > 0)
+      .filter((el) => { const r = el.getBoundingClientRect(); return r.width < 44 || r.height < 44; })
+      .map((el) => el.id || el.textContent.trim()));
+    expect(small, 'controls under 44px').toEqual([]);
   });
 });
