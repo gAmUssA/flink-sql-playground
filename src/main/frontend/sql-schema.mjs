@@ -253,3 +253,9 @@ export function tableAliases(text) {
 export function expectsTableName(before) {
   return /\b(?:from|join|table|into)\s+[\w$]*$/i.test(maskSql(before));
 }
+
+/** True for a CREATE statement with no AS SELECT query, whose column list takes new names. */
+export function isDdlWithoutQuery(statement) {
+  const masked = maskSql(statement);
+  return /^\s*create\b/i.test(masked) && !/\bas\s+select\b/i.test(masked);
+}

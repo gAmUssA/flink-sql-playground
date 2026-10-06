@@ -129,3 +129,13 @@ test('expectsTableName is true only right after FROM, JOIN, TABLE or INTO', asyn
   assert.equal(expectsTableName('SELECT * FROM orders WHERE re'), false);
   assert.equal(expectsTableName("SELECT 'from x"), false);
 });
+
+test('isDdlWithoutQuery ignores comments and strings around CREATE and AS SELECT', async () => {
+  const { isDdlWithoutQuery } = await load();
+  assert.equal(isDdlWithoutQuery('CREATE TABLE t (id INT, na'), true);
+  assert.equal(isDdlWithoutQuery('-- orders\nCREATE TABLE t (id INT, na'), true);
+  assert.equal(isDdlWithoutQuery('/* x */ CREATE TABLE t (id INT, na'), true);
+  assert.equal(isDdlWithoutQuery('CREATE TABLE t (id INT, -- as select\n na'), true);
+  assert.equal(isDdlWithoutQuery('CREATE TABLE t AS SELECT re'), false);
+  assert.equal(isDdlWithoutQuery("SELECT 'create' FROM t WHERE re"), false);
+});

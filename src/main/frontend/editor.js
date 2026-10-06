@@ -14,7 +14,7 @@ import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { sql, SQLDialect } from '@codemirror/lang-sql';
 import { tags as t } from '@lezer/highlight';
 import { parseCreateTables, mergeTables, columnCandidates, statementAt, optionContext, optionCandidates,
-  tableAliases, expectsTableName } from './sql-schema.mjs';
+  tableAliases, expectsTableName, isDdlWithoutQuery } from './sql-schema.mjs';
 
 // Flink SQL keywords: the reserved words from the Flink SQL reference plus the DDL, window,
 // CEP and statement words the playground's examples use. lang-sql keeps its standard list
@@ -130,7 +130,7 @@ function tableColumnSource(tables) {
     const doc = ctx.state.doc.toString();
     const stmt = statementAt(doc, ctx.pos);
     const before = doc.slice(stmt.offset, ctx.pos);
-    if (/^\s*create\b/i.test(stmt.text) && !/\bas\s+select\b/i.test(stmt.text)) return null;
+    if (isDdlWithoutQuery(stmt.text)) return null;
     const known = tables();
 
     const qualified = ctx.matchBefore(/(?:`[^`]+`|[\w$]+)\.[\w$]*$/);
