@@ -110,8 +110,8 @@ const theme = EditorView.theme({
   '.cm-tooltip': { backgroundColor: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border-2)' },
   '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: 'var(--accent)', color: '#fff' },
   '.cm-completionDetail': { color: 'var(--text-3)' },
-  // Finger-sized rows on touch screens (style.css sets the variable under pointer: coarse).
-  '.cm-tooltip-autocomplete > ul > li': { minHeight: 'var(--editor-completion-row, auto)', display: 'flex', alignItems: 'center' },
+  // Finger-sized rows on touch screens (style.css sets the variable, and centres the row, under pointer: coarse).
+  '.cm-tooltip-autocomplete > ul > li': { minHeight: 'var(--editor-completion-row, auto)' },
 });
 
 // Syntax nodes the table / column source stays out of.
