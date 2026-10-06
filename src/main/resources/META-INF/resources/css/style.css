@@ -708,6 +708,7 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
     transform: translateX(-105%); transition: transform .22s ease;
     padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .sidebar.collapsed { width: min(86vw, 320px); }
   .sidebar.collapsed .side-title, .sidebar.collapsed .side-body { display: revert; }

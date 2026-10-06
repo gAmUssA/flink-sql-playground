@@ -289,3 +289,17 @@ test('keyboard focus stays inside the open drawer', async ({ page }) => {
   await expect(page.locator('#tables-drawer-btn')).toBeFocused();
 });
 
+
+test('opening the drawer closes the Tweaks panel and the column filter above it', async ({ page }) => {
+  await page.locator('#tweaks-btn').tap();
+  await expect(page.locator('#tweaks-panel')).toBeVisible();
+  await page.locator('#tables-drawer-btn').tap();
+  await expect(page.locator('#tweaks-panel')).toBeHidden();
+  await page.keyboard.press('Escape');
+
+  await runBatchQuery(page);
+  await page.locator('.th-btn').first().tap();
+  await expect(page.locator('.filt-pop')).toBeVisible();
+  await page.locator('#tables-drawer-btn').tap();
+  await expect(page.locator('.filt-pop')).toHaveCount(0);
+});

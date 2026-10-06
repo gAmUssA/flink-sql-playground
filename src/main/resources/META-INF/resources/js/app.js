@@ -249,7 +249,13 @@ function setTablesDrawer(open, { restoreFocus = false } = {}) {
   const trigger = document.getElementById('tables-drawer-btn');
   trigger.setAttribute('aria-expanded', String(open));
   setDrawerInert(isPhoneLayout() && !open);
-  if (open) document.getElementById('schema-browser-toggle').focus();
+  if (open) {
+    // Body-level overlays sit above the drawer and outside its inert background: close them.
+    closeFilterPopover();
+    const tweaksPanel = document.getElementById('tweaks-panel');
+    if (tweaksPanel) tweaksPanel.hidden = true;
+    document.getElementById('schema-browser-toggle').focus();
+  }
   else if (wasOpen && restoreFocus) trigger.focus();
 }
 
