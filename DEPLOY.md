@@ -186,7 +186,8 @@ docker run -p 9090:9090 \
 | **Total**              | **~2 GB**       |
 
 The JVM is configured with `-Xmx1536m -XX:+UseG1GC
--XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m` (see `Dockerfile`). There is no
+-XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m -XX:AOTCache=app.aot` (see `Dockerfile`; the
+AOT cache is trained during the image build, see `docs/STARTUP.md`). There is no
 `-Xms`, so the heap starts small and grows on demand. ZGC is avoided: it backs the
 heap with a shared-memory file, so the committed heap is charged to the container
 as `shmem` (about 800 MB at idle with the old `-Xms768m`). Provision the
