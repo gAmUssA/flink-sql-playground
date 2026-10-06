@@ -6,13 +6,15 @@
 
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
   highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
-import { EditorState, Compartment, Prec } from '@codemirror/state';
+import { EditorState, Prec } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { syntaxHighlighting, HighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
+import { syntaxHighlighting, syntaxTree, HighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { sql, SQLDialect } from '@codemirror/lang-sql';
 import { tags as t } from '@lezer/highlight';
+import { parseCreateTables, mergeTables, columnCandidates, statementAt, optionContext, optionCandidates,
+  tableAliases, expectsTableName } from './sql-schema.mjs';
 
 // Flink SQL keywords: the reserved words from the Flink SQL reference plus the DDL, window,
 // CEP and statement words the playground's examples use. lang-sql keeps its standard list
@@ -108,27 +110,89 @@ const theme = EditorView.theme({
   '.cm-tooltip': { backgroundColor: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border-2)' },
   '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: 'var(--accent)', color: '#fff' },
   '.cm-completionDetail': { color: 'var(--text-3)' },
+  // Finger-sized rows on touch screens (style.css sets the variable under pointer: coarse).
+  '.cm-tooltip-autocomplete > ul > li': { minHeight: 'var(--editor-completion-row, auto)', display: 'flex', alignItems: 'center' },
 });
 
-/** Converts the Tables list ([{name, columns:[{name}]}]) into lang-sql's schema shape. */
-export function toCompletionSchema(tables) {
-  const schema = {};
-  (tables || []).forEach((table) => {
-    if (table && table.name) schema[table.name] = (table.columns || []).map((c) => c.name).filter(Boolean);
-  });
-  return schema;
+// Syntax nodes the table / column source stays out of.
+const NO_IDENTIFIER_NODES = new Set(['String', 'LineComment', 'BlockComment', 'QuotedIdentifier', 'Number']);
+
+/**
+ * Completion for table and column names, read from `tables()` on every request so new
+ * tables need no editor reconfiguration. After `t.` or `alias.` it offers that table's
+ * columns; after FROM / JOIN / TABLE / INTO, table names; elsewhere, the columns of the
+ * tables the statement reads (all known columns when it reads none), then table names.
+ */
+function tableColumnSource(tables) {
+  return (ctx) => {
+    const node = syntaxTree(ctx.state).resolveInner(ctx.pos, -1);
+    if (NO_IDENTIFIER_NODES.has(node.name)) return null;
+    const doc = ctx.state.doc.toString();
+    const stmt = statementAt(doc, ctx.pos);
+    const before = doc.slice(stmt.offset, ctx.pos);
+    if (/^\s*create\b/i.test(stmt.text) && !/\bas\s+select\b/i.test(stmt.text)) return null;
+    const known = tables();
+
+    const qualified = ctx.matchBefore(/(?:`[^`]+`|[\w$]+)\.[\w$]*$/);
+    if (qualified) {
+      const [qualifier] = qualified.text.split('.');
+      const alias = qualifier.replace(/`/g, '').toLowerCase();
+      const name = (tableAliases(stmt.text)[alias] || alias).toLowerCase();
+      const table = known.find((tb) => tb.name.toLowerCase() === name);
+      if (!table) return null;
+      return {
+        from: qualified.from + qualifier.length + 1,
+        options: (table.columns || []).map((c) => ({ label: c.name, detail: c.type, type: 'property', boost: 2 })),
+        validFor: /^[\w$]*$/,
+      };
+    }
+
+    const word = ctx.matchBefore(/[\w$]+$/);
+    if (!word && !ctx.explicit) return null;
+    const from = word ? word.from : ctx.pos;
+    const tableOptions = known.map((tb) => ({
+      label: tb.name, detail: `table · ${(tb.columns || []).length} columns`, type: 'class',
+    }));
+    if (expectsTableName(before)) {
+      return { from, options: tableOptions.map((o) => ({ ...o, boost: 2 })), validFor: /^[\w$]*$/ };
+    }
+    const columns = columnCandidates(stmt.text, known).map((c) => ({ ...c, type: 'property', boost: 1 }));
+    return { from, options: [...columns, ...tableOptions], validFor: /^[\w$]*$/ };
+  };
 }
 
-function sqlLanguage(tables) {
-  return sql({ dialect: FlinkSQL, schema: toCompletionSchema(tables), upperCaseKeywords: true });
+/** Connector option keys and values inside CREATE TABLE ... WITH ('...'). */
+function connectorOptionSource(ctx) {
+  const doc = ctx.state.doc.toString();
+  const stmt = statementAt(doc, ctx.pos);
+  const option = optionContext(doc.slice(stmt.offset, ctx.pos));
+  if (!option) return null;
+  const labels = optionCandidates(option);
+  if (!labels.length) return null;
+  return {
+    from: ctx.pos - option.typed.length,
+    options: labels.map((label) => ({ label, type: option.kind === 'key' ? 'property' : 'enum' })),
+    validFor: /^[\w.-]*$/,
+  };
+}
+
+/** The Flink dialect with keyword completion, plus the table / column and connector sources. */
+function sqlSupport(tables) {
+  return [
+    sql({ dialect: FlinkSQL, upperCaseKeywords: true }),
+    FlinkSQL.language.data.of({ autocomplete: tableColumnSource(tables) }),
+    FlinkSQL.language.data.of({ autocomplete: connectorOptionSource }),
+  ];
 }
 
 /**
  * Creates an editor in `parent`. Options: value (initial text), onRun (called on Mod-Enter),
- * label (accessible name). Returns {getValue, setValue, setTables, layout, focus, view}.
+ * onChange (called with the text after each edit), label (accessible name).
+ * Returns {getValue, setValue, setTables, layout, focus, view}; setTables takes the
+ * [{name, columns: [{name, type}]}] list that autocomplete offers.
  */
-export function create(parent, { value = '', onRun = null, label = 'SQL editor' } = {}) {
-  const language = new Compartment();
+export function create(parent, { value = '', onRun = null, onChange = null, label = 'SQL editor' } = {}) {
+  let tables = [];
   const runKeymap = Prec.highest(keymap.of([{
     key: 'Mod-Enter', preventDefault: true,
     run: () => { if (onRun) onRun(); return true; },
@@ -145,7 +209,8 @@ export function create(parent, { value = '', onRun = null, label = 'SQL editor' 
         highlightSelectionMatches(),
         keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap,
           ...completionKeymap, indentWithTab]),
-        language.of(sqlLanguage([])),
+        sqlSupport(() => tables),
+        EditorView.updateListener.of((update) => { if (onChange && update.docChanged) onChange(update.state.doc.toString()); }),
         syntaxHighlighting(highlight),
         theme,
         EditorView.contentAttributes.of({ 'aria-label': label, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' }),
@@ -156,10 +221,10 @@ export function create(parent, { value = '', onRun = null, label = 'SQL editor' 
     view,
     getValue: () => view.state.doc.toString(),
     setValue: (text) => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } }),
-    setTables: (tables) => view.dispatch({ effects: language.reconfigure(sqlLanguage(tables)) }),
+    setTables: (next) => { tables = Array.isArray(next) ? next : []; },
     layout: () => view.requestMeasure(),
     focus: () => view.focus(),
   };
 }
 
-window.FlinkEditor = { create, toCompletionSchema, FlinkSQL };
+window.FlinkEditor = { create, parseCreateTables, mergeTables, FlinkSQL };

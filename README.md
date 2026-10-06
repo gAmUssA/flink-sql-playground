@@ -11,7 +11,7 @@ An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQ
 
 ## Features
 
-- **Browser-based SQL editor** — CodeMirror 6 with Flink SQL highlighting, autocompletion of keywords and the session's table and column names, and Ctrl/Cmd+Enter to run
+- **Browser-based SQL editor** — CodeMirror 6 with Flink SQL highlighting, schema-aware autocomplete (tables and columns — also before Build Schema, from the DDL you type — plus connector options inside `WITH (...)`), and Ctrl/Cmd+Enter to run
 - **Embedded Flink runtime** — single-JVM execution, no cluster setup needed
 - **Batch and streaming modes** — switch between execution modes per query
 - **Built-in data generators** — `datagen` and custom `faker` connectors for realistic test data

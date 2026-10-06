@@ -311,3 +311,17 @@ test('opening the drawer closes the Tweaks panel and the column filter above it'
   await page.locator('#tables-drawer-btn').tap();
   await expect(page.locator('.filt-pop')).toHaveCount(0);
 });
+
+test('a column suggestion appears while typing and inserts on tap', async ({ page }) => {
+  await page.locator('#build-schema-btn').tap();
+  await expect(page.locator('#sb-phone-status-text')).toHaveText('Schema built');
+  await page.locator('#query-editor .cm-content').tap();
+  await page.evaluate(() => queryEditor.setValue(''));
+  await page.keyboard.type('SELECT regi', { delay: 20 });
+  const option = page.locator('.cm-tooltip-autocomplete li', { has: page.locator('.cm-completionLabel', { hasText: /^region$/ }) });
+  await expect(option).toBeVisible();
+  const box = await option.boundingBox();
+  expect(box.height).toBeGreaterThanOrEqual(40);
+  await option.tap();
+  await expect.poll(() => page.evaluate(() => queryEditor.getValue())).toBe('SELECT region');
+});

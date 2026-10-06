@@ -755,7 +755,7 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 /* ============================== TOUCH INPUT ============================== */
 /* Finger-sized targets (44px) and 16px text in inputs so iOS does not zoom on focus. */
 @media (pointer: coarse) {
-  :root { --code-size: 16px; --editor-font-size: 16px; --editor-line-height: 24px; }
+  :root { --code-size: 16px; --editor-font-size: 16px; --editor-line-height: 24px; --editor-completion-row: 40px; }
   .btn, .btn.sm { min-height: 44px; min-width: 44px; justify-content: center; }
   .icon-btn, .panel-head .panel-maximize-btn { width: 44px; height: 44px; }
   .segmented button { min-height: 44px; }
