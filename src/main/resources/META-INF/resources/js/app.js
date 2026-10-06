@@ -971,33 +971,57 @@ async function dropTable(name) {
 function shortType(t) { return String(t || '').replace(/\s+NOT NULL/i, '').replace(/\(.*\)/, '').trim(); }
 
 /* ============================== Share / fiddle ============================== */
+// How long Share waits for the backend before falling back to a self-contained link.
+const SHARE_SAVE_TIMEOUT_MS = 5000;
+
+async function copyLink(url, copiedMessage) {
+  try { await navigator.clipboard.writeText(url); setStatus(copiedMessage, 'ready'); }
+  catch (e) { window.prompt('Copy this link:', url); setStatus('Fiddle link ready', 'ready'); }
+}
+
 async function shareFiddle() {
   if (!schemaEditor || !queryEditor) return;
+  const fiddle = { schema: schemaEditor.getValue(), query: queryEditor.getValue(), mode: getMode() };
   try {
     const res = await fetch(api('/api/fiddles'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schema: schemaEditor.getValue(), query: queryEditor.getValue(), mode: getMode() })
+      body: JSON.stringify(fiddle), signal: AbortSignal.timeout(SHARE_SAVE_TIMEOUT_MS)
     });
-    if (!res.ok) throw new Error('Failed to save fiddle');
+    if (!res.ok) throw new Error('Failed to save fiddle (HTTP ' + res.status + ')');
     const data = await res.json();
-    const url = `${window.location.origin}/f/${data.shortCode}`;
-    try { await navigator.clipboard.writeText(url); setStatus('Link copied to clipboard', 'ready'); }
-    catch (e) { window.prompt('Copy this link:', url); setStatus('Fiddle saved', 'ready'); }
-  } catch (err) { setStatus('Share failed: ' + err.message, 'error'); }
+    await copyLink(`${window.location.origin}/f/${data.shortCode}`, 'Link copied to clipboard');
+  } catch (err) {
+    // Backend asleep, down or slow: share the fiddle inside the link itself instead.
+    try {
+      const fragment = await FiddleLink.encode(fiddle);
+      await copyLink(`${window.location.origin}/#${fragment}`, 'Self-contained link copied (server unavailable)');
+    } catch (encodeErr) {
+      setStatus('Share failed: ' + err.message + '; ' + encodeErr.message, 'error');
+    }
+  }
+}
+
+function applyFiddle(fiddle, message) {
+  if (schemaEditor) schemaEditor.setValue(fiddle.schema);
+  if (queryEditor) queryEditor.setValue(fiddle.query);
+  setMode(fiddle.mode);
+  setStatus(message, 'ready');
+  setTimeout(() => { if (sessionId) buildSchema(); }, 500);
 }
 
 async function loadFiddleFromUrl() {
+  if (window.location.hash.startsWith('#' + FiddleLink.PREFIX)) {
+    const fiddle = await FiddleLink.decode(window.location.hash);
+    if (fiddle) applyFiddle(fiddle, 'Fiddle loaded from link');
+    else setStatus('This fiddle link is damaged or from a newer version', 'error');
+    return;
+  }
   const match = window.location.pathname.match(/^\/f\/([a-f0-9]+)$/);
   if (!match) return;
   try {
     const res = await fetch(api(`/api/fiddles/${match[1]}`));
     if (!res.ok) { setStatus('Fiddle not found', 'error'); return; }
-    const fiddle = await res.json();
-    if (schemaEditor) schemaEditor.setValue(fiddle.schema);
-    if (queryEditor) queryEditor.setValue(fiddle.query);
-    setMode(fiddle.mode);
-    setStatus('Fiddle loaded', 'ready');
-    setTimeout(() => { if (sessionId) buildSchema(); }, 500);
+    applyFiddle(await res.json(), 'Fiddle loaded');
   } catch (err) { setStatus('Failed to load fiddle', 'error'); }
 }
 
