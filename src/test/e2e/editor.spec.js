@@ -78,18 +78,40 @@ test('the Schema editor suggests connectors and their per-column options', async
     .toEqual(['random', 'sequence']);
 });
 
-test('the Interval Join preset offers shipments columns after s.', async ({ page }) => {
+/** Loads the preset titled `title`, puts the cursor right after the first `qualified` reference
+ * reduced to its qualifier (`s.shipment_id` → `s.|`), and returns the settled suggestions. */
+async function presetQualifierLabels(page, title, qualified) {
   await stubApi(page);
   await page.goto('/');
   await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
-  const index = await page.evaluate(() => EXAMPLES.findIndex((e) => e.title === 'Interval Join'));
+  const index = await page.evaluate((t) => EXAMPLES.findIndex((e) => e.title === t), title);
+  expect(index, `preset "${title}"`).toBeGreaterThanOrEqual(0);
   await page.locator('#example-select').selectOption(String(index));
   const query = await page.evaluate((i) => EXAMPLES[i].query, index);
-  // FROM orders_stream o, shipments s: the cursor goes right after the first s.
-  await expect.poll(async () => {
-    await setEditorText(page, 'query', query.replace('s.shipment_id', 's.|'), { typed: true });
+  const qualifier = qualified.slice(0, qualified.indexOf('.') + 1);
+  return async () => {
+    await setEditorText(page, 'query', query.replace(qualified, `${qualifier}|`), { typed: true });
     return settledLabels(page, 'query');
-  }).toEqual(['order_ref', 'ship_time', 'shipment_id']);
+  };
+}
+
+test('the Interval Join preset offers shipments columns after s.', async ({ page }) => {
+  // FROM orders_stream o, shipments s
+  const labels = await presetQualifierLabels(page, 'Interval Join', 's.shipment_id');
+  await expect.poll(labels).toEqual(['order_ref', 'ship_time', 'shipment_id']);
+});
+
+test('the Temporal Join preset offers fx_rates columns after r.', async ({ page }) => {
+  // JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
+  const labels = await presetQualifierLabels(page, 'Temporal Join — enrich at event time (Faker)', 'r.rate_to_eur');
+  await expect.poll(labels).toEqual(['ccy', 'rate_time', 'rate_to_eur']);
+});
+
+test('the Brewmaster preset offers sensor_readings columns after s.', async ({ page }) => {
+  // FROM TABLE(TUMBLE(TABLE sensor_readings, ...)) s
+  const labels = await presetQualifierLabels(page, 'Brewmaster Monitoring (Faker)', 's.temperature_c');
+  await expect.poll(labels).toEqual(['event_time', 'ph_level', 'pressure_psi', 'reading_id', 'recipe_id', 'tank_id',
+    'temperature_c']);
 });
 
 test('accepting a table name that needs quoting inserts it in backticks', async ({ page }) => {
