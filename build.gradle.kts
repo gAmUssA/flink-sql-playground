@@ -173,7 +173,19 @@ tasks.register<Test>("smokeTest") {
     configureTestLogging(streams = true)
 }
 
-// 'check' lifecycle includes both fast and smoke tests.
+// Frontend unit tests: Node's built-in test runner, no npm dependencies. Needs Node 22+.
+val jsTest by tasks.registering(Exec::class) {
+    description = "Runs the frontend unit tests in src/test/js with node --test"
+    group = "verification"
+    inputs.dir("src/test/js")
+    inputs.dir("src/main/resources/META-INF/resources/js")
+    outputs.upToDateWhen { false }
+    // Explicit file list: node --test on Node 22 does not accept a directory argument.
+    val testFiles = fileTree("src/test/js") { include("**/*.test.js") }.files.map { it.path }.sorted()
+    commandLine(listOf("node", "--test") + testFiles)
+}
+
+// 'check' lifecycle includes fast, smoke and frontend tests.
 tasks.named("check") {
-    dependsOn("smokeTest")
+    dependsOn("smokeTest", jsTest)
 }
