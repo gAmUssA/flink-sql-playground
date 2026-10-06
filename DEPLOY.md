@@ -130,6 +130,28 @@ railway variables \
   --set SUPABASE_DB_PASSWORD=<password>
 ```
 
+### Railway: migrate before deploy, not on every boot
+
+With app sleeping enabled, every wake-up is a cold start, and running Flyway
+plus Hibernate schema validation against Supabase adds about 3 s to each one.
+`railway.json` therefore runs the migration once per deploy as a
+`preDeployCommand`. The command boots Quarkus with `quarkus.init-and-exit=true`,
+which runs Flyway and exits before the HTTP server starts. A failed migration
+fails the deploy, and the previous version keeps serving.
+
+To stop the running service repeating that work on each wake-up, also set:
+
+```bash
+railway variables \
+  --set QUARKUS_FLYWAY_MIGRATE_AT_START=false \
+  --set QUARKUS_HIBERNATE_ORM_SCHEMA_MANAGEMENT_STRATEGY=none
+```
+
+The pre-deploy command passes its settings as `-D` system properties, which take
+precedence over these variables, so it still migrates and validates. Other
+platforms without a pre-deploy step should leave both variables unset so the app
+keeps migrating at startup.
+
 ### Docker Example
 
 Build the image with the profile (bakes the PostgreSQL driver), then run it with
