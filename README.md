@@ -73,6 +73,17 @@ To stop: press `Ctrl+C` or run `docker compose down`.
 ./gradlew check     # everything, including the Flink smoke tests
 ```
 
+Browser tests (phone and desktop layouts in Chromium and WebKit) and the Lighthouse mobile
+check use npm. They serve the static frontend and stub the API, so no backend is needed:
+
+```bash
+npm ci
+npx playwright install chromium webkit
+npx playwright test                                   # phone (375/390/412 px) and desktop layouts
+node scripts/serve-static.js 8790 &                   # then, in another step:
+node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95
+```
+
 ## Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a detailed overview of the system design, request flow, session management, security model, and test structure.

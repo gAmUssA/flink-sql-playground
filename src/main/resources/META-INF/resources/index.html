@@ -2,7 +2,7 @@
 <html lang="en" data-theme="nebula" data-density="regular" data-glow="on">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <!-- Asset and link base. The bundled app serves from "/"; the static GitHub Pages build rewrites it to its subpath. -->
     <base href="/" />
     <title>Flink SQL Playground</title>
@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-<div class="app">
+<div class="app" data-mview="query">
     <!-- ===== Topbar ===== -->
     <header class="topbar">
         <div class="brand">
@@ -25,12 +25,20 @@
         </div>
         <div class="brand-spacer"></div>
         <div class="topbar-actions">
+            <button id="tables-drawer-btn" class="icon-btn outline m-only" title="Tables" aria-label="Open tables" aria-controls="schema-browser" aria-expanded="false"><span data-icon="db" data-size="16"></span></button>
             <span class="conn-pill"><i class="conn-dot"></i> <span id="status-build">build: --</span></span>
-            <button id="tour-btn" class="btn ghost sm"><span data-icon="info" data-size="14"></span> Tour</button>
+            <button id="tour-btn" class="btn ghost sm" aria-label="Tour"><span data-icon="info" data-size="14"></span> <span class="tour-label">Tour</span></button>
             <button id="tweaks-btn" class="icon-btn outline" title="Tweaks"><span data-icon="sliders" data-size="16"></span></button>
             <button id="theme-toggle" class="icon-btn outline" title="Toggle light / dark"><span data-icon="moon" data-size="16"></span></button>
         </div>
     </header>
+
+    <!-- ===== Phone view switcher (hidden on wider screens) ===== -->
+    <nav class="m-views" role="tablist" aria-label="Panel">
+        <button type="button" role="tab" id="m-tab-schema" data-mview="schema" aria-controls="schema-panel" aria-selected="false" tabindex="-1">Schema</button>
+        <button type="button" role="tab" id="m-tab-query" data-mview="query" aria-controls="query-panel" aria-selected="true" tabindex="0">Query</button>
+        <button type="button" role="tab" id="m-tab-results" data-mview="results" aria-controls="results-panel" aria-selected="false" tabindex="-1">Results <span class="m-views-count" id="m-views-count" hidden>0</span></button>
+    </nav>
 
     <!-- ===== Workspace ===== -->
     <div class="workspace">
@@ -83,7 +91,7 @@
                     <select id="example-select" aria-label="Query preset"></select>
                     <span data-icon="chevD" data-size="14"></span>
                 </div>
-                <button id="share-btn" class="btn ghost"><span data-icon="share" data-size="14"></span> Share</button>
+                <button id="share-btn" class="btn ghost" aria-label="Share"><span data-icon="share" data-size="14"></span> <span class="share-label">Share</span></button>
                 <div class="tb-spacer"></div>
                 <span class="tb-status st-ready" id="tb-status">
                     <i class="tb-status-dot"></i>
@@ -112,6 +120,7 @@
 
     <footer class="statusbar">
         <span class="sb-item sb-session" id="status-session"><span data-icon="dot" data-size="9"></span> no session</span>
+        <span class="sb-item sb-phone-status st-ready" id="sb-phone-status" aria-live="polite"><i class="tb-status-dot"></i> <span id="sb-phone-status-text">Session ready</span></span>
         <span class="sb-item" id="status-mode">Streaming</span>
         <span class="sb-item" id="status-rows">0 rows</span>
         <span class="sb-item" id="status-changelog">0 changelog events</span>
@@ -122,6 +131,7 @@
 </div>
 
 <div class="maxed-backdrop" id="maxed-backdrop" hidden></div>
+<div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
 <script src="js/examples.js"></script>

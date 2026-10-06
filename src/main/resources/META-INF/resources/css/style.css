@@ -94,6 +94,7 @@ body {
 }
 .app {
   height: 100vh;
+  height: 100dvh; /* tracks the mobile browser's visible area; same as 100vh on desktop */
   display: flex;
   flex-direction: column;
   background: var(--bg-grad), var(--bg-0);
@@ -627,3 +628,156 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
   .conn-pill { display: none; }
   .brand-text p { display: none; }
 }
+
+/* ============================== PHONES (< 768px) ============================== */
+/* Phone-only controls stay out of the desktop layout entirely. */
+.m-only, .m-views, .drawer-backdrop, .sb-phone-status { display: none; }
+
+@media (max-width: 767px) {
+  .app { padding-bottom: env(safe-area-inset-bottom); }
+
+  /* Compact topbar: icon-only actions, Tables opens the drawer. */
+  /* Landscape phones have left/right safe-area insets (notch, rounded corners). */
+  .topbar, .m-views, .toolbar, .statusbar {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+  .topbar { gap: 10px; padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: 8px; }
+  .brand { gap: 10px; min-width: 0; }
+  .brand-mark { width: 32px; height: 32px; }
+  .brand-text { min-width: 0; }
+  .brand-text h1 { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-actions { gap: 6px; }
+  /* The guided tour points at the desktop layout; it is not offered on phones. */
+  #tour-btn { display: none; }
+  .m-only { display: grid; }
+
+  /* Schema | Query | Results view switcher. */
+  .m-views {
+    display: flex; flex: 0 0 auto;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface) 45%, transparent);
+  }
+  .m-views button {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 44px; font-size: 13px; font-weight: 600; color: var(--text-3); position: relative;
+  }
+  .m-views button[aria-selected="true"] { color: var(--text); }
+  .m-views button[aria-selected="true"]::after {
+    content: ''; position: absolute; left: 18%; right: 18%; bottom: -1px; height: 2px;
+    background: var(--accent); border-radius: 2px 2px 0 0;
+  }
+  .m-views-count { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border-radius: 5px; background: color-mix(in oklab, var(--accent) 20%, transparent); color: var(--accent); }
+  .m-views-count[hidden] { display: none; }
+
+  /* One panel at a time; the toolbar stays pinned below it. */
+  .workspace { display: block; position: relative; }
+  .editors { height: 100%; }
+  .editor-row { flex: 1 1 auto; }
+  .pane-split { display: none; }
+  .app[data-mview="schema"] #query-panel,
+  .app[data-mview="query"] #schema-panel,
+  .app[data-mview="results"] .editor-row { display: none; }
+  .app:not([data-mview="results"]) .results { display: none; }
+  .app[data-mview="results"] .results { flex: 1 1 auto; }
+  .panel-head .panel-maximize-btn, .results-meta .panel-maximize-btn { display: none; }
+
+  /* Toolbar: Build + Run on the first row, mode / preset / share on the second. */
+  .toolbar {
+    order: 3; flex-wrap: wrap; gap: 8px; padding-top: 8px; padding-bottom: 8px;
+    border-bottom: none;
+  }
+  .tb-sep, .tb-spacer { display: none; }
+  /* Status moves to the status bar so the toolbar stays at two rows. */
+  .tb-status { display: none; }
+  #build-schema-btn, #run-query-btn { flex: 1 1 0; justify-content: center; }
+  .segmented { flex: 0 0 auto; }
+  .segmented button { padding: 6px 10px; }
+  /* Keep a usable minimum so the preset wraps to its own row rather than overflowing. */
+  .tb-select { flex: 1 1 0; min-width: 96px; }
+  .tb-select select { min-width: 0; width: 100%; }
+
+  /* Tables: an off-canvas drawer instead of a fixed sidebar. */
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 260;
+    width: min(86vw, 320px); flex: none;
+    background: var(--surface); box-shadow: var(--shadow);
+    transform: translateX(-105%); transition: transform .22s ease;
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+  }
+  .sidebar.collapsed { width: min(86vw, 320px); }
+  .sidebar.collapsed .side-title, .sidebar.collapsed .side-body { display: revert; }
+  .app.drawer-open .sidebar { transform: none; }
+  #schema-browser-toggle { transform: none; }
+  .drawer-backdrop { display: block; position: fixed; inset: 0; z-index: 250; background: color-mix(in oklab, var(--bg-0) 60%, transparent); }
+  .drawer-backdrop[hidden] { display: none; }
+
+  /* Results: tabs scroll sideways; wide tables keep their first column pinned. */
+  .results-head { padding: 0 6px 0 0; }
+  .results-tabs { overflow-x: auto; scrollbar-width: none; min-width: 0; }
+  .results-tabs::-webkit-scrollbar { display: none; }
+  .rtab { padding: 12px 12px; }
+  .rv-table .rv-rownum { display: none; }
+  .rv-table tbody td:nth-child(2), .rv-table thead th:nth-child(2) {
+    position: sticky; left: 0; z-index: 1; background: var(--bg-1);
+    box-shadow: 1px 0 0 var(--border-2);
+  }
+  .rv-table thead th:nth-child(2) { z-index: 3; background: var(--surface-2); }
+  .rv-filterbar { flex-wrap: wrap; }
+  .rv-stats { flex-wrap: wrap; }
+  .rv-stat { flex: 1 1 140px; }
+  .rv-log-search { max-width: none; flex: 1 1 100%; }
+  .rv-log-count { margin-left: 0; }
+
+  /* Status bar: keep session and state; the rest lives in the toolbar status. */
+  .statusbar { gap: 12px; padding-top: 6px; padding-bottom: 6px; overflow: hidden; }
+  #status-session, #status-mode, #status-rows, #status-changelog, .statusbar .sb-item:nth-last-child(2) { display: none; }
+  .sb-phone-status { display: inline-flex; min-width: 0; font-family: var(--ui); font-size: 12px; color: var(--text-2); }
+  .sb-phone-status > span { overflow: hidden; text-overflow: ellipsis; }
+
+  /* Maximize, tweaks and popovers use the full width. */
+  .pane.panel-maximized, .results.panel-maximized { inset: 0; border-radius: 0; }
+  .tweaks { left: 12px; right: 12px; width: auto; bottom: 12px; }
+}
+
+/* Narrowest phones: Share goes icon-only so the second toolbar row keeps its margin. */
+@media (max-width: 400px) {
+  .share-label { display: none; }
+}
+
+/* ============================== TOUCH INPUT ============================== */
+/* Finger-sized targets (44px) and 16px text in inputs so iOS does not zoom on focus. */
+@media (pointer: coarse) {
+  :root { --code-size: 16px; }
+  .btn, .btn.sm { min-height: 44px; min-width: 44px; justify-content: center; }
+  .icon-btn, .panel-head .panel-maximize-btn { width: 44px; height: 44px; }
+  .segmented button { min-height: 44px; }
+  .tb-select select, .twk-select { min-height: 44px; font-size: 16px; }
+  .filt-input, .rv-log-search-input { font-size: 16px; }
+  .filt-input { min-height: 44px; }
+  .rv-log-search { min-height: 44px; padding-top: 0; padding-bottom: 0; }
+  .rv-log-search-input { align-self: stretch; min-height: 44px; }
+  .rtab { min-height: 44px; }
+  .th-btn { min-height: 44px; }
+  .th-funnel { opacity: 0.7; }
+  .tbl-card-head { min-height: 44px; }
+  .tbl-drop { width: 44px; height: 44px; }
+  .rv-chip { min-height: 44px; }
+  .rv-chip-x, .rv-log-search-x { width: 44px; height: 44px; }
+  .rv-clear-all, .filt-clear, .tour-skip { min-height: 44px; }
+  .filt-op, .rv-op-toggle { min-height: 44px; }
+  .twk-seg button, .twk-swatch { min-height: 44px; }
+  .twk-toggle { width: 52px; height: 32px; }
+  .twk-toggle i { width: 28px; height: 28px; }
+  .twk-toggle[data-on="1"] i { transform: translateX(20px); }
+  /* Tour dots: a 44px button with the visible dot drawn inside it. */
+  .tour-dots { gap: 0; }
+  .tour-dot, .tour-dot:hover, .tour-dot.is-on { width: 44px; height: 44px; border-radius: 0; background: transparent; position: relative; }
+  .tour-dot::before {
+    content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); transition: all .2s;
+  }
+  .tour-dot.is-on::before { width: 20px; border-radius: 5px; background: var(--accent); }
+}
+
