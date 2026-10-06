@@ -180,7 +180,9 @@ val jsTest by tasks.registering(Exec::class) {
     inputs.dir("src/test/js")
     inputs.dir("src/main/resources/META-INF/resources/js")
     outputs.upToDateWhen { false }
-    commandLine("node", "--test", "src/test/js/")
+    // Explicit file list: Node 20's --test does not accept a directory argument.
+    val testFiles = fileTree("src/test/js") { include("**/*.test.js") }.files.map { it.path }.sorted()
+    commandLine(listOf("node", "--test") + testFiles)
 }
 
 // 'check' lifecycle includes fast, smoke and frontend tests.

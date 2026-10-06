@@ -69,7 +69,7 @@ To stop: press `Ctrl+C` or run `docker compose down`.
 
 ```bash
 ./gradlew test      # fast JVM tests
-./gradlew jsTest    # frontend unit tests (node --test src/test/js/)
+./gradlew jsTest    # frontend unit tests (node --test on src/test/js/*.test.js)
 ./gradlew check     # everything, including the Flink smoke tests
 ```
 
