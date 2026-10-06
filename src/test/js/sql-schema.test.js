@@ -236,6 +236,21 @@ test('statementRelations reads an INSERT target with a column list', async () =>
   assert.deepEqual(columnCandidates('INSERT INTO sink (a, ', tables).map((c) => c.label), ['a', 'b']);
 });
 
+const TEMPORAL_JOIN = `SELECT t.txn_id, r.rate_to_eur
+FROM txn_events AS t
+JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
+  ON t.ccy = r.ccy`;
+
+test('tableAliases reads the alias after FOR SYSTEM_TIME AS OF', async () => {
+  const { tableAliases } = await load();
+  assert.deepEqual({ ...tableAliases(TEMPORAL_JOIN) },
+    { txn_events: 'txn_events', t: 'txn_events', fx_rates: 'fx_rates', r: 'fx_rates' });
+  assert.deepEqual({ ...tableAliases('SELECT * FROM a JOIN b FOR SYSTEM_TIME AS OF PROCTIME() ON a.k = b.k') },
+    { a: 'a', b: 'b' });
+  assert.deepEqual({ ...tableAliases('SELECT * FROM a JOIN b FOR SYSTEM_TIME AS OF (a.ts - INTERVAL \'1\' SECOND) AS `on` ON 1 = 1') },
+    { a: 'a', b: 'b', on: 'b' });
+});
+
 test('columnCandidates offers the columns of every table in a comma-separated FROM list', async () => {
   const { columnCandidates } = await load();
   const tables = [

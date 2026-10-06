@@ -226,10 +226,33 @@ function skipSpace(masked, i) {
 }
 
 /**
+ * Offset of the AS that ends `FOR SYSTEM_TIME AS OF <expr>` when the expression starts at `i`,
+ * read at parenthesis depth 0; otherwise the offset where the expression stops (ON, USING, a
+ * clause keyword, a comma, a closing parenthesis or the end).
+ */
+function afterTimeTravel(masked, i) {
+  for (;;) {
+    i = skipSpace(masked, i);
+    if (i >= masked.length || masked[i] === ',' || masked[i] === ')') return i;
+    if (masked[i] === '(') {
+      const close = closingParen(masked, i);
+      if (close === -1) return masked.length;
+      i = close + 1;
+      continue;
+    }
+    const word = matchAt(WORD, masked, i);
+    if (!word) { i++; continue; }
+    if (/^as$/i.test(word) || NOT_ALIASES.test(word)) return i;
+    i += word.length;
+  }
+}
+
+/**
  * Relations a statement reads or writes, [{table, alias}] in keyword order: every item of a
  * comma-separated FROM list, each JOIN target, and TABLE / INTO targets. An alias is recorded
- * for FROM and JOIN items (null when absent); a clause keyword is never taken as one. Subqueries
- * and table functions are skipped as items; the TABLE inside a window function is its own target.
+ * for FROM and JOIN items (null when absent), including after FOR SYSTEM_TIME AS OF <expr>; a
+ * clause keyword is never taken as one. Subqueries and table functions are skipped as items;
+ * the TABLE inside a window function is its own target.
  */
 export function statementRelations(text) {
   const masked = maskSql(text);
@@ -264,7 +287,10 @@ export function statementRelations(text) {
       }
       let alias = null;
       let j = skipSpace(masked, i);
+      const temporal = matchAt(/for\s+system_time\s+as\s+of\b/iy, masked, j);
+      if (temporal) j = afterTimeTravel(masked, j + temporal.length);
       if (matchAt(/as\b/iy, masked, j)) j = skipSpace(masked, j + 2);
+      else if (temporal) j = masked.length; // no AS after the time expression: no alias
       const word = matchAt(WORD, masked, j);
       if (word) {
         const raw = text.slice(j, j + word.length);
