@@ -14,6 +14,8 @@ set -euo pipefail
 
 READY_TIMEOUT_SECONDS=120
 EXIT_TIMEOUT_SECONDS=120
+# Longest wait for any single HTTP response; the training queries take a few seconds.
+HTTP_READ_TIMEOUT_SECONDS=${HTTP_READ_TIMEOUT_SECONDS:-60}
 
 die() { echo "aot-train: $*" >&2; exit 1; }
 
@@ -26,13 +28,25 @@ stop_app() {
 }
 
 # http <method> <path> [json-body]: prints the response body; exit status 1 unless HTTP 2xx.
+# Each read waits at most HTTP_READ_TIMEOUT_SECONDS, so a server that accepts the
+# connection but never answers fails the call instead of hanging the build.
 http() {
-  local method=$1 path=$2 body=${3:-} response status
+  local method=$1 path=$2 body=${3:-} response='' line status rc
   exec 3<>"/dev/tcp/127.0.0.1/${PORT}" || return 1
   printf '%s %s HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n%s' \
     "$method" "$path" "${#body}" "$body" >&3
-  response=$(cat <&3)
-  exec 3<&-
+  while true; do
+    if IFS= read -r -t "$HTTP_READ_TIMEOUT_SECONDS" line <&3; then
+      response+="$line"$'\n'
+      continue
+    fi
+    rc=$?
+    exec 3<&-
+    # read returns >128 on timeout and 1 at end of input (a last line without newline is kept).
+    (( rc > 128 )) && return 1
+    response+="$line"
+    break
+  done
   status=$(printf '%s' "$response" | head -n1 | cut -d' ' -f2)
   printf '%s' "${response#*$'\r\n\r\n'}"
   [[ $status == 2* ]]
@@ -53,10 +67,10 @@ main() {
   local pid=$APP_PID
   trap 'stop_app "$APP_PID"' EXIT
 
-  local waited=0
+  local deadline=$(( SECONDS + READY_TIMEOUT_SECONDS ))
   until http GET /api/build-info >/dev/null 2>&1; do
     kill -0 "$pid" 2>/dev/null || die "the app exited before it answered on port $PORT"
-    (( waited++ < READY_TIMEOUT_SECONDS )) || die "the app did not answer on port $PORT within ${READY_TIMEOUT_SECONDS}s"
+    (( SECONDS < deadline )) || die "the app did not answer on port $PORT within ${READY_TIMEOUT_SECONDS}s"
     sleep 1
   done
 
