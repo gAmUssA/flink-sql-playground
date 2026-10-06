@@ -15,7 +15,10 @@ async function layoutState(page) {
     const box = (s) => document.querySelector(s).getBoundingClientRect();
     const shown = (s) => getComputedStyle(document.querySelector(s)).display !== 'none';
     // The stylesheet's phone block is the media rule that shows the view switcher.
-    const readable = [...document.styleSheets].flatMap((s) => { try { return [...s.cssRules]; } catch (e) { return []; } });
+    // Cross-origin sheets (Google Fonts) refuse cssRules with a SecurityError; anything else is a bug.
+    const readable = [...document.styleSheets].flatMap((s) => {
+      try { return [...s.cssRules]; } catch (e) { if (e.name !== 'SecurityError') throw e; return []; }
+    });
     const phoneRule = readable.find((r) => r instanceof CSSMediaRule
       && [...r.cssRules].some((c) => c.selectorText === '.m-views' && c.style.display === 'flex'));
     const sidebar = box('#schema-browser');
