@@ -154,7 +154,7 @@ The editor uses Monaco Editor (v0.52.2) with SQL language support. Results rende
 
 The `flink.*` and `execution.*` prefixes are bound via SmallRye `@ConfigMapping` interfaces (`FlinkConfig`, `ExecutionConfig`) and mapped into the `FlinkProperties` / `ExecutionLimits` domain records by `AppConfig`.
 
-**Production (`application-supabase.properties`, profile `supabase`):** Switches to PostgreSQL via Supabase with a small Agroal pool (3 max, 0 min, idle connections closed after 2 minutes so Railway app sleeping can kick in) and Flyway migrations.
+**Production (`application-supabase.properties`, profile `supabase`):** Switches to PostgreSQL via Supabase with a small Agroal pool (3 max, 0 min, idle connections closed after 2 minutes so Railway app sleeping can kick in; background validation is off and a connection idle for more than 1 minute is validated when checked out) and Flyway migrations.
 
 ## Docker
 

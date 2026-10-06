@@ -39,6 +39,24 @@ COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/lib/ ./lib/
 COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/*.jar ./
 COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/app/ ./app/
 COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/quarkus/ ./quarkus/
+# JDK AOT cache (JEP 483/514/515): run the app once here, in this exact JVM and file layout,
+# through startup plus a BATCH and a STREAMING query, and store the classes it loaded and
+# linked in app.aot. Cuts process start to first result about in half (docs/STARTUP.md).
+# The training run needs the profile's config but no database: placeholder Supabase
+# settings, with startup migration and schema validation off. Pass --build-arg AOT_CACHE=false
+# to skip it; the JVM then starts without a cache. Keep the JVM flags in step with ENTRYPOINT.
+ARG QUARKUS_PROFILE=prod
+ARG AOT_CACHE=true
+COPY scripts/aot-train.sh /tmp/aot-train.sh
+RUN if [ "$AOT_CACHE" = "true" ]; then \
+        QUARKUS_PROFILE=$QUARKUS_PROFILE \
+        SUPABASE_DB_URL=jdbc:postgresql://127.0.0.1:1/aot-training SUPABASE_DB_USER=aot SUPABASE_DB_PASSWORD=aot \
+        bash /tmp/aot-train.sh /app app.aot 9191 \
+            -Xmx1536m -XX:+UseG1GC -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m \
+            -Dquarkus.flyway.migrate-at-start=false \
+            -Dquarkus.hibernate-orm.schema-management.strategy=none; \
+    fi \
+    && rm /tmp/aot-train.sh
 USER appuser
 EXPOSE 9090
 # G1 (not ZGC) and no -Xms: ZGC backs the heap with a shared-memory file, so the whole
@@ -49,4 +67,5 @@ ENTRYPOINT ["java", \
     "-XX:+UseG1GC", \
     "-XX:MetaspaceSize=128m", \
     "-XX:MaxMetaspaceSize=384m", \
+    "-XX:AOTCache=app.aot", \
     "-jar", "quarkus-run.jar"]
