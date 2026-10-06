@@ -11,7 +11,10 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -33,6 +36,11 @@ public class SharedMiniCluster implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(SharedMiniCluster.class);
 
     private static final String LOOPBACK = "127.0.0.1";
+
+    /** Running clusters by id, so {@link SharedClusterExecutorFactory} can find the one an environment uses. */
+    private static final Map<String, SharedMiniCluster> RUNNING = new ConcurrentHashMap<>();
+
+    private final String id = UUID.randomUUID().toString();
 
     private final FlinkProperties properties;
     private final CompletableFuture<URI> restAddress = new CompletableFuture<>();
@@ -71,6 +79,7 @@ public class SharedMiniCluster implements AutoCloseable {
                     throw new IllegalStateException("closed while starting");
                 }
                 cluster = mc;
+                RUNNING.put(id, this);
                 restAddress.complete(uri);
             }
             log.info("Shared MiniCluster started in {}ms [slots={}, network={}, managed/slot={}, rest={}]",
@@ -144,6 +153,30 @@ public class SharedMiniCluster implements AutoCloseable {
         return startAttempts.get();
     }
 
+    /** Identifies this cluster to {@link SharedClusterExecutorFactory}. */
+    public String id() {
+        return id;
+    }
+
+    /** The started cluster, waiting for an in-progress start first. */
+    MiniCluster awaitMiniCluster() {
+        awaitRestAddress();
+        MiniCluster mc = cluster;
+        if (mc == null) {
+            throw new IllegalStateException("Shared Flink MiniCluster is closed");
+        }
+        return mc;
+    }
+
+    static SharedMiniCluster lookup(String id) {
+        SharedMiniCluster found = RUNNING.get(id);
+        if (found == null) {
+            throw new IllegalStateException("No running shared Flink MiniCluster with id " + id
+                    + "; it was closed or never started");
+        }
+        return found;
+    }
+
     public boolean isRunning() {
         MiniCluster mc = cluster;
         return mc != null && mc.isRunning();
@@ -156,6 +189,7 @@ public class SharedMiniCluster implements AutoCloseable {
             closed = true;
             mc = cluster;
             cluster = null;
+            RUNNING.remove(id);
             restAddress.completeExceptionally(new IllegalStateException("cluster closed"));
         }
         if (mc != null) {

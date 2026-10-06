@@ -3,7 +3,6 @@ package com.flinksqlfiddle.flink;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.DeploymentOptions;
 import org.apache.flink.configuration.PipelineOptions;
-import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -11,7 +10,6 @@ import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
 import java.net.URL;
 import java.util.List;
 
@@ -70,18 +68,16 @@ public class FlinkEnvironmentFactory {
     }
 
     /**
-     * Points job submission at the shared MiniCluster's REST endpoint. The planner and
-     * the job graph stay in this JVM; only submission and result fetching go through
-     * the loopback REST endpoint.
+     * Sends this environment's jobs to the shared MiniCluster in-process
+     * ({@link SharedClusterExecutor}); the planner and job graph stay in this JVM.
      */
     private void applySharedCluster(Configuration config) {
         if (sharedCluster == null) {
             return;
         }
-        URI rest = sharedCluster.awaitRestAddress();
-        config.set(DeploymentOptions.TARGET, "remote");
-        config.set(RestOptions.ADDRESS, rest.getHost());
-        config.set(RestOptions.PORT, rest.getPort());
+        sharedCluster.awaitRestAddress(); // wait for an in-progress start; fails fast if it failed
+        config.set(DeploymentOptions.TARGET, SharedClusterExecutorFactory.NAME);
+        config.set(SharedClusterExecutorFactory.CLUSTER_ID, sharedCluster.id());
     }
 
     /**
