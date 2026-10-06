@@ -42,6 +42,26 @@ test('parseCreateTables keeps the columns of an unfinished statement and ignores
   assert.deepEqual(parseCreateTables("SELECT 'CREATE TABLE fake (x INT)'"), []);
 });
 
+test('parseCreateTables keeps columns that follow a comment, with the comment out of the type', async () => {
+  const { parseCreateTables } = await load();
+  const names = (ddl) => parseCreateTables(ddl)[0].columns.map((c) => c.name);
+  assert.deepEqual(names('CREATE TABLE t (\n  id INT, -- the id\n  name STRING,\n  -- price\n  price INT\n)'),
+    ['id', 'name', 'price']);
+  assert.deepEqual(names('CREATE TABLE t (\n  -- id\n  id INT, name STRING)'), ['id', 'name']);
+  assert.deepEqual(names('CREATE TABLE t (/* k */ id INT, name STRING)'), ['id', 'name']);
+  assert.deepEqual(parseCreateTables('CREATE TABLE t (id INT -- metadata note\n, x AS id /* c */ + 1, y INT)')[0].columns, [
+    { name: 'id', type: 'INT', kind: 'physical' },
+    { name: 'x', type: 'computed', kind: 'computed' },
+    { name: 'y', type: 'INT', kind: 'physical' },
+  ]);
+});
+
+test('optionContext offers per-column options for a column after a comment', async () => {
+  const { optionContext } = await load();
+  const ctx = optionContext("CREATE TABLE t (\n  -- the id\n  id INT,\n  name STRING\n) WITH ('connector' = 'datagen', 'fields.");
+  assert.deepEqual(ctx.columns, ['id', 'name']);
+});
+
 test('referencedTables finds FROM, JOIN, window TABLE and INTO targets', async () => {
   const { referencedTables } = await load();
   assert.deepEqual(referencedTables(

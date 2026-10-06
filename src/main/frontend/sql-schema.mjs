@@ -58,22 +58,31 @@ function lastIdentifier(raw) {
   return last.startsWith('`') ? last.slice(1, -1).replace(/``/g, '`') : last;
 }
 
-/** Splits text on commas at parenthesis depth 0 (text must already be masked). */
+/**
+ * Splits text on commas at parenthesis depth 0. Returns [{masked, raw}] pieces, trimmed by the
+ * masked text, so a comment around a piece is left out of it.
+ */
 function splitTopLevel(masked, original) {
   const pieces = [];
   let depth = 0;
   let angle = 0; // ROW<a INT, b INT>: only a type's < opens, so a > b in an expression does not close
   let start = 0;
+  const push = (from, to) => {
+    const piece = masked.slice(from, to);
+    const lead = piece.length - piece.trimStart().length;
+    const end = piece.trimEnd().length;
+    if (end > lead) pieces.push({ masked: piece.slice(lead, end), raw: original.slice(from + lead, from + end) });
+  };
   for (let i = 0; i < masked.length; i++) {
     const c = masked[i];
     if (c === '(') depth++;
     else if (c === ')') depth--;
     else if (c === '<' && /\b(?:array|map|row|multiset)\s*$/i.test(masked.slice(0, i))) angle++;
     else if (c === '>' && angle > 0) angle--;
-    else if (c === ',' && depth === 0 && angle === 0) { pieces.push(original.slice(start, i)); start = i + 1; }
+    else if (c === ',' && depth === 0 && angle === 0) { push(start, i); start = i + 1; }
   }
-  pieces.push(original.slice(start));
-  return pieces.map((p) => p.trim()).filter(Boolean);
+  push(start, masked.length);
+  return pieces;
 }
 
 /** Index of the parenthesis closing the one at `open`, or -1 (masked text). */
@@ -104,13 +113,19 @@ export function parseCreateTables(text) {
     const close = closingParen(masked, open);
     const end = close === -1 ? masked.length : close;
     const columns = splitTopLevel(masked.slice(open + 1, end), text.slice(open + 1, end)).map((def) => {
-      const col = def.match(/^(`(?:[^`]|``)*`|[\w$]+)\s+([\s\S]*)$/);
-      if (!col || NOT_COLUMNS.test(col[1])) return null;
-      const rest = col[2].trim();
+      // Matched on masked text, so comments cannot hide a definition; names and types are read raw.
+      const col = def.masked.match(/^(`(?:[^`]|``)*`|[\w$]+)\s+([\s\S]*)$/);
+      if (!col) return null;
+      const rawName = def.raw.slice(0, col[1].length);
+      if (NOT_COLUMNS.test(rawName)) return null;
+      const rest = col[2];
+      const restStart = def.masked.length - rest.length;
       const computed = /^as\b/i.test(rest);
-      const type = computed ? 'computed' : rest.split(/\s+(?:not\s+null|null|metadata|primary|comment)\b/i)[0].trim();
-      const kind = computed ? 'computed' : /\bmetadata\b/i.test(maskSql(rest)) ? 'metadata' : 'physical';
-      return { name: lastIdentifier(col[1]), type, kind };
+      const typeEnd = rest.split(/\s+(?:not\s+null|null|metadata|primary|comment)\b/i)[0].trimEnd().length;
+      const type = computed ? 'computed'
+        : def.raw.slice(restStart, restStart + typeEnd).replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, '').trim();
+      const kind = computed ? 'computed' : /\bmetadata\b/i.test(rest) ? 'metadata' : 'physical';
+      return { name: lastIdentifier(rawName), type, kind };
     }).filter(Boolean);
     if (name) tables.push({ name, columns });
   }
