@@ -88,6 +88,13 @@ test('optionContext recognises an open key quote and the value of a key', async 
   assert.equal(optionContext("CREATE TABLE t (id INT) WITH ('connector' = 'faker') -- 'x"), null);
 });
 
+test('optionContext reads the connector outside comments', async () => {
+  const { optionContext } = await load();
+  const ctx = optionContext("CREATE TABLE t (id INT) WITH (\n  -- 'connector' = 'faker'\n  'connector' = 'datagen', 'fi");
+  assert.equal(ctx.connector, 'datagen');
+  assert.equal(optionContext("CREATE TABLE t (id INT) WITH (\n  /* 'connector' = 'faker', */ 'fi").connector, null);
+});
+
 test('optionCandidates expands per-column options for the declared connector', async () => {
   const { optionCandidates } = await load();
   assert.deepEqual(optionCandidates({ kind: 'key', connector: 'faker', columns: ['id'] }),

@@ -164,6 +164,23 @@ export function statementAt(text, pos) {
 }
 
 /**
+ * The value of the first `'connector' = '...'` pair between `from` and `to`, or null. Quotes
+ * are paired in the masked text, so a pair inside a comment is not read.
+ */
+function connectorOf(masked, text, from, to) {
+  const quotes = [];
+  for (let i = masked.indexOf("'", from); i !== -1 && i < to; i = masked.indexOf("'", i + 1)) quotes.push(i);
+  for (let k = 0; k + 3 < quotes.length; k += 2) {
+    const [keyOpen, keyClose, valueOpen, valueClose] = quotes.slice(k, k + 4);
+    if (!/^\s*=\s*$/.test(masked.slice(keyClose + 1, valueOpen))) continue;
+    if (text.slice(keyOpen + 1, keyClose).toLowerCase() !== 'connector') continue;
+    const value = text.slice(valueOpen + 1, valueClose);
+    return /^[\w-]+$/.test(value) ? value.toLowerCase() : null;
+  }
+  return null;
+}
+
+/**
  * When `before` (the statement text up to the cursor) ends inside an open quote in a CREATE
  * TABLE ... WITH (...) clause, returns what that quote is: an option key, or the value of `key`.
  * {kind: 'key'|'value', key, typed, connector, columns} or null.
@@ -182,8 +199,7 @@ export function optionContext(before) {
 
   const tables = parseCreateTables(before);
   const columns = tables.length ? tables[tables.length - 1].columns.map((c) => c.name) : [];
-  const connectorMatch = before.slice(open).match(/'connector'\s*=\s*'([\w-]+)'/i);
-  const connector = connectorMatch ? connectorMatch[1].toLowerCase() : null;
+  const connector = connectorOf(masked, before, open + 1, quote);
   const typed = before.slice(quote + 1);
   const valueOf = masked.slice(open + 1, quote).match(/'\s*=\s*$/);
   if (valueOf) {
