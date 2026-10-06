@@ -686,7 +686,8 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
   #build-schema-btn, #run-query-btn { flex: 1 1 0; justify-content: center; }
   .segmented { flex: 0 0 auto; }
   .segmented button { padding: 6px 10px; }
-  .tb-select { flex: 1 1 0; min-width: 0; }
+  /* Keep a usable minimum so the preset wraps to its own row rather than overflowing. */
+  .tb-select { flex: 1 1 0; min-width: 96px; }
   .tb-select select { min-width: 0; width: 100%; }
 
   /* Tables: an off-canvas drawer instead of a fixed sidebar. */
@@ -728,6 +729,11 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
   /* Maximize, tweaks and popovers use the full width. */
   .pane.panel-maximized, .results.panel-maximized { inset: 0; border-radius: 0; }
   .tweaks { left: 12px; right: 12px; width: auto; bottom: 12px; }
+}
+
+/* Narrowest phones: Share goes icon-only so the second toolbar row keeps its margin. */
+@media (max-width: 400px) {
+  .share-label { display: none; }
 }
 
 /* ============================== TOUCH INPUT ============================== */
