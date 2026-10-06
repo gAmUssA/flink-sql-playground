@@ -13,6 +13,9 @@ const CASES = [
   // An upright phone with the on-screen keyboard open: interactive-widget=resizes-content shrinks
   // the viewport, so it is short but still taller than wide.
   { name: 'upright phone, keyboard open', use: { viewport: { width: 412, height: 450 }, isMobile: true, hasTouch: true }, want: PHONE },
+  { name: 'upright phone, tall keyboard', use: { viewport: { width: 412, height: 400 }, isMobile: true, hasTouch: true }, want: PHONE },
+  { name: 'small mouse window', use: { viewport: { width: 440, height: 400 }, isMobile: false, hasTouch: false }, want: PHONE },
+  { name: 'short mouse window', use: { viewport: { width: 700, height: 480 }, isMobile: false, hasTouch: false }, want: PHONE },
   { name: 'short desktop window, mouse', use: { viewport: { width: 1280, height: 480 }, isMobile: false, hasTouch: false }, want: DESKTOP },
   { name: 'very short desktop window, mouse', use: { viewport: { width: 1024, height: 360 }, isMobile: false, hasTouch: false }, want: DESKTOP },
   { name: 'desktop window, mouse', use: { viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false }, want: DESKTOP },
@@ -40,30 +43,64 @@ for (const c of CASES) {
   });
 }
 
+// Screens that get the phone layout but must keep main's stacked arrangement, with the tabs in
+// their own row below the topbar: the sideways compaction is only for phones held sideways.
+const STACKED = [
+  // An upright phone with the on-screen keyboard open: interactive-widget=resizes-content
+  // shrinks the viewport, so it is short but still taller than wide.
+  { name: 'upright phone, keyboard open', use: { viewport: { width: 412, height: 450 }, isMobile: true, hasTouch: true } },
+  // An upright phone whose keyboard leaves a viewport shorter than it is wide.
+  { name: 'upright phone, tall keyboard', use: { viewport: { width: 412, height: 400 }, isMobile: true, hasTouch: true } },
+  // Small mouse-driven windows wider than tall: criterion 2 keeps main's layout for them.
+  { name: 'small mouse window', use: { viewport: { width: 440, height: 400 }, isMobile: false, hasTouch: false } },
+  { name: 'short mouse window', use: { viewport: { width: 700, height: 480 }, isMobile: false, hasTouch: false } },
+];
+
 // .app clips its overflow, so a control pushed past the window edge never makes the page
 // scroll; these check each control's box against the window instead.
-test.describe('upright phone, keyboard open', () => {
-  test.use({ viewport: { width: 412, height: 450 }, isMobile: true, hasTouch: true });
+for (const c of STACKED) {
+  test.describe(c.name, () => {
+    test.use(c.use);
 
-  test('keeps the stacked phone layout: full-width tabs below the topbar', async ({ page }) => {
-    await openApp(page);
-    const g = await page.evaluate(() => ({
-      topbarBottom: document.querySelector('.topbar').getBoundingClientRect().bottom,
-      innerWidth: window.innerWidth,
-      tabs: [...document.querySelectorAll('.m-views [role="tab"]')].map((el) => {
-        const r = el.getBoundingClientRect();
-        return { tab: el.id, top: r.top, left: r.left, right: r.right, width: r.width };
-      }),
-    }));
-    for (const t of g.tabs) {
-      expect(t.top, `${t.tab} sits below the topbar`).toBeGreaterThanOrEqual(g.topbarBottom - 1);
-      expect(t.width, `${t.tab} width`).toBeGreaterThanOrEqual(44);
-      expect(t.left, `${t.tab} left edge`).toBeGreaterThanOrEqual(0);
-      expect(t.right, `${t.tab} right edge`).toBeLessThanOrEqual(g.innerWidth);
-    }
-    expect(await controlsOutsideWindow(page)).toEqual([]);
+    test('keeps the stacked phone layout: full-width tabs below the topbar', async ({ page }) => {
+      await openApp(page);
+      const g = await page.evaluate(() => ({
+        topbarBottom: document.querySelector('.topbar').getBoundingClientRect().bottom,
+        innerWidth: window.innerWidth,
+        tabs: [...document.querySelectorAll('.m-views [role="tab"]')].map((el) => {
+          const r = el.getBoundingClientRect();
+          return { tab: el.id, top: r.top, left: r.left, right: r.right, width: r.width };
+        }),
+      }));
+      for (const t of g.tabs) {
+        expect(t.top, `${t.tab} sits below the topbar`).toBeGreaterThanOrEqual(g.topbarBottom - 1);
+        expect(t.width, `${t.tab} width`).toBeGreaterThanOrEqual(44);
+        expect(t.left, `${t.tab} left edge`).toBeGreaterThanOrEqual(0);
+        expect(t.right, `${t.tab} right edge`).toBeLessThanOrEqual(g.innerWidth);
+      }
+      expect(await controlsOutsideWindow(page)).toEqual([]);
+    });
   });
-});
+}
+
+// Phones held sideways, from the narrowest named one up: each gets the compaction, with the
+// panel tabs in the topbar's row. This pins the 560px floor of the compaction below them.
+const SIDEWAYS = [[667, 375], [740, 360], [780, 360], [844, 390], [915, 412]];
+for (const [width, height] of SIDEWAYS) {
+  test.describe(`phone held sideways ${width}x${height}`, () => {
+    test.use({ viewport: { width, height }, isMobile: true, hasTouch: true });
+
+    test('shares the topbar row with the panel tabs', async ({ page }) => {
+      await openApp(page);
+      const rowGap = await page.evaluate(() => {
+        const centre = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.top + r.height / 2; };
+        return Math.abs(centre('.m-views') - centre('.topbar'));
+      });
+      expect(rowGap).toBeLessThan(2);
+      expect(await controlsOutsideWindow(page)).toEqual([]);
+    });
+  });
+}
 
 test.describe('iPhone SE landscape', () => {
   test.use({ viewport: { width: 667, height: 375 }, isMobile: true, hasTouch: true });

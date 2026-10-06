@@ -752,10 +752,11 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
   /* Phones held sideways: the panels and the results sit clear of the notch. */
   .editor-row, .results { margin-left: env(safe-area-inset-left); margin-right: env(safe-area-inset-right); }
 
-  /* Short, wide screens (a phone held sideways): the panel tabs share the topbar's row and the
-     whole toolbar fits on one row, so the active panel keeps room for its content. An upright
-     phone with the keyboard open is short too, but too narrow for this; it keeps the stack. */
-  @media (max-height: 500px) and (orientation: landscape) {
+  /* Phones held sideways (short, wide, touch): the panel tabs share the topbar's row and the
+     whole toolbar fits on one row, so the active panel keeps room for its content. Below 560px
+     the topbar leaves the tabs no room, so an upright phone with the keyboard open and a small
+     mouse window keep the stack, as on main. */
+  @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) and (min-width: 560px) {
     .app { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
     .topbar { grid-area: 1 / 1; padding-top: max(4px, env(safe-area-inset-top)); padding-bottom: 4px; padding-right: 12px; }
     .m-views { grid-area: 1 / 2; padding-left: 0; padding-top: env(safe-area-inset-top); }
