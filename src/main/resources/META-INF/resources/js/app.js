@@ -1016,9 +1016,16 @@ function applyFiddle(fiddle, message) {
   setTimeout(() => { if (sessionId) buildSchema(); }, 500);
 }
 
+// Bumped on every load request; a load whose decode or fetch finishes after a newer
+// request has started is discarded, so a slow earlier link can't overwrite a later one.
+let fiddleLoadGeneration = 0;
+
 async function loadFiddleFromUrl() {
+  const generation = ++fiddleLoadGeneration;
+  const isCurrent = () => generation === fiddleLoadGeneration;
   if (FiddleLink.isFiddleFragment(window.location.hash)) {
     const fiddle = await FiddleLink.decode(window.location.hash);
+    if (!isCurrent()) return;
     if (fiddle) applyFiddle(fiddle, 'Fiddle loaded from link');
     else setStatus('This fiddle link is damaged or from a newer version', 'error');
     return;
@@ -1027,9 +1034,12 @@ async function loadFiddleFromUrl() {
   if (!match) return;
   try {
     const res = await fetch(api(`/api/fiddles/${match[1]}`));
+    if (!isCurrent()) return;
     if (!res.ok) { setStatus('Fiddle not found', 'error'); return; }
-    applyFiddle(await res.json(), 'Fiddle loaded');
-  } catch (err) { setStatus('Failed to load fiddle', 'error'); }
+    const fiddle = await res.json();
+    if (!isCurrent()) return;
+    applyFiddle(fiddle, 'Fiddle loaded');
+  } catch (err) { if (isCurrent()) setStatus('Failed to load fiddle', 'error'); }
 }
 
 /* ============================== Build info ============================== */

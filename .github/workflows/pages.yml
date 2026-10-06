@@ -32,6 +32,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Frontend unit tests
+        run: node --test src/test/js/*.test.js
+
       - id: pages
         uses: actions/configure-pages@v6
 
