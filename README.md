@@ -3,7 +3,7 @@
 [![Smoke Test](https://github.com/gAmUssA/flink-sql-playground/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/gAmUssA/flink-sql-playground/actions/workflows/smoke-test.yml)
 [![Docker Build](https://github.com/gAmUssA/flink-sql-playground/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/gAmUssA/flink-sql-playground/actions/workflows/docker-publish.yml)
 [![Java 25](https://img.shields.io/badge/Java-25-orange?logo=openjdk)](https://adoptium.net/)
-[![Quarkus](https://img.shields.io/badge/Quarkus-3.36-blue?logo=quarkus)](https://quarkus.io/)
+[![Quarkus](https://img.shields.io/badge/Quarkus-3.40-blue?logo=quarkus)](https://quarkus.io/)
 [![Apache Flink](https://img.shields.io/badge/Apache%20Flink-2.2.1-blue?logo=apacheflink)](https://flink.apache.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 

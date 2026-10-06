@@ -1,8 +1,8 @@
 # Architecture
 
-Flink SQL Playground is a Quarkus 3.36 web application that embeds Apache Flink 2.2.1 as an in-process SQL execution engine. Users write and run Flink SQL in their browser — no external cluster required.
+Flink SQL Playground is a Quarkus 3.40 web application that embeds Apache Flink 2.2.1 as an in-process SQL execution engine. Users write and run Flink SQL in their browser — no external cluster required.
 
-**Stack:** Java 25, Quarkus 3.36 (JAX-RS/RESTEasy Reactive, Hibernate ORM + Panache, SmallRye Config), Apache Flink 2.2.1, Gradle Kotlin DSL, H2/PostgreSQL, Caffeine cache, Monaco Editor.
+**Stack:** Java 25, Quarkus 3.40 (JAX-RS/RESTEasy Reactive, Hibernate ORM + Panache, SmallRye Config), Apache Flink 2.2.1, Gradle Kotlin DSL, H2/PostgreSQL, Caffeine cache, Monaco Editor.
 
 ## System Overview
 
