@@ -240,6 +240,10 @@ require(['vs/editor/editor.main'], function () {
   if (first) setMode(first.mode);
   applyMonacoTheme();
   loadFiddleFromUrl();
+  // Opening another fiddle link in the same tab changes only the fragment, with no reload.
+  window.addEventListener('hashchange', () => {
+    if (FiddleLink.isFiddleFragment(window.location.hash)) loadFiddleFromUrl();
+  });
 });
 
 /* ============================== Session ============================== */
