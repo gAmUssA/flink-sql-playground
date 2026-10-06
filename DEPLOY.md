@@ -157,13 +157,15 @@ docker run -p 9090:9090 \
 
 | Component              | Memory          |
 |------------------------|-----------------|
-| JVM heap               | 768 MB - 1.5 GB |
+| JVM heap               | up to 1.5 GB    |
 | JVM metaspace          | 128 MB - 384 MB |
 | Flink MiniCluster (x5) | ~500 MB         |
 | OS / overhead          | ~200 MB         |
 | **Total**              | **~2 GB**       |
 
-The JVM is configured with `-Xms768m -Xmx1536m -XX:+UseZGC
--XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m` (see `Dockerfile`). ZGC is
-generational by default on JDK 24+, so no extra flag is needed. Provision the
+The JVM is configured with `-Xmx1536m -XX:+UseG1GC
+-XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m` (see `Dockerfile`). There is no
+`-Xms`, so the heap starts small and grows on demand. ZGC is avoided: it backs the
+heap with a shared-memory file, so the committed heap is charged to the container
+as `shmem` (about 800 MB at idle with the old `-Xms768m`). Provision the
 platform with at least 2 GB; 4 GB gives headroom for concurrent sessions.
