@@ -1,7 +1,8 @@
 name: Frontend (browser tests)
 
 # Phone and desktop layout tests for the SPA in Chromium and WebKit, plus a Lighthouse
-# mobile accessibility check. Serves the static files and stubs the API, so no backend runs.
+# mobile check (accessibility, performance, first-load transfer size). Serves the static
+# files and stubs the API, so no backend runs.
 
 on:
   push:
@@ -23,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Bundle the SQL editor
+        run: node scripts/build-editor.js
+
       - name: Install browsers
         run: npx playwright install --with-deps chromium webkit
 
@@ -37,4 +41,4 @@ jobs:
             if [ "$i" -eq 30 ]; then echo "static server did not start within 30s" >&2; exit 1; fi
             sleep 1
           done
-          node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95
+          node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95 performance=85 transfer-kb=400

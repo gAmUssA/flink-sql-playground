@@ -21,6 +21,15 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      # The Gradle build bundles the SQL editor with esbuild (bundleEditor task).
+      - name: Install editor build dependencies
+        run: npm ci --omit=dev
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 

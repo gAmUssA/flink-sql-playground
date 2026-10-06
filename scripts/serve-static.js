@@ -8,12 +8,15 @@
  *
  * Unknown paths, including /f/<code>, fall back to index.html like the backend's
  * SpaResource. API calls are not served here; tests stub them with page.route().
+ * Text responses are gzipped when the client accepts it, as the backend and GitHub Pages do,
+ * so Lighthouse measures the transfer size users get.
  */
 'use strict';
 
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const zlib = require('node:zlib');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -34,8 +37,16 @@ function createServer(root) {
       return;
     }
     if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(resolvedRoot, 'index.html');
-    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
-    fs.createReadStream(file).pipe(res);
+    const type = TYPES[path.extname(file)] || 'application/octet-stream';
+    const headers = { 'Content-Type': type, 'Cache-Control': 'no-cache', Vary: 'Accept-Encoding' };
+    const gzip = /^(text\/|application\/json|image\/svg)/.test(type) && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    if (gzip) {
+      res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip' });
+      fs.createReadStream(file).pipe(zlib.createGzip()).pipe(res);
+    } else {
+      res.writeHead(200, headers);
+      fs.createReadStream(file).pipe(res);
+    }
   });
 }
 

@@ -11,7 +11,7 @@ const MIN_TARGET = 44;
 async function openApp(page) {
   await stubApi(page);
   await page.goto('/');
-  await page.waitForFunction(() => window.monaco && document.querySelectorAll('.monaco-editor').length === 2);
+  await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
 }
 
 async function runBatchQuery(page) {
@@ -34,7 +34,7 @@ async function visibleControls(page) {
   return page.evaluate(() => {
     const sel = 'button, select, input, a[href], [role="tab"], [tabindex]:not([tabindex="-1"])';
     return [...document.querySelectorAll(sel)]
-      .filter((el) => !el.closest('.monaco-editor'))
+      .filter((el) => !el.closest('.cm-editor'))
       .filter((el) => {
         const r = el.getBoundingClientRect();
         const cs = getComputedStyle(el);
@@ -176,8 +176,8 @@ test('text inputs and the editor use at least 16px so iOS does not zoom on focus
   await page.locator('.rtab[data-tab="changelog"]').tap();
   const sizes = await page.evaluate(() => {
     const fields = [...document.querySelectorAll('select, input, textarea')]
-      .filter((el) => el.getBoundingClientRect().width > 0 && !el.closest('.monaco-editor'));
-    const editorLine = document.querySelector('#query-editor .view-line') || document.querySelector('.view-line');
+      .filter((el) => el.getBoundingClientRect().width > 0 && !el.closest('.cm-editor'));
+    const editorLine = document.querySelector('#query-editor .cm-content');
     return { fields: fields.map((el) => ({ what: el.id || el.className, px: parseFloat(getComputedStyle(el).fontSize) })),
       editor: parseFloat(getComputedStyle(editorLine).fontSize) };
   });
@@ -289,3 +289,17 @@ test('keyboard focus stays inside the open drawer', async ({ page }) => {
   await expect(page.locator('#tables-drawer-btn')).toBeFocused();
 });
 
+
+test('opening the drawer closes the Tweaks panel and the column filter above it', async ({ page }) => {
+  await page.locator('#tweaks-btn').tap();
+  await expect(page.locator('#tweaks-panel')).toBeVisible();
+  await page.locator('#tables-drawer-btn').tap();
+  await expect(page.locator('#tweaks-panel')).toBeHidden();
+  await page.keyboard.press('Escape');
+
+  await runBatchQuery(page);
+  await page.locator('.th-btn').first().tap();
+  await expect(page.locator('.filt-pop')).toBeVisible();
+  await page.locator('#tables-drawer-btn').tap();
+  await expect(page.locator('.filt-pop')).toHaveCount(0);
+});

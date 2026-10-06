@@ -7,7 +7,8 @@
  *   base-path   URL path the site is served under, e.g. /flink-sql-playground/
  *   api-origin  backend origin, e.g. https://flink-sql-playground-production.up.railway.app
  *
- * Copies src/main/resources/META-INF/resources, then:
+ * Copies src/main/resources/META-INF/resources, which must already hold the editor bundle
+ * (node scripts/build-editor.js), then:
  *   - sets <base href> to base-path so assets and share links resolve under it
  *   - writes js/config.js with window.API_BASE = api-origin
  *   - adds the backend CSP from application.properties as a <meta> tag (a static host
@@ -27,6 +28,7 @@ const SOURCE = path.join(REPO, 'src/main/resources/META-INF/resources');
 const PROPERTIES = path.join(REPO, 'src/main/resources/application.properties');
 const CSP_KEY = 'quarkus.http.header."Content-Security-Policy".value=';
 const BASE_TAG = '<base href="/" />';
+const EDITOR_BUNDLE = 'js/editor.bundle.js';
 
 function readCsp(propertiesText) {
   const line = propertiesText.split('\n').find((l) => l.startsWith(CSP_KEY));
@@ -62,10 +64,13 @@ function transformIndex(html, basePath, csp) {
     '    <meta name="referrer" content="strict-origin-when-cross-origin" />');
 }
 
-function build(outDir, basePath, apiOrigin) {
+function build(outDir, basePath, apiOrigin, source = SOURCE) {
   validateArgs(basePath, apiOrigin);
   if (fs.existsSync(outDir)) throw new Error(`out-dir already exists: ${outDir}`);
-  fs.cpSync(SOURCE, outDir, { recursive: true });
+  if (!fs.existsSync(path.join(source, EDITOR_BUNDLE))) {
+    throw new Error(`${EDITOR_BUNDLE} is missing — run \`npm ci --omit=dev && node scripts/build-editor.js\` first`);
+  }
+  fs.cpSync(source, outDir, { recursive: true });
 
   const csp = metaCsp(readCsp(fs.readFileSync(PROPERTIES, 'utf8')), apiOrigin);
   const index = transformIndex(fs.readFileSync(path.join(outDir, 'index.html'), 'utf8'), basePath, csp);

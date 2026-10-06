@@ -1,5 +1,12 @@
 // app.js — Flink SQL Playground (Nebula data-infra UI, wired to the real backend)
 
+/* ============================== Web fonts ============================== */
+// The fonts stylesheet is preloaded in index.html and applied here, so it never blocks first paint.
+(function applyWebFonts() {
+  const link = document.getElementById('webfonts');
+  if (link) link.rel = 'stylesheet';
+})();
+
 /* ============================== Icons ============================== */
 const ICONS = {
   layers: '<path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5"/>',
@@ -38,50 +45,6 @@ function renderIcons(root = document) {
     const name = el.getAttribute('data-icon');
     const size = parseInt(el.getAttribute('data-size') || '16', 10);
     el.innerHTML = iconSvg(name, size);
-  });
-}
-
-/* ============================== Monaco themes ============================== */
-const MONACO_THEMES = {
-  nebula: { base: 'vs-dark', bg: '0c0c16', fg: 'dcdbf0', kw: 'b79bff', ty: '58d6c4', fn: 'f57bb8', str: '8ee98a', num: 'ffc25c', id: 'dcdbf0', pun: '8786a8', op: 'ff9d7a', com: '6a6a8a' },
-  carbon: { base: 'vs-dark', bg: '0a0b0c', fg: 'e3e4e6', kw: 'c0a6ff', ty: '4fd6c2', fn: 'ff7bb0', str: '9be88f', num: 'ffc15c', id: 'e3e4e6', pun: '7d8186', op: 'ffa07a', com: '5c6065' },
-  cobalt: { base: 'vs', bg: 'ffffff', fg: '1f2233', kw: '7c3aed', ty: '0d9488', fn: 'db2777', str: '15803d', num: 'b45309', id: '1f2233', pun: '8b8da6', op: 'c2410c', com: '9698ad' }
-};
-
-function defineMonacoThemes() {
-  Object.entries(MONACO_THEMES).forEach(([name, t]) => {
-    monaco.editor.defineTheme('fsf-' + name, {
-      base: t.base,
-      inherit: true,
-      rules: [
-        { token: 'keyword', foreground: t.kw, fontStyle: 'bold' },
-        { token: 'keyword.sql', foreground: t.kw, fontStyle: 'bold' },
-        { token: 'operator', foreground: t.op },
-        { token: 'operator.sql', foreground: t.op },
-        { token: 'string', foreground: t.str },
-        { token: 'string.sql', foreground: t.str },
-        { token: 'number', foreground: t.num },
-        { token: 'number.sql', foreground: t.num },
-        { token: 'comment', foreground: t.com, fontStyle: 'italic' },
-        { token: 'comment.sql', foreground: t.com, fontStyle: 'italic' },
-        { token: 'predefined', foreground: t.fn },
-        { token: 'predefined.sql', foreground: t.fn },
-        { token: 'identifier', foreground: t.id },
-        { token: 'identifier.sql', foreground: t.id },
-        { token: 'delimiter', foreground: t.pun },
-        { token: 'delimiter.sql', foreground: t.pun }
-      ],
-      colors: {
-        'editor.background': '#' + t.bg,
-        'editor.foreground': '#' + t.fg,
-        'editorLineNumber.foreground': '#' + t.com,
-        'editorLineNumber.activeForeground': '#' + t.fg,
-        'editor.lineHighlightBackground': t.base === 'vs' ? '#00000008' : '#ffffff0a',
-        'editorCursor.foreground': '#3b82f6',
-        'editor.selectionBackground': '#3b82f640',
-        'editorGutter.background': '#' + t.bg
-      }
-    });
   });
 }
 
@@ -130,17 +93,9 @@ function applyTweaks() {
   root.setAttribute('data-glow', tweaks.glow ? 'on' : 'off');
   root.style.setProperty('--accent', tweaks.accent);
   root.style.setProperty('--mono', tweaks.mono + ", 'JetBrains Mono', ui-monospace, monospace");
-  applyMonacoTheme();
   // theme toggle icon reflects whether we're in light (cobalt) or dark
   const tt = document.querySelector('#theme-toggle [data-icon]');
   if (tt) { tt.setAttribute('data-icon', tweaks.theme === 'cobalt' ? 'sun' : 'moon'); renderIcons(document.getElementById('theme-toggle')); }
-}
-
-function applyMonacoTheme() {
-  if (typeof monaco === 'undefined') return;
-  monaco.editor.setTheme('fsf-' + tweaks.theme);
-  const fontFamily = tweaks.mono.replace(/'/g, '') + ', JetBrains Mono, monospace';
-  [schemaEditor, queryEditor].forEach((ed) => { if (ed) ed.updateOptions({ fontFamily }); });
 }
 
 function setTweak(key, val) {
@@ -231,7 +186,6 @@ function setMode(mode) {
 /* ============================== Phone layout ============================== */
 const PHONE_QUERY = '(max-width: 767px)';
 function isPhoneLayout() { return !!(window.matchMedia && window.matchMedia(PHONE_QUERY).matches); }
-function isCoarsePointer() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
 
 const PHONE_PANELS = { schema: 'schema-panel', query: 'query-panel', results: 'results-panel' };
 
@@ -302,33 +256,37 @@ function setTablesDrawer(open, { restoreFocus = false } = {}) {
   const trigger = document.getElementById('tables-drawer-btn');
   trigger.setAttribute('aria-expanded', String(open));
   setDrawerInert(isPhoneLayout() && !open);
-  if (open) document.getElementById('schema-browser-toggle').focus();
+  if (open) {
+    // Body-level overlays sit above the drawer and outside its inert background: close them.
+    closeFilterPopover();
+    const tweaksPanel = document.getElementById('tweaks-panel');
+    if (tweaksPanel) tweaksPanel.hidden = true;
+    document.getElementById('schema-browser-toggle').focus();
+  }
   else if (wasOpen && restoreFocus) trigger.focus();
 }
 
-/* ============================== Monaco setup ============================== */
-require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
-require(['vs/editor/editor.main'], function () {
-  defineMonacoThemes();
+/* ============================== Editors ============================== */
+// CodeMirror editors from js/editor.bundle.js. Theme colours and the font follow CSS
+// variables, so applyTweaks() restyles them with no editor call.
+function initEditors() {
   const first = (typeof EXAMPLES !== 'undefined' && EXAMPLES.length) ? EXAMPLES[0] : null;
-  const fontFamily = tweaks.mono.replace(/'/g, '') + ', JetBrains Mono, monospace';
-  const opts = {
-    language: 'sql', theme: 'fsf-' + tweaks.theme, minimap: { enabled: false },
-    // 16px on touch screens: iOS zooms the page when focusing text smaller than that.
-    fontFamily, fontSize: isCoarsePointer() ? 16 : 13.5, lineHeight: isCoarsePointer() ? 24 : 22, lineNumbers: 'on',
-    scrollBeyondLastLine: false, automaticLayout: true, padding: { top: 12, bottom: 12 },
-    renderLineHighlight: 'line', scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
-  };
-  schemaEditor = monaco.editor.create(document.getElementById('schema-editor'), { ...opts, value: first ? first.schema : '' });
-  queryEditor = monaco.editor.create(document.getElementById('query-editor'), { ...opts, value: first ? first.query : '' });
+  schemaEditor = FlinkEditor.create(document.getElementById('schema-editor'), {
+    value: first ? first.schema : '', label: 'Schema (DDL) editor',
+    // The button is disabled while a build runs; the shortcut must not start a second one.
+    onRun: () => { if (!document.getElementById('build-schema-btn').disabled) buildSchema(); }
+  });
+  queryEditor = FlinkEditor.create(document.getElementById('query-editor'), {
+    value: first ? first.query : '', label: 'Query editor', onRun: () => { if (!R.running) runQuery(); }
+  });
   if (first) setMode(first.mode);
-  applyMonacoTheme();
   loadFiddleFromUrl();
   // Opening another fiddle link in the same tab changes only the fragment, with no reload.
   window.addEventListener('hashchange', () => {
     if (FiddleLink.isFiddleFragment(window.location.hash)) loadFiddleFromUrl();
   });
-});
+}
+document.addEventListener('DOMContentLoaded', initEditors);
 
 /* ============================== Session ============================== */
 async function createSession() {
@@ -989,6 +947,8 @@ async function refreshSchemaBrowser() {
     if (!res.ok) return;
     const data = await res.json();
     schemaTables = data.tables || [];
+    // Table and column names feed the editors' autocomplete.
+    [schemaEditor, queryEditor].forEach((ed) => { if (ed) ed.setTables(schemaTables); });
     confirmingDrop = null;
     renderSchemaBrowser();
   } catch (e) { /* convenience feature */ }
