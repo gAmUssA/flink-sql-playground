@@ -71,6 +71,27 @@ class SharedMiniClusterTest {
     }
 
     @Test
+    void concurrentStartRequestsStartOneCluster() throws Exception {
+        SharedMiniCluster fresh = new SharedMiniCluster(PROPERTIES);
+        try {
+            Thread[] callers = new Thread[8];
+            for (int i = 0; i < callers.length; i++) {
+                callers[i] = new Thread(fresh::awaitRestAddress);
+                callers[i].start();
+            }
+            fresh.startAsync();
+            for (Thread caller : callers) {
+                caller.join();
+            }
+            assertEquals(1, fresh.startAttempts());
+            assertTrue(fresh.isRunning());
+        } finally {
+            fresh.close();
+        }
+        assertFalse(fresh.isRunning());
+    }
+
+    @Test
     void startFailureSurfacesAsIllegalState() {
         FlinkProperties broken = new FlinkProperties(
                 1, "8m", "32m", 1, null, true, 1, "not-a-size", Duration.ofSeconds(10));

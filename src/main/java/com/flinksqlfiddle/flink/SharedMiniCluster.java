@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * One long-lived Flink MiniCluster that every session's TableEnvironment submits to.
@@ -35,7 +36,10 @@ public class SharedMiniCluster implements AutoCloseable {
 
     private final FlinkProperties properties;
     private final CompletableFuture<URI> restAddress = new CompletableFuture<>();
+    private final AtomicInteger startAttempts = new AtomicInteger();
     private volatile MiniCluster cluster;
+    private boolean startRequested;
+    private boolean closed;
 
     public SharedMiniCluster(FlinkProperties properties) {
         this.properties = properties;
@@ -43,28 +47,49 @@ public class SharedMiniCluster implements AutoCloseable {
 
     /** Starts the cluster on a background thread; {@link #awaitRestAddress} blocks until it is up. */
     public synchronized void startAsync() {
-        if (cluster != null || restAddress.isDone()) {
+        if (startRequested || closed) {
             return;
         }
+        startRequested = true;
         Thread starter = new Thread(this::startNow, "flink-shared-minicluster-start");
         starter.setDaemon(true);
         starter.start();
     }
 
     private void startNow() {
+        startAttempts.incrementAndGet();
         long begin = System.currentTimeMillis();
+        MiniCluster mc = null;
         try {
-            MiniCluster mc = new MiniCluster(clusterConfiguration());
+            mc = new MiniCluster(clusterConfiguration());
             mc.start();
             URI uri = mc.getRestAddress().get(properties.clusterStartTimeout().toMillis(), TimeUnit.MILLISECONDS);
-            cluster = mc;
+            synchronized (this) {
+                if (closed) {
+                    throw new IllegalStateException("closed while starting");
+                }
+                cluster = mc;
+            }
             restAddress.complete(uri);
             log.info("Shared MiniCluster started in {}ms [slots={}, network={}, managed/slot={}, rest={}]",
                     System.currentTimeMillis() - begin, properties.clusterSlots(),
                     properties.clusterNetworkMemory(), properties.managedMemory(), uri);
         } catch (Exception e) {
             log.error("Shared MiniCluster failed to start: {}", e.getMessage(), e);
+            closeQuietly(mc);
             restAddress.completeExceptionally(e);
+        }
+    }
+
+    /** Releases a cluster that started partway (threads, ports) before its start failed. */
+    private static void closeQuietly(MiniCluster mc) {
+        if (mc == null) {
+            return;
+        }
+        try {
+            mc.close();
+        } catch (Exception closeError) {
+            log.warn("Could not close partially started MiniCluster: {}", closeError.getMessage());
         }
     }
 
@@ -112,6 +137,11 @@ public class SharedMiniCluster implements AutoCloseable {
         }
     }
 
+    /** How many times a cluster start began; exposed for tests. */
+    int startAttempts() {
+        return startAttempts.get();
+    }
+
     public boolean isRunning() {
         MiniCluster mc = cluster;
         return mc != null && mc.isRunning();
@@ -119,9 +149,13 @@ public class SharedMiniCluster implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
-        MiniCluster mc = cluster;
-        if (mc != null) {
+        MiniCluster mc;
+        synchronized (this) {
+            closed = true;
+            mc = cluster;
             cluster = null;
+        }
+        if (mc != null) {
             mc.close();
             log.info("Shared MiniCluster stopped");
         }
