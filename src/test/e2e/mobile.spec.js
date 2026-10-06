@@ -249,16 +249,24 @@ test('the guided tour is not offered on phones', async ({ page }) => {
   await expect(page.locator('#tour-btn')).toBeHidden();
 });
 
-test('the toolbar stays at two rows and the status shows in the status bar', async ({ page }) => {
+test('the toolbar has Build + Run on one row, mode / preset / share on the next', async ({ page }) => {
   await runBatchQuery(page);
-  const rows = await page.evaluate(() => {
-    const items = [...document.querySelectorAll('.toolbar > *')].filter((el) => el.getBoundingClientRect().width > 0);
-    const centers = items.map((el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; }).sort((a, b) => a - b);
-    let count = 0, last = -Infinity;
-    for (const c of centers) { if (c - last > 4) { count++; last = c; } }
-    return count;
+  const layout = await page.evaluate(() => {
+    // Vertical centre: controls on one flex row share it even when their heights differ.
+    const row = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return r.top + r.height / 2; };
+    const clipped = [...document.querySelectorAll('.toolbar .btn')].filter((el) => el.offsetWidth > 0)
+      .filter((el) => el.scrollWidth > el.clientWidth + 1).map((el) => el.id);
+    return {
+      firstRow: [row('#build-schema-btn'), row('#run-query-btn')],
+      secondRow: [row('#mode-segmented'), row('.tb-select'), row('#share-btn')],
+      clipped,
+    };
   });
-  expect(rows).toBe(2);
+  const sameRow = (centres) => Math.max(...centres) - Math.min(...centres) < 2;
+  expect(sameRow(layout.firstRow)).toBe(true);
+  expect(sameRow(layout.secondRow)).toBe(true);
+  expect(Math.min(...layout.secondRow)).toBeGreaterThan(Math.max(...layout.firstRow) + 20);
+  expect(layout.clipped).toEqual([]);
   await expect(page.locator('#sb-phone-status')).toBeVisible();
   await expect(page.locator('#sb-phone-status-text')).toHaveText(/5 rows in 12ms/);
 });
