@@ -154,7 +154,7 @@ The editor uses Monaco Editor (v0.52.2) with SQL language support. Results rende
 
 The `flink.*` and `execution.*` prefixes are bound via SmallRye `@ConfigMapping` interfaces (`FlinkConfig`, `ExecutionConfig`) and mapped into the `FlinkProperties` / `ExecutionLimits` domain records by `AppConfig`.
 
-**Production (`application-supabase.properties`, profile `supabase`):** Switches to PostgreSQL via Supabase with a small Agroal pool (3 max, 1 min idle) and Flyway migrations.
+**Production (`application-supabase.properties`, profile `supabase`):** Switches to PostgreSQL via Supabase with a small Agroal pool (3 max, 0 min, idle connections closed after 2 minutes so Railway app sleeping can kick in) and Flyway migrations.
 
 ## Docker
 
@@ -164,7 +164,7 @@ Multi-stage build:
 2. **Runtime stage** (`eclipse-temurin:25-jre`) — copy the fast-jar layout (`build/quarkus-app/`, `lib/` first for layer caching), run `quarkus-run.jar` with tuned JVM flags
 
 ```
-JVM: -Xms768m -Xmx1536m -XX:+UseZGC
+JVM: -Xmx1536m -XX:+UseG1GC
      -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m
 ```
 

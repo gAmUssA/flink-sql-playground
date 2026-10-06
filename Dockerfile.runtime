@@ -17,10 +17,12 @@ COPY --chown=appuser:appuser build/quarkus-app/app/ ./app/
 COPY --chown=appuser:appuser build/quarkus-app/quarkus/ ./quarkus/
 USER appuser
 EXPOSE 9090
+# G1 (not ZGC) and no -Xms: ZGC backs the heap with a shared-memory file, so the whole
+# committed heap is charged to the container as shmem, and -Xms768m pre-committed it at
+# boot. On memory-billed serverless hosts that was ~800 MB paid before the first request.
 ENTRYPOINT ["java", \
-    "-Xms768m", \
     "-Xmx1536m", \
-    "-XX:+UseZGC", \
+    "-XX:+UseG1GC", \
     "-XX:MetaspaceSize=128m", \
     "-XX:MaxMetaspaceSize=384m", \
     "-jar", "quarkus-run.jar"]
