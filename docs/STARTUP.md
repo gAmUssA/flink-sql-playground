@@ -165,8 +165,20 @@ JDK 25.0.4.1, G1, Quarkus 3.40.1, per-job MiniCluster:
 | Warm query | 0.55 s | 0.55 s |
 | RSS | 686 MB | 893 MB |
 
-The cache file is about 180-200 MB and is mapped into the process, which accounts for the
-higher RSS while the app is awake. Training adds about 15 s to the image build. It needs no
+With the shared MiniCluster (on by default), same method and build:
+
+| Phase | Shared cluster, no cache | Shared cluster, trained cache |
+|---|---|---|
+| Quarkus `started in` | 1.06 s | 0.59 s |
+| Boot to HTTP ready | 1.20 s | 0.71 s |
+| Cold first query | 1.30 s | 1.05 s |
+| Process start to first result | 3.53 s | 2.37 s |
+| Warm query | 0.49 s | 0.35 s |
+| RSS | 802 MB | 1,098 MB |
+
+The gain is smaller here because the shared cluster's background start competes with boot
+for CPU. The cache file is about 180-200 MB and is mapped into the process, which accounts
+for the higher RSS while the app is awake. Training adds about 15 s to the image build. It needs no
 database: the `supabase` profile trains with placeholder connection settings and startup
 migration and schema validation off. Flink's per-job user-code class loader and Janino's
 generated classes are not cached (JEP 483 covers the built-in class loaders only), which

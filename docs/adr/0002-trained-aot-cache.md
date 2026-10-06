@@ -33,9 +33,9 @@ image) is unchanged.
 
 ## Consequences
 
-- Easier: process start to first result measured 3.67 s to 1.74 s locally
-  (`docs/STARTUP.md`).
-- Harder: about 180-200 MB larger image and RSS while awake; about 15 s longer image builds;
+- Easier: process start to first result measured 3.53 s to 2.37 s locally with the shared
+  MiniCluster, and 3.67 s to 1.74 s without it (`docs/STARTUP.md`).
+- Harder: about 180-200 MB larger image and about 300 MB more RSS while awake; about 15 s longer image builds;
   the training JVM flags must stay in step with `ENTRYPOINT`, and any change of base image
   or jars invalidates and rebuilds the cache.
 - Later work must honour: the cache is tied to the exact JVM build of the runtime image, so
