@@ -225,13 +225,13 @@ export function mergeTables(...lists) {
 }
 
 /**
- * Column completions for an unqualified name: columns of the tables the statement references
- * that are known, or of every known table when it references none of them.
+ * Column completions for an unqualified name: columns of the known tables the statement
+ * references, or of every known table when it references no table at all. A reference to an
+ * unknown table offers nothing rather than another table's columns.
  */
 export function columnCandidates(statement, tables) {
   const refs = referencedTables(statement);
-  const used = tables.filter((t) => refs.includes(t.name.toLowerCase()));
-  const pool = used.length ? used : tables;
+  const pool = refs.length ? tables.filter((t) => refs.includes(t.name.toLowerCase())) : tables;
   const out = [];
   const seen = new Set();
   pool.forEach((t) => (t.columns || []).forEach((c) => {

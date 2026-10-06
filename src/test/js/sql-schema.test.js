@@ -80,6 +80,9 @@ test('columnCandidates offers the referenced tables, or every table when none is
   assert.deepEqual(columnCandidates('SELECT  FROM users', tables).map((c) => c.label), ['user_id', 'email']);
   assert.deepEqual(columnCandidates('SELECT ', tables).map((c) => c.label), ['user_id', 'region', 'email']);
   assert.equal(columnCandidates('SELECT  FROM orders', tables)[1].detail, 'STRING · orders');
+  assert.deepEqual(columnCandidates('SELECT reg FROM pending', tables), []);
+  assert.deepEqual(columnCandidates('SELECT reg FROM pending JOIN users u ON 1 = 1', tables).map((c) => c.label),
+    ['user_id', 'email']);
 });
 
 test('mergeTables lets the earlier list win on a case-insensitive name clash', async () => {
