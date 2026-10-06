@@ -1010,7 +1010,7 @@ function applyFiddle(fiddle, message) {
 }
 
 async function loadFiddleFromUrl() {
-  if (window.location.hash.startsWith('#' + FiddleLink.PREFIX)) {
+  if (FiddleLink.isFiddleFragment(window.location.hash)) {
     const fiddle = await FiddleLink.decode(window.location.hash);
     if (fiddle) applyFiddle(fiddle, 'Fiddle loaded from link');
     else setStatus('This fiddle link is damaged or from a newer version', 'error');

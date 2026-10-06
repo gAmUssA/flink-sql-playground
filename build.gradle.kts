@@ -173,14 +173,14 @@ tasks.register<Test>("smokeTest") {
     configureTestLogging(streams = true)
 }
 
-// Frontend unit tests: Node's built-in test runner, no npm dependencies. Needs Node 20+.
+// Frontend unit tests: Node's built-in test runner, no npm dependencies. Needs Node 22+.
 val jsTest by tasks.registering(Exec::class) {
     description = "Runs the frontend unit tests in src/test/js with node --test"
     group = "verification"
     inputs.dir("src/test/js")
     inputs.dir("src/main/resources/META-INF/resources/js")
     outputs.upToDateWhen { false }
-    // Explicit file list: Node 20's --test does not accept a directory argument.
+    // Explicit file list: node --test on Node 22 does not accept a directory argument.
     val testFiles = fileTree("src/test/js") { include("**/*.test.js") }.files.map { it.path }.sorted()
     commandLine(listOf("node", "--test") + testFiles)
 }

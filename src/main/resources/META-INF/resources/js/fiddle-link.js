@@ -9,10 +9,14 @@
 (function (root) {
   'use strict';
 
+  const NAMESPACE = 'f=';
   const PREFIX = 'f=v1.';
   const MODES = ['BATCH', 'STREAMING'];
   // Matches the backend's SaveFiddleRequest limits.
   const MAX_FIELD_CHARS = 50000;
+  // Inflated JSON can't legitimately exceed two fields at 6 bytes per char (\uXXXX escapes)
+  // plus the keys; stop decompressing past that so a tiny link can't inflate to gigabytes.
+  const MAX_INFLATED_BYTES = 2 * MAX_FIELD_CHARS * 6 + 1024;
 
   function toBase64Url(bytes) {
     let binary = '';
@@ -33,6 +37,27 @@
     return new Uint8Array(await new Response(piped).arrayBuffer());
   }
 
+  /** Inflates deflate-raw bytes, or returns null once the output passes maxBytes. */
+  async function inflateCapped(bytes, maxBytes) {
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+    return out;
+  }
+
   function validate(fiddle) {
     if (!fiddle || typeof fiddle !== 'object') return null;
     const { schema, query, mode } = fiddle;
@@ -50,23 +75,30 @@
     return PREFIX + toBase64Url(await transform(json, new CompressionStream('deflate-raw')));
   }
 
+  /** True for any fiddle-link fragment (#f=...), including versions this build can't read. */
+  function isFiddleFragment(hash) {
+    return String(hash || '').replace(/^#/, '').startsWith(NAMESPACE);
+  }
+
   /**
    * Decodes a location.hash value (with or without '#'). Returns the fiddle, or null when
-   * the fragment is not a fiddle link or is malformed.
+   * the fragment is not a v1 fiddle link or is malformed, oversized or damaged.
    */
   async function decode(hash) {
     const body = String(hash || '').replace(/^#/, '');
-    if (!body.startsWith(PREFIX)) return null;
+    if (!body.startsWith(PREFIX) || body.length === PREFIX.length) return null;
     try {
-      const inflated = await transform(fromBase64Url(body.slice(PREFIX.length)), new DecompressionStream('deflate-raw'));
+      const inflated = await inflateCapped(fromBase64Url(body.slice(PREFIX.length)), MAX_INFLATED_BYTES);
+      if (!inflated) return null;
       const data = JSON.parse(new TextDecoder().decode(inflated));
       return validate({ schema: data.s, query: data.q, mode: data.m });
     } catch (e) {
+      // Untrusted link: any decoding failure (bad base64, corrupt deflate, bad JSON) means "not a fiddle".
       return null;
     }
   }
 
-  const FiddleLink = { encode, decode, PREFIX };
+  const FiddleLink = { encode, decode, isFiddleFragment, PREFIX };
   if (typeof module !== 'undefined' && module.exports) module.exports = FiddleLink;
   else root.FiddleLink = FiddleLink;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

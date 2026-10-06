@@ -22,7 +22,7 @@ An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQ
 ## Prerequisites
 
 - **Java 25** — required to build and run locally ([Eclipse Temurin](https://adoptium.net/) recommended). Quarkus augmentation runs in the Gradle JVM and loads the compiled Java 25 classes, so the build itself must run on JDK 25.
-- **Node.js 20+** — runs the frontend unit tests (`./gradlew jsTest`, part of `./gradlew check`) with Node's built-in test runner; no npm install needed
+- **Node.js 22+** — runs the frontend unit tests (`./gradlew jsTest`, part of `./gradlew check`) with Node's built-in test runner; no npm install needed
 - **Docker** (optional) — for running the app in a container
 
 ## Local Java Build

@@ -61,6 +61,34 @@ test('encode rejects an unknown mode', async () => {
   await assert.rejects(FiddleLink.encode({ ...FIDDLE, mode: 'DROP' }), /mode BATCH or STREAMING/);
 });
 
+test('isFiddleFragment recognises the whole #f= namespace', () => {
+  assert.equal(FiddleLink.isFiddleFragment('#f=v1.abc'), true);
+  assert.equal(FiddleLink.isFiddleFragment('#f=v2.abc'), true);
+  assert.equal(FiddleLink.isFiddleFragment('#f=v1'), true);
+  assert.equal(FiddleLink.isFiddleFragment('#results'), false);
+  assert.equal(FiddleLink.isFiddleFragment(''), false);
+});
+
+test('decode rejects an unsupported version or a truncated link', async () => {
+  assert.equal(await FiddleLink.decode('#f=v2.' + (await FiddleLink.encode(FIDDLE)).slice('f=v1.'.length)), null);
+  assert.equal(await FiddleLink.decode('#f=v1'), null);
+  assert.equal(await FiddleLink.decode('#f=v1.'), null);
+});
+
+test('decode stops inflating a decompression bomb before parsing it', async () => {
+  // 50 MB of one repeated character compresses to a few dozen KB.
+  const bomb = await rawFragment({ s: 'a'.repeat(50 * 1024 * 1024), q: 'b', m: 'BATCH' });
+  assert.ok(bomb.length < 200000, `bomb fragment is ${bomb.length} chars`);
+  const before = process.memoryUsage().arrayBuffers;
+  assert.equal(await FiddleLink.decode(bomb), null);
+  assert.ok(process.memoryUsage().arrayBuffers - before < 5 * 1024 * 1024, 'inflated bytes must be capped');
+});
+
+test('decode still accepts fields at the limit, including JSON escapes', async () => {
+  const fiddle = { schema: '"'.repeat(50000), query: '\\'.repeat(25000), mode: 'BATCH' };
+  assert.deepEqual(await FiddleLink.decode(await FiddleLink.encode(fiddle)), fiddle);
+});
+
 test('rejects fields over the backend limit', async () => {
   await assert.rejects(FiddleLink.encode({ ...FIDDLE, query: 'x'.repeat(50001) }));
 });
