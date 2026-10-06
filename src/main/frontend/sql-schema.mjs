@@ -132,18 +132,89 @@ export function parseCreateTables(text) {
   return tables;
 }
 
+const NAME = /(?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*/y;
+const WORD = /`(?:[^`]|``)*`|[\w$]+/y;
+const NOT_TABLES = /^(select|table|lateral|unnest|tumble|hop|cumulate|session)$/i;
+const NOT_ALIASES = /^(on|using|where|join|inner|left|right|full|cross|outer|natural|lateral|group|order|limit|having|window|union|except|intersect|for|match_recognize|tablesample|as|table)$/i;
+
+/** The text `re` (sticky) matches at offset `i` of `masked`, or null. */
+function matchAt(re, masked, i) {
+  re.lastIndex = i;
+  const m = re.exec(masked);
+  return m ? m[0] : null;
+}
+
+/** Offset of the first non-space character at or after `i`. */
+function skipSpace(masked, i) {
+  while (i < masked.length && /\s/.test(masked[i])) i++;
+  return i;
+}
+
+/**
+ * Relations a statement reads or writes, [{table, alias}] in keyword order: every item of a
+ * comma-separated FROM list, each JOIN target, and TABLE / INTO targets. An alias is recorded
+ * for FROM and JOIN items (null when absent); a clause keyword is never taken as one. Subqueries
+ * and table functions are skipped as items; the TABLE inside a window function is its own target.
+ */
+export function statementRelations(text) {
+  const masked = maskSql(text);
+  const relations = [];
+  const keyword = /\b(from|join|table|into)\b/gi;
+  let m;
+  while ((m = keyword.exec(masked)) !== null) {
+    const kind = m[1].toLowerCase();
+    let i = m.index + m[0].length;
+    for (;;) {
+      i = skipSpace(masked, i);
+      if (matchAt(/lateral\b/iy, masked, i)) i = skipSpace(masked, i + 7); // LATERAL TABLE(...)
+      let table = null;
+      const name = masked[i] === '(' ? null : matchAt(NAME, masked, i);
+      if (name) {
+        const start = i;
+        i += name.length;
+        if (masked[skipSpace(masked, i)] !== '(') {
+          const t = lastIdentifier(text.slice(start, i));
+          if (!NOT_TABLES.test(t)) table = t;
+        } else i = skipSpace(masked, i); // a table function: TABLE(...), UNNEST(...)
+      }
+      if (masked[i] === '(') {
+        const close = closingParen(masked, i);
+        if (close === -1) break;
+        i = close + 1;
+      } else if (!name) break;
+      if (kind === 'table' || kind === 'into') {
+        if (table) relations.push({ table, alias: null });
+        break;
+      }
+      let alias = null;
+      let j = skipSpace(masked, i);
+      if (matchAt(/as\b/iy, masked, j)) j = skipSpace(masked, j + 2);
+      const word = matchAt(WORD, masked, j);
+      if (word) {
+        const raw = text.slice(j, j + word.length);
+        // A backticked alias may be any word, a reserved one included.
+        if (raw.startsWith('`')) alias = lastIdentifier(raw);
+        else if (!NOT_ALIASES.test(raw)) alias = raw;
+        if (alias !== null) i = j + word.length;
+      }
+      if (table) relations.push({ table, alias });
+      if (kind !== 'from') break;
+      i = skipSpace(masked, i);
+      if (alias !== null && masked[i] === '(') { // AS t(a, b): a column list after the alias
+        const close = closingParen(masked, i);
+        if (close === -1) break;
+        i = skipSpace(masked, close + 1);
+      }
+      if (masked[i] !== ',') break;
+      i++;
+    }
+  }
+  return relations;
+}
+
 /** Lower-cased names of the tables a statement reads or writes (FROM, JOIN, TABLE, INTO). */
 export function referencedTables(text) {
-  const masked = maskSql(text);
-  const names = new Set();
-  const re = /\b(?:from|join|table|into)\s+((?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*)/gi;
-  let m;
-  while ((m = re.exec(masked)) !== null) {
-    const raw = text.slice(m.index + m[0].length - m[1].length, m.index + m[0].length);
-    const name = lastIdentifier(raw);
-    if (name && !/^(select|table|lateral|unnest|tumble|hop|cumulate|session)$/i.test(name)) names.add(name.toLowerCase());
-  }
-  return [...names];
+  return [...new Set(statementRelations(text).map((r) => r.table.toLowerCase()))];
 }
 
 /** Merges table lists; earlier lists win on a name clash (case-insensitive). */
@@ -246,29 +317,16 @@ export function optionCandidates(ctx) {
   return keys;
 }
 
-const NOT_ALIASES = /^(on|using|where|join|inner|left|right|full|cross|outer|natural|lateral|group|order|limit|having|window|union|except|intersect|for|match_recognize|tablesample|as)$/i;
-
 /**
- * Lower-cased alias → table name map for `FROM t a`, `JOIN t AS a` and backticked aliases such as
- * FROM t AS `order`; each table also maps to itself.
+ * Lower-cased alias → table name map for `FROM t a`, `JOIN t AS a`, comma-separated FROM items
+ * and backticked aliases such as FROM t AS `order`; each table also maps to itself.
  */
 export function tableAliases(text) {
-  const masked = maskSql(text);
   const aliases = Object.create(null); // a table may be named __proto__
-  const re = /\b(?:from|join)\s+((?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*)(?:\s+(?:as\s+)?(`(?:[^`]|``)*`|[\w$]+))?/gi;
-  let m;
-  while ((m = re.exec(masked)) !== null) {
-    const nameEnd = m.index + m[0].indexOf(m[1]) + m[1].length;
-    const table = lastIdentifier(text.slice(nameEnd - m[1].length, nameEnd));
-    if (!table || /^table$/i.test(table)) continue;
+  statementRelations(text).forEach(({ table, alias }) => {
     aliases[table.toLowerCase()] = table;
-    if (!m[2]) continue;
-    const end = m.index + m[0].length;
-    const raw = text.slice(end - m[2].length, end);
-    // A backticked alias may be any word, a reserved one included.
-    if (raw.startsWith('`')) aliases[lastIdentifier(raw).toLowerCase()] = table;
-    else if (!NOT_ALIASES.test(raw)) aliases[raw.toLowerCase()] = table;
-  }
+    if (alias !== null) aliases[alias.toLowerCase()] = table;
+  });
   return aliases;
 }
 

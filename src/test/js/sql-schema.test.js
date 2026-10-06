@@ -144,6 +144,35 @@ test('tableAliases maps aliases and table names, ignoring clause keywords', asyn
   assert.deepEqual(plain('SELECT * FROM trades `select` WHERE `select`.ven'), { trades: 'trades', select: 'trades' });
 });
 
+const INTERVAL_JOIN = `SELECT o.order_id, s.shipment_id
+FROM orders_stream o, shipments s
+WHERE o.product_id = s.order_ref`;
+
+test('statementRelations reads every FROM item, its alias and each JOIN after a bare table', async () => {
+  const { statementRelations, referencedTables, tableAliases } = await load();
+  assert.deepEqual(statementRelations('SELECT * FROM orders JOIN users u ON orders.id = u.id'),
+    [{ table: 'orders', alias: null }, { table: 'users', alias: 'u' }]);
+  assert.deepEqual({ ...tableAliases('SELECT * FROM orders JOIN users u ON 1 = 1') },
+    { orders: 'orders', users: 'users', u: 'users' });
+  assert.deepEqual(referencedTables(INTERVAL_JOIN), ['orders_stream', 'shipments']);
+  assert.deepEqual({ ...tableAliases(INTERVAL_JOIN) },
+    { orders_stream: 'orders_stream', o: 'orders_stream', shipments: 'shipments', s: 'shipments' });
+  assert.deepEqual(statementRelations('SELECT * FROM a AS x, `b c` y, cat.db.d -- e\n, (SELECT 1 FROM f) g, h GROUP BY k, l'),
+    [{ table: 'a', alias: 'x' }, { table: 'b c', alias: 'y' }, { table: 'd', alias: null },
+      { table: 'h', alias: null }, { table: 'f', alias: null }]); // a subquery's own FROM follows its list
+  assert.deepEqual(referencedTables('SELECT * FROM t, LATERAL TABLE(fn(x)) AS T(a), u'), ['t', 'u']);
+});
+
+test('columnCandidates offers the columns of every table in a comma-separated FROM list', async () => {
+  const { columnCandidates } = await load();
+  const tables = [
+    { name: 'orders_stream', columns: [{ name: 'order_id', type: 'INT' }] },
+    { name: 'shipments', columns: [{ name: 'shipment_id', type: 'INT' }] },
+    { name: 'users', columns: [{ name: 'email', type: 'STRING' }] },
+  ];
+  assert.deepEqual(columnCandidates(INTERVAL_JOIN, tables).map((c) => c.label), ['order_id', 'shipment_id']);
+});
+
 test('expectsTableName is true only right after FROM, JOIN, TABLE or INTO', async () => {
   const { expectsTableName } = await load();
   assert.equal(expectsTableName('SELECT * FROM or'), true);
