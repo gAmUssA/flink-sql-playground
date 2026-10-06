@@ -193,9 +193,14 @@ let renderScheduled = false;
 function setStatus(text, state) {
   const el = document.getElementById('status-text');
   if (el) el.textContent = text;
+  // Phones show the same status in the status bar instead of the toolbar.
+  const phoneText = document.getElementById('sb-phone-status-text');
+  if (phoneText) phoneText.textContent = text;
   if (state) {
     const tb = document.getElementById('tb-status');
     if (tb) tb.className = 'tb-status st-' + state;
+    const phone = document.getElementById('sb-phone-status');
+    if (phone) phone.className = 'sb-item sb-phone-status st-' + state;
   }
 }
 function setStateBadge(state, label) {
@@ -269,19 +274,24 @@ function syncPhoneSemantics() {
 }
 
 // A closed drawer is only moved off-screen, so it must also leave the tab order and the
-// accessibility tree.
+// accessibility tree. While it is open, the page behind the backdrop is inert instead, so
+// keyboard focus stays inside the drawer.
+const DRAWER_BACKGROUND = ['.topbar', '.m-views', '.editors', '.statusbar'];
 function setDrawerInert(hidden) {
   const sidebar = document.getElementById('schema-browser');
   sidebar.inert = hidden;
   if (hidden) sidebar.setAttribute('aria-hidden', 'true'); else sidebar.removeAttribute('aria-hidden');
+  const drawerOpen = isPhoneLayout() && document.querySelector('.app').classList.contains('drawer-open');
+  DRAWER_BACKGROUND.forEach((sel) => { const el = document.querySelector(sel); if (el) el.inert = drawerOpen; });
 }
 
 function updatePhoneResultCount() {
   const badge = document.getElementById('m-views-count');
   if (!badge) return;
+  // Shown once a query has produced a result schema, so "0 rows" differs from "not run yet".
   const n = R.materialized ? R.materialized.size : 0;
   badge.textContent = String(n);
-  badge.hidden = n === 0;
+  badge.hidden = !R.columns.length;
 }
 
 function setTablesDrawer(open, { restoreFocus = false } = {}) {

@@ -26,8 +26,10 @@ async function stubApi(page) {
       return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: lines.map((l) => JSON.stringify(l)).join('\n') + '\n' });
     }
     if (/\/execute$/.test(path)) {
-      return json(200, { columns: COLUMNS, columnTypes: TYPES, rows: ROWS, rowKinds: ROWS.map(() => '+I'),
-        rowCount: ROWS.length, executionTimeMs: 12, truncated: false });
+      // A query containing "WHERE 1 = 0" returns a result schema with no rows.
+      const rows = /WHERE 1 = 0/i.test(route.request().postData() || '') ? [] : ROWS;
+      return json(200, { columns: COLUMNS, columnTypes: TYPES, rows, rowKinds: rows.map(() => '+I'),
+        rowCount: rows.length, executionTimeMs: 12, truncated: false });
     }
     if (path === '/api/fiddles' && route.request().method() === 'POST') return json(201, { shortCode: 'abc123' });
     return json(404, { error: 'not stubbed: ' + path });

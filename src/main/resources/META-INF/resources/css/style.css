@@ -631,7 +631,7 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 
 /* ============================== PHONES (< 768px) ============================== */
 /* Phone-only controls stay out of the desktop layout entirely. */
-.m-only, .m-views, .drawer-backdrop { display: none; }
+.m-only, .m-views, .drawer-backdrop, .sb-phone-status { display: none; }
 
 @media (max-width: 767px) {
   .app { padding-bottom: env(safe-area-inset-bottom); }
@@ -648,7 +648,8 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
   .brand-text { min-width: 0; }
   .brand-text h1 { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .topbar-actions { gap: 6px; }
-  .tour-label { display: none; }
+  /* The guided tour points at the desktop layout; it is not offered on phones. */
+  #tour-btn { display: none; }
   .m-only { display: grid; }
 
   /* Schema | Query | Results view switcher. */
@@ -687,7 +688,8 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
     border-bottom: none;
   }
   .tb-sep, .tb-spacer { display: none; }
-  .tb-status { order: -1; flex: 1 0 100%; max-width: none; font-size: 12px; }
+  /* Status moves to the status bar so the toolbar stays at two rows. */
+  .tb-status { display: none; }
   #build-schema-btn, #run-query-btn { flex: 1 1 0; justify-content: center; }
   .segmented { flex: 0 0 auto; }
   .segmented button { padding: 6px 10px; }
@@ -730,7 +732,9 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 
   /* Status bar: keep session and state; the rest lives in the toolbar status. */
   .statusbar { gap: 12px; padding-top: 6px; padding-bottom: 6px; overflow: hidden; }
-  #status-mode, #status-rows, #status-changelog, .statusbar .sb-item:nth-last-child(2) { display: none; }
+  #status-session, #status-mode, #status-rows, #status-changelog, .statusbar .sb-item:nth-last-child(2) { display: none; }
+  .sb-phone-status { display: inline-flex; min-width: 0; font-family: var(--ui); font-size: 12px; color: var(--text-2); }
+  .sb-phone-status > span { overflow: hidden; text-overflow: ellipsis; }
 
   /* Maximize, tweaks and popovers use the full width. */
   .pane.panel-maximized, .results.panel-maximized { inset: 0; border-radius: 0; }

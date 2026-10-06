@@ -245,3 +245,47 @@ test('the closed drawer is out of the tab order; Esc closes it and returns focus
   await expect(page.locator('#tables-drawer-btn')).toBeFocused();
 });
 
+test('the guided tour is not offered on phones', async ({ page }) => {
+  await expect(page.locator('#tour-btn')).toBeHidden();
+});
+
+test('the toolbar stays at two rows and the status shows in the status bar', async ({ page }) => {
+  await runBatchQuery(page);
+  const rows = await page.evaluate(() => {
+    const items = [...document.querySelectorAll('.toolbar > *')].filter((el) => el.getBoundingClientRect().width > 0);
+    const centers = items.map((el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; }).sort((a, b) => a - b);
+    let count = 0, last = -Infinity;
+    for (const c of centers) { if (c - last > 4) { count++; last = c; } }
+    return count;
+  });
+  expect(rows).toBe(2);
+  await expect(page.locator('#sb-phone-status')).toBeVisible();
+  await expect(page.locator('#sb-phone-status-text')).toHaveText(/5 rows in 12ms/);
+});
+
+test('a query with no rows still shows a 0 count on the Results tab', async ({ page }) => {
+  await expect(page.locator('#m-views-count')).toBeHidden();
+  await page.evaluate(() => queryEditor.setValue('SELECT * FROM orders WHERE 1 = 0'));
+  await page.locator('#mode-segmented [data-mode="BATCH"]').tap();
+  await page.locator('#run-query-btn').tap();
+  await expect(page.locator('#m-views-count')).toBeVisible();
+  await expect(page.locator('#m-views-count')).toHaveText('0');
+});
+
+test('keyboard focus stays inside the open drawer', async ({ page }) => {
+  await page.locator('#tables-drawer-btn').tap();
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.getElementById('schema-browser').contains(document.activeElement)
+      || document.activeElement === document.body)).toBe(true);
+  }
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => document.getElementById('schema-browser').contains(document.activeElement)
+      || document.activeElement === document.body)).toBe(true);
+  }
+  await page.keyboard.press('Escape');
+  expect(await page.locator('.editors').evaluate((el) => el.inert)).toBe(false);
+  await expect(page.locator('#tables-drawer-btn')).toBeFocused();
+});
+
