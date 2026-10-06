@@ -1,5 +1,12 @@
 // app.js — Flink SQL Playground (Nebula data-infra UI, wired to the real backend)
 
+/* ============================== Web fonts ============================== */
+// The fonts stylesheet is preloaded in index.html and applied here, so it never blocks first paint.
+(function applyWebFonts() {
+  const link = document.getElementById('webfonts');
+  if (link) link.rel = 'stylesheet';
+})();
+
 /* ============================== Icons ============================== */
 const ICONS = {
   layers: '<path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5"/>',
