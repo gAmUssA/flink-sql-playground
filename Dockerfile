@@ -1,3 +1,13 @@
+# Bundles the CodeMirror SQL editor (scripts/build-editor.js). The Node tag is renewed with
+# the other image pins; keep it on the Node 22 LTS line the workflows use.
+FROM node:22.23.3-bookworm-slim AS editor
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY src/main/frontend/ src/main/frontend/
+COPY scripts/build-editor.js scripts/
+RUN node scripts/build-editor.js /app/editor.bundle.js
+
 FROM eclipse-temurin:25.0.4.1_1-jdk AS build
 WORKDIR /app
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
@@ -5,6 +15,7 @@ COPY gradle/ gradle/
 COPY gradlew ./
 RUN chmod +x gradlew && ./gradlew dependencies --no-daemon || true
 COPY src/ src/
+COPY --from=editor /app/editor.bundle.js src/main/resources/META-INF/resources/js/editor.bundle.js
 # Optional build metadata for the deployed-build footer. Pass with
 # --build-arg GIT_COMMIT=$(git rev-parse HEAD) --build-arg GIT_BRANCH=$(git branch --show-current);
 # defaults to "unknown" when unset (the build context has no .git).
@@ -20,7 +31,7 @@ ARG GIT_BRANCH=unknown
 # On Railway, the QUARKUS_PROFILE service variable is forwarded here as a build arg.
 # The runtime profile must match the build profile (Railway sets both from the same var).
 ARG QUARKUS_PROFILE=prod
-RUN QUARKUS_PROFILE=$QUARKUS_PROFILE ./gradlew clean quarkusBuild --no-daemon \
+RUN QUARKUS_PROFILE=$QUARKUS_PROFILE ./gradlew clean quarkusBuild --no-daemon -x bundleEditor \
     -Dquarkus.profile=$QUARKUS_PROFILE \
     -PbuildCommit=$GIT_COMMIT -PbuildBranch=$GIT_BRANCH
 
