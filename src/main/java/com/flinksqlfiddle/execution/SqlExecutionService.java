@@ -328,6 +328,19 @@ public class SqlExecutionService {
         }
     }
 
+    /**
+     * The innermost cause, which for a failed Flink job is the user-facing error (a bad cast,
+     * an overflow) rather than the layers of job-execution wrappers around it.
+     */
+    static String rootCauseMessage(Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String message = root.getMessage();
+        return root.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
+    }
+
     private static List<Object> rowValues(Row row) {
         List<Object> values = new ArrayList<>(row.getArity());
         for (int i = 0; i < row.getArity(); i++) {
@@ -396,7 +409,7 @@ public class SqlExecutionService {
                 }
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to collect query results", e);
+            throw new RuntimeException("Failed to collect query results: " + rootCauseMessage(e), e);
         }
 
         long executionTimeMs = System.currentTimeMillis() - startTime;
