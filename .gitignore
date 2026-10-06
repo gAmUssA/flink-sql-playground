@@ -40,3 +40,8 @@ Thumbs.db
 .augment
 .aider*
 CLAUDE.local.md
+
+# Frontend tooling (npm, Playwright)
+node_modules/
+test-results/
+playwright-report/
