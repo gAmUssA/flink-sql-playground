@@ -90,8 +90,8 @@ const CREATE_TABLE = /\bcreate\s+(?:temporary\s+)?table\s+(?:if\s+not\s+exists\s
 
 /**
  * Tables declared by CREATE [TEMPORARY] TABLE statements, with their physical, computed and
- * metadata columns: [{name, columns: [{name, type}]}]. An unfinished statement contributes the
- * columns typed so far.
+ * metadata columns: [{name, columns: [{name, type, kind}]}], kind being 'physical', 'computed'
+ * or 'metadata'. An unfinished statement contributes the columns typed so far.
  */
 export function parseCreateTables(text) {
   const masked = maskSql(text);
@@ -107,8 +107,10 @@ export function parseCreateTables(text) {
       const col = def.match(/^(`(?:[^`]|``)*`|[\w$]+)\s+([\s\S]*)$/);
       if (!col || NOT_COLUMNS.test(col[1])) return null;
       const rest = col[2].trim();
-      const type = /^as\b/i.test(rest) ? 'computed' : rest.split(/\s+(?:not\s+null|null|metadata|primary|comment)\b/i)[0].trim();
-      return { name: lastIdentifier(col[1]), type };
+      const computed = /^as\b/i.test(rest);
+      const type = computed ? 'computed' : rest.split(/\s+(?:not\s+null|null|metadata|primary|comment)\b/i)[0].trim();
+      const kind = computed ? 'computed' : /\bmetadata\b/i.test(maskSql(rest)) ? 'metadata' : 'physical';
+      return { name: lastIdentifier(col[1]), type, kind };
     }).filter(Boolean);
     if (name) tables.push({ name, columns });
   }
@@ -198,7 +200,9 @@ export function optionContext(before) {
   if (!/\bcreate\s+(?:temporary\s+)?table\b/i.test(head)) return null;
 
   const tables = parseCreateTables(before);
-  const columns = tables.length ? tables[tables.length - 1].columns.map((c) => c.name) : [];
+  // Connector options such as fields.<col>.kind apply to physical columns only.
+  const columns = tables.length
+    ? tables[tables.length - 1].columns.filter((c) => c.kind === 'physical').map((c) => c.name) : [];
   const connector = connectorOf(masked, before, open + 1, quote);
   const typed = before.slice(quote + 1);
   const valueOf = masked.slice(open + 1, quote).match(/'\s*=\s*$/);

@@ -24,21 +24,21 @@ test('parseCreateTables reads names and columns, skipping watermarks and keys', 
   const { parseCreateTables } = await load();
   assert.deepEqual(parseCreateTables(ORDERS_DDL), [
     { name: 'orders', columns: [
-      { name: 'user_id', type: 'INT' },
-      { name: 'amount', type: 'DECIMAL(10, 2)' },
-      { name: 'tags', type: 'ARRAY<STRING>' },
-      { name: 'addr', type: 'ROW<city STRING, zip INT>' },
-      { name: 'big', type: 'computed' },
-      { name: 'ts', type: 'TIMESTAMP(3)' },
+      { name: 'user_id', type: 'INT', kind: 'physical' },
+      { name: 'amount', type: 'DECIMAL(10, 2)', kind: 'physical' },
+      { name: 'tags', type: 'ARRAY<STRING>', kind: 'physical' },
+      { name: 'addr', type: 'ROW<city STRING, zip INT>', kind: 'physical' },
+      { name: 'big', type: 'computed', kind: 'computed' },
+      { name: 'ts', type: 'TIMESTAMP(3)', kind: 'metadata' },
     ] },
-    { name: 'page views', columns: [{ name: 'url', type: 'STRING' }] },
+    { name: 'page views', columns: [{ name: 'url', type: 'STRING', kind: 'physical' }] },
   ]);
 });
 
 test('parseCreateTables keeps the columns of an unfinished statement and ignores commented ones', async () => {
   const { parseCreateTables } = await load();
   assert.deepEqual(parseCreateTables('/* CREATE TABLE ghost (x INT) */\nCREATE TABLE t (\n  a INT,\n  b STR'),
-    [{ name: 't', columns: [{ name: 'a', type: 'INT' }, { name: 'b', type: 'STR' }] }]);
+    [{ name: 't', columns: [{ name: 'a', type: 'INT', kind: 'physical' }, { name: 'b', type: 'STR', kind: 'physical' }] }]);
   assert.deepEqual(parseCreateTables("SELECT 'CREATE TABLE fake (x INT)'"), []);
 });
 
@@ -93,6 +93,13 @@ test('optionContext reads the connector outside comments', async () => {
   const ctx = optionContext("CREATE TABLE t (id INT) WITH (\n  -- 'connector' = 'faker'\n  'connector' = 'datagen', 'fi");
   assert.equal(ctx.connector, 'datagen');
   assert.equal(optionContext("CREATE TABLE t (id INT) WITH (\n  /* 'connector' = 'faker', */ 'fi").connector, null);
+});
+
+test('optionContext offers per-column options for physical columns only', async () => {
+  const { optionContext } = await load();
+  const ctx = optionContext("CREATE TABLE t (id INT, big AS id * 2, ts TIMESTAMP(3) METADATA FROM 'timestamp', "
+    + "note STRING COMMENT 'no metadata here') WITH ('connector' = 'datagen', 'fields.");
+  assert.deepEqual(ctx.columns, ['id', 'note']);
 });
 
 test('optionCandidates expands per-column options for the declared connector', async () => {
