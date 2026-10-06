@@ -2,7 +2,7 @@
 
 Flink SQL Playground is a Quarkus 3.40 web application that embeds Apache Flink 2.2.1 as an in-process SQL execution engine. Users write and run Flink SQL in their browser — no external cluster required.
 
-**Stack:** Java 25, Quarkus 3.40 (JAX-RS/RESTEasy Reactive, Hibernate ORM + Panache, SmallRye Config), Apache Flink 2.2.1, Gradle Kotlin DSL, H2/PostgreSQL, Caffeine cache, Monaco Editor.
+**Stack:** Java 25, Quarkus 3.40 (JAX-RS/RESTEasy Reactive, Hibernate ORM + Panache, SmallRye Config), Apache Flink 2.2.1, Gradle Kotlin DSL, H2/PostgreSQL, Caffeine cache, CodeMirror 6.
 
 ## System Overview
 
@@ -10,7 +10,7 @@ Flink SQL Playground is a Quarkus 3.40 web application that embeds Apache Flink 
 ┌─────────────────────────────────────────────────────────┐
 │  Browser                                                │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │ Monaco Editor │  │ Schema       │  │ Results      │  │
+│  │ CodeMirror 6  │  │ Schema       │  │ Results      │  │
 │  │ (DDL + Query) │  │ Browser      │  │ Table        │  │
 │  └──────┬───────┘  └──────┬───────┘  └──────▲───────┘  │
 └─────────┼─────────────────┼─────────────────┼───────────┘
@@ -138,7 +138,7 @@ Vanilla HTML/CSS/JavaScript with no build step.
 | `js/examples.js` | Preloaded example queries (9 examples)          |
 | `css/style.css`  | Theme system (Nebula/Carbon/Cobalt), responsive layout |
 
-The editor uses Monaco Editor (v0.52.2) with SQL language support. Results render as an HTML table with per-column filter inputs, row-kind color coding, and a truncation indicator.
+The editors are CodeMirror 6 with a Flink SQL dialect, bundled from `src/main/frontend/editor.js` by `scripts/build-editor.js` (esbuild) into `js/editor.bundle.js`, which is generated at build time and not committed. Autocomplete offers keywords plus the session's table and column names; Ctrl/Cmd+Enter runs the query (or builds the schema from the DDL editor). Results render as an HTML table with per-column filter inputs, row-kind color coding, and a truncation indicator.
 
 ## Configuration
 

@@ -10,6 +10,8 @@
   --r-sm: 6px; --r-md: 9px; --r-lg: 14px;
   --row-h: 34px;
   --code-size: 13.5px;
+  --editor-font-size: 13.5px; --editor-line-height: 22px;
+  --editor-line-highlight: rgba(255,255,255,0.04);
 }
 [data-density="compact"] { --row-h: 28px; --code-size: 12.5px; }
 
@@ -61,6 +63,7 @@
 }
 /* ---- COBALT (light) ---- */
 [data-theme="cobalt"] {
+  --editor-line-highlight: rgba(0,0,0,0.03);
   --bg-0: #eef0f5;
   --bg-1: #f5f6fa;
   --bg-grad: radial-gradient(1000px 560px at 90% -22%, color-mix(in oklab, var(--accent) 6%, transparent), transparent 62%);
@@ -705,6 +708,7 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
     transform: translateX(-105%); transition: transform .22s ease;
     padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .sidebar.collapsed { width: min(86vw, 320px); }
   .sidebar.collapsed .side-title, .sidebar.collapsed .side-body { display: revert; }
@@ -749,7 +753,7 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 /* ============================== TOUCH INPUT ============================== */
 /* Finger-sized targets (44px) and 16px text in inputs so iOS does not zoom on focus. */
 @media (pointer: coarse) {
-  :root { --code-size: 16px; }
+  :root { --code-size: 16px; --editor-font-size: 16px; --editor-line-height: 24px; }
   .btn, .btn.sm { min-height: 44px; min-width: 44px; justify-content: center; }
   .icon-btn, .panel-head .panel-maximize-btn { width: 44px; height: 44px; }
   .segmented button { min-height: 44px; }

@@ -56,7 +56,9 @@ test('build produces a site with base, config, CSP and 404 fallback', () => {
     assert.ok(result.files.includes('js/app.js'));
     const index = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
     assert.match(index, /<base href="\/flink-sql-playground\/" \/>/);
-    assert.match(index, /connect-src 'self' https:\/\/cdn\.jsdelivr\.net https:\/\/api\.example\.com/);
+    assert.ok(result.files.includes('js/editor.bundle.js'));
+    assert.match(index, /connect-src 'self' https:\/\/api\.example\.com/);
+    assert.doesNotMatch(index, /jsdelivr/);
     assert.doesNotMatch(index, /frame-ancestors/);
     assert.equal(fs.readFileSync(path.join(out, '404.html'), 'utf8'), index);
     assert.equal(fs.readFileSync(path.join(out, 'js/config.js'), 'utf8').trim().split('\n').pop(),
@@ -64,5 +66,18 @@ test('build produces a site with base, config, CSP and 404 fallback', () => {
     assert.throws(() => site.build(out, '/flink-sql-playground/', API), /already exists/);
   } finally {
     fs.rmSync(path.dirname(out), { recursive: true, force: true });
+  }
+});
+
+test('build refuses a source without the editor bundle', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'static-site-'));
+  const source = path.join(tmp, 'src');
+  fs.mkdirSync(path.join(source, 'js'), { recursive: true });
+  fs.writeFileSync(path.join(source, 'index.html'), '<head>\n    <base href="/" />\n</head>');
+  try {
+    assert.throws(() => site.build(path.join(tmp, 'site'), '/sub/', API, source), /editor\.bundle\.js is missing/);
+    assert.equal(fs.existsSync(path.join(tmp, 'site')), false);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 });

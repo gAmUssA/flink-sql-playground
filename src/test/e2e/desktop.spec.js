@@ -7,7 +7,7 @@ const { stubApi } = require('./stub-api');
 test.beforeEach(async ({ page }) => {
   await stubApi(page);
   await page.goto('/');
-  await page.waitForFunction(() => window.monaco && document.querySelectorAll('.monaco-editor').length === 2);
+  await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
 });
 
 test('phone-only controls are not rendered', async ({ page }) => {
@@ -29,7 +29,7 @@ test('sidebar, editors, toolbar and results keep the desktop arrangement', async
         return Math.max(...centers) - Math.min(...centers) < 2; // every item on the same row
       })(),
       resultsBelowToolbar: box('#results-panel').top >= box('.toolbar').bottom - 1,
-      editorFontPx: parseFloat(getComputedStyle(document.querySelector('.view-line')).fontSize),
+      editorFontPx: parseFloat(getComputedStyle(document.querySelector('#query-editor .cm-content')).fontSize),
       buttonHeight: Math.round(box('#run-query-btn').height),
     };
   });

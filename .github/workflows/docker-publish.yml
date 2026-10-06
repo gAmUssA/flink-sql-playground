@@ -40,6 +40,16 @@ jobs:
       # native runner. This keeps the arm64 image build from compiling under QEMU emulation —
       # the cause of the prior 6-hour timeouts. The git SHA/branch are injected so the
       # deployed-build footer is accurate (the Docker context has no .git).
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      # The Gradle build bundles the SQL editor with esbuild (bundleEditor task).
+      - name: Install editor build dependencies
+        run: npm ci --omit=dev
+
       - name: Build application jar
         run: ./gradlew quarkusBuild --no-daemon -PbuildCommit=${{ github.sha }} -PbuildBranch=${{ github.ref_name }}
 

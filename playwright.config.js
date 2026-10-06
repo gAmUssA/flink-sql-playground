@@ -22,6 +22,7 @@ module.exports = defineConfig({
       testMatch: /mobile\.spec\.js/,
       use: { ...device, viewport, browserName },
     }))),
-    { name: 'desktop-chromium', testMatch: /desktop\.spec\.js/, use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } } },
+    { name: 'desktop-chromium', testMatch: /(desktop|editor)\.spec\.js/, use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } } },
+    { name: 'desktop-webkit', testMatch: /editor\.spec\.js/, use: { browserName: 'webkit', viewport: { width: 1280, height: 800 } } },
   ],
 });

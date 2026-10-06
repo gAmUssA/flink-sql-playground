@@ -11,7 +11,7 @@ An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQ
 
 ## Features
 
-- **Browser-based SQL editor** — Monaco Editor with SQL syntax highlighting and autocompletion
+- **Browser-based SQL editor** — CodeMirror 6 with Flink SQL highlighting, autocompletion of keywords and the session's table and column names, and Ctrl/Cmd+Enter to run
 - **Embedded Flink runtime** — single-JVM execution, no cluster setup needed
 - **Batch and streaming modes** — switch between execution modes per query
 - **Built-in data generators** — `datagen` and custom `faker` connectors for realistic test data
@@ -22,7 +22,7 @@ An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQ
 ## Prerequisites
 
 - **Java 25** — required to build and run locally ([Eclipse Temurin](https://adoptium.net/) recommended). Quarkus augmentation runs in the Gradle JVM and loads the compiled Java 25 classes, so the build itself must run on JDK 25.
-- **Node.js 22+** — runs the frontend unit tests (`./gradlew jsTest`, part of `./gradlew check`) with Node's built-in test runner; no npm install needed
+- **Node.js 22.19+** — bundles the SQL editor and runs the frontend unit tests. Run `npm ci --omit=dev` once before `./gradlew build` or `quarkusDev`: the `bundleEditor` task bundles CodeMirror with esbuild into `js/editor.bundle.js` (generated, not committed)
 - **Docker** (optional) — for running the app in a container
 
 ## Local Java Build
@@ -78,10 +78,11 @@ check use npm. They serve the static frontend and stub the API, so no backend is
 
 ```bash
 npm ci
+npm run build:editor                                  # bundle the CodeMirror editor
 npx playwright install chromium webkit
-npx playwright test                                   # phone (375/390/412 px) and desktop layouts
+npx playwright test                                   # phone (375/390/412 px), desktop and editor tests
 node scripts/serve-static.js 8790 &                   # then, in another step:
-node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95
+node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95 performance=85 transfer-kb=400
 ```
 
 ## Architecture

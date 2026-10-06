@@ -1,8 +1,12 @@
 {
   "name": "flink-sql-playground-frontend",
   "private": true,
-  "description": "Frontend tooling: browser tests for the SPA in src/main/resources/META-INF/resources",
+  "description": "Frontend: dependencies bundle the SQL editor (scripts/build-editor.js); devDependencies are the browser-test tooling",
+  "engines": {
+    "node": ">=22.19"
+  },
   "scripts": {
+    "build:editor": "node scripts/build-editor.js",
     "serve": "node scripts/serve-static.js",
     "test:e2e": "playwright test",
     "lighthouse": "node scripts/lighthouse-check.js"
@@ -11,5 +15,17 @@
     "@playwright/test": "1.63.0",
     "chrome-launcher": "1.2.2",
     "lighthouse": "13.5.0"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-sql": "6.10.0",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
+    "@lezer/highlight": "1.2.5",
+    "codemirror": "6.0.2",
+    "esbuild": "0.28.2"
   }
 }

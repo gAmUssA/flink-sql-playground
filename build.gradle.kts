@@ -69,8 +69,21 @@ sourceSets.named("main") {
     resources.srcDir(buildInfoDir)
 }
 
+// --- SQL editor bundle: esbuild bundles src/main/frontend into js/editor.bundle.js (gitignored).
+// Needs Node 22+ and `npm ci --omit=dev` first. The Docker build bundles it in a Node stage
+// and skips this task with -x bundleEditor.
+val editorBundle = "src/main/resources/META-INF/resources/js/editor.bundle.js"
+val bundleEditor by tasks.registering(Exec::class) {
+    description = "Bundles the CodeMirror SQL editor into $editorBundle"
+    group = "build"
+    inputs.dir("src/main/frontend")
+    inputs.files("package-lock.json", "scripts/build-editor.js")
+    outputs.file(editorBundle)
+    commandLine("node", "scripts/build-editor.js", editorBundle)
+}
+
 tasks.named("processResources") {
-    dependsOn(generateBuildInfo)
+    dependsOn(generateBuildInfo, bundleEditor)
 }
 
 val flinkVersion = "2.2.1"
@@ -178,11 +191,13 @@ val jsTest by tasks.registering(Exec::class) {
     description = "Runs the frontend unit tests in src/test/js with node --test"
     group = "verification"
     inputs.dir("src/test/js")
-    inputs.dir("src/main/resources/META-INF/resources/js")
+    inputs.files(fileTree("src/main/resources/META-INF/resources/js") { exclude("editor.bundle.js") })
     outputs.upToDateWhen { false }
     // Explicit file list: node --test on Node 22 does not accept a directory argument.
     val testFiles = fileTree("src/test/js") { include("**/*.test.js") }.files.map { it.path }.sorted()
     commandLine(listOf("node", "--test") + testFiles)
+    // The static-site build test copies the real resources, editor bundle included.
+    dependsOn(bundleEditor)
 }
 
 // 'check' lifecycle includes fast, smoke and frontend tests.

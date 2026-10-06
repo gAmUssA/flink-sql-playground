@@ -10,6 +10,10 @@ on:
       - 'src/main/resources/META-INF/resources/**'
       - 'src/main/resources/application.properties'
       - 'scripts/build-static-site.js'
+      - 'scripts/build-editor.js'
+      - 'src/main/frontend/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -31,6 +35,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Bundle the SQL editor
+        run: |
+          npm ci --omit=dev
+          node scripts/build-editor.js
 
       - name: Frontend unit tests
         run: node --test src/test/js/*.test.js
