@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.equalTo;
 
 /**
@@ -31,12 +32,13 @@ class SecurityHeadersTest {
 
     @Test
     void contentSecurityPolicyAllowsTheSpaAssetOrigins() {
-        // The CSP must permit exactly what index.html loads: Monaco from jsDelivr and
-        // Google Fonts. A regression that drops one of these breaks the editor.
+        // The CSP must permit exactly what index.html loads: same-origin scripts (the bundled
+        // editor) and Google Fonts. No third-party script origin is allowed.
         given()
                 .when().get("/api/build-info")
                 .then().statusCode(200)
-                .header("Content-Security-Policy", containsString("https://cdn.jsdelivr.net"))
+                .header("Content-Security-Policy", containsString("script-src 'self';"))
+                .header("Content-Security-Policy", not(containsString("cdn.jsdelivr.net")))
                 .header("Content-Security-Policy", containsString("https://fonts.gstatic.com"))
                 .header("Content-Security-Policy", containsString("frame-ancestors 'none'"));
     }
