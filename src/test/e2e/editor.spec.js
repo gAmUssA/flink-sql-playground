@@ -96,6 +96,13 @@ test('the editor background follows the light / dark toggle', async ({ page }) =
 });
 
 test('choosing a preset replaces both editors and Share sends their text', async ({ page }) => {
+  // Headless Linux has no clipboard: record what the app copies instead of hitting its prompt fallback.
+  await page.addInitScript(() => {
+    window.__copied = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: async (text) => { window.__copied.push(text); } }, configurable: true,
+    });
+  });
   await openApp(page);
   const options = await page.locator('#example-select option').evaluateAll((os) => os.map((o) => o.value));
   await page.locator('#example-select').selectOption(options[1]);
@@ -108,4 +115,5 @@ test('choosing a preset replaces both editors and Share sends their text', async
   await expect.poll(() => shared).not.toBeNull();
   expect(shared.query).toBe(preset.query);
   expect(shared.schema).toBe(preset.schema);
+  await expect.poll(() => page.evaluate(() => window.__copied)).toEqual([expect.stringMatching(/\/f\/abc123$/)]);
 });
