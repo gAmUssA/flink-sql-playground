@@ -14,51 +14,7 @@ import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { sql, SQLDialect } from '@codemirror/lang-sql';
 import { tags as t } from '@lezer/highlight';
 import { parseCreateTables, mergeTables, columnCandidates, statementAt, optionContext, optionCandidates,
-  tableAliases, expectsTableName, isDdlWithoutQuery } from './sql-schema.mjs';
-
-// Flink SQL keywords: the reserved words from the Flink SQL reference plus the DDL, window,
-// CEP and statement words the playground's examples use. lang-sql keeps its standard list
-// private, so the dialect spells out its own.
-const FLINK_KEYWORDS = `
-a abs absolute action add after all allocate allow alter and any are array_agg as asc asensitive
-assertion assignment asymmetric at atomic attributes authorization avg before begin begin_frame
-begin_partition between both breadth by call called cascade cascaded case cast catalog catalogs
-changelog_mode check classifier clear close coalesce collate collation collect column columns
-comment commit compile condition connect constraint constraints constructor contains continue
-corresponding count create cross cube cumulate current current_catalog current_database
-current_row current_schema cursor cycle data database databases deallocate declare default
-deferrable deferred define delete depth deref desc describe descriptor deterministic disconnect
-distinct distribution do domain drop dynamic each else empty end end_frame end_partition enforced
-equals escape estimated_cost every except exception exec execute exists explain extend external
-fetch filter first following for foreign found frame_row free from full function functions
-fusion generated get global go goto grant group grouping groups having hold hop identity if
-ignore immediate import in including indicator initially inner inout input insert intersect
-intersection into is isolation jar jars join json_execution_plan key language last lateral
-leading leave left level like like_regex limit load local localtime localtimestamp locator loop
-match match_number match_recognize matches measures member merge metadata method modifies module
-modules names natural new next no none normalize not nth_value null nulls of offset old omit on
-one only open option options or order ordinality out outer output over overlaps overwrite
-overwriting pad parameter partial partition partitioned partitions past path pattern per percent
-period permute plan_advice portion precedes preceding prepare preserve primary prior privileges
-procedure procedures public qualify range read reads recursive ref references referencing
-relative release remove rename repeat replace reset respect restrict result return returns
-revoke right role rollback rollup routine row rows running savepoint schema scope scroll search
-section seek select sensitive session set sets show similar skip some space specific
-specifictype sql sqlexception sqlstate sqlwarning start state statement static submultiset
-subset succeeds symmetric system system_time system_user table tables tablesample temporary
-then timezone_hour timezone_minute to top trailing transaction translation treat trigger
-truncate tumble uescape under undo union unique unknown unload unnest until update upsert usage
-use user using value values versioning view views virtual watermark watermarks when whenever
-where while window with within without work write
-`.trim().split(/\s+/).join(' ');
-
-const FLINK_TYPES = [
-  'char', 'varchar', 'string', 'boolean', 'binary', 'varbinary', 'bytes', 'decimal', 'dec',
-  'numeric', 'tinyint', 'smallint', 'int', 'integer', 'bigint', 'float', 'double', 'precision',
-  'date', 'time', 'timestamp', 'timestamp_ltz', 'zone', 'local', 'interval', 'array', 'multiset',
-  'map', 'raw', 'variant', 'year', 'month', 'day', 'hour', 'minute', 'second', 'real', 'character',
-  'varying', 'without', 'with',
-].join(' ');
+  tableAliases, expectsTableName, isDdlWithoutQuery, quoteIdentifier, FLINK_KEYWORDS, FLINK_TYPES } from './sql-schema.mjs';
 
 const FLINK_BUILTINS = [
   'proctime', 'current_watermark', 'source_watermark', 'to_timestamp', 'to_timestamp_ltz',
@@ -142,7 +98,9 @@ function tableColumnSource(tables) {
       if (!table) return null;
       return {
         from: qualified.from + qualifier.length + 1,
-        options: (table.columns || []).map((c) => ({ label: c.name, detail: c.type, type: 'property', boost: 2 })),
+        options: (table.columns || []).map((c) => ({
+          label: c.name, apply: quoteIdentifier(c.name), detail: c.type, type: 'property', boost: 2,
+        })),
         validFor: /^[\w$]*$/,
       };
     }
@@ -151,7 +109,7 @@ function tableColumnSource(tables) {
     if (!word && !ctx.explicit) return null;
     const from = word ? word.from : ctx.pos;
     const tableOptions = known.map((tb) => ({
-      label: tb.name, detail: `table · ${(tb.columns || []).length} columns`, type: 'class',
+      label: tb.name, apply: quoteIdentifier(tb.name), detail: `table · ${(tb.columns || []).length} columns`, type: 'class',
     }));
     if (expectsTableName(before)) {
       return { from, options: tableOptions.map((o) => ({ ...o, boost: 2 })), validFor: /^[\w$]*$/ };

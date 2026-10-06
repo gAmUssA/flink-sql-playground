@@ -85,6 +85,22 @@ test('columnCandidates offers the referenced tables, or every table when none is
     ['user_id', 'email']);
 });
 
+test('quoteIdentifier backticks names that are not plain identifiers or are reserved', async () => {
+  const { quoteIdentifier, columnCandidates } = await load();
+  assert.equal(quoteIdentifier('user_id'), 'user_id');
+  assert.equal(quoteIdentifier('Region2'), 'Region2');
+  assert.equal(quoteIdentifier('page views'), '`page views`');
+  assert.equal(quoteIdentifier('select'), '`select`');
+  assert.equal(quoteIdentifier('Order'), '`Order`');
+  assert.equal(quoteIdentifier('timestamp'), '`timestamp`');
+  assert.equal(quoteIdentifier('max'), '`max`');
+  assert.equal(quoteIdentifier('9lives'), '`9lives`');
+  assert.equal(quoteIdentifier('a`b'), '`a``b`');
+  const tables = [{ name: 'people', columns: [{ name: 'full name', type: 'STRING' }, { name: 'age', type: 'INT' }] }];
+  assert.deepEqual(columnCandidates('SELECT  FROM people', tables).map((c) => [c.label, c.apply]),
+    [['full name', '`full name`'], ['age', 'age']]);
+});
+
 test('mergeTables lets the earlier list win on a case-insensitive name clash', async () => {
   const { mergeTables } = await load();
   const server = [{ name: 'Orders', columns: [{ name: 'a' }] }];

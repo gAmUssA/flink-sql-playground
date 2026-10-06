@@ -26,6 +26,61 @@ const DATAGEN_COLUMN_OPTIONS = {
   other: ['kind', 'null-rate'],
 };
 
+// Flink SQL keywords: the reserved words from the Flink SQL reference plus the DDL, window,
+// CEP and statement words the playground's examples use. lang-sql keeps its standard list
+// private, so editor.js's dialect spells out its own from these, and quoteIdentifier uses them.
+export const FLINK_KEYWORDS = `
+a abs absolute action add after all allocate allow alter and any are array_agg as asc asensitive
+assertion assignment asymmetric at atomic attributes authorization avg before begin begin_frame
+begin_partition between both breadth by call called cascade cascaded case cast catalog catalogs
+changelog_mode check classifier clear close coalesce collate collation collect column columns
+comment commit compile condition connect constraint constraints constructor contains continue
+corresponding count create cross cube cumulate current current_catalog current_database
+current_row current_schema cursor cycle data database databases deallocate declare default
+deferrable deferred define delete depth deref desc describe descriptor deterministic disconnect
+distinct distribution do domain drop dynamic each else empty end end_frame end_partition enforced
+equals escape estimated_cost every except exception exec execute exists explain extend external
+fetch filter first following for foreign found frame_row free from full function functions
+fusion generated get global go goto grant group grouping groups having hold hop identity if
+ignore immediate import in including indicator initially inner inout input insert intersect
+intersection into is isolation jar jars join json_execution_plan key language last lateral
+leading leave left level like like_regex limit load local localtime localtimestamp locator loop
+match match_number match_recognize matches measures member merge metadata method modifies module
+modules names natural new next no none normalize not nth_value null nulls of offset old omit on
+one only open option options or order ordinality out outer output over overlaps overwrite
+overwriting pad parameter partial partition partitioned partitions past path pattern per percent
+period permute plan_advice portion precedes preceding prepare preserve primary prior privileges
+procedure procedures public qualify range read reads recursive ref references referencing
+relative release remove rename repeat replace reset respect restrict result return returns
+revoke right role rollback rollup routine row rows running savepoint schema scope scroll search
+section seek select sensitive session set sets show similar skip some space specific
+specifictype sql sqlexception sqlstate sqlwarning start state statement static submultiset
+subset succeeds symmetric system system_time system_user table tables tablesample temporary
+then timezone_hour timezone_minute to top trailing transaction translation treat trigger
+truncate tumble uescape under undo union unique unknown unload unnest until update upsert usage
+use user using value values versioning view views virtual watermark watermarks when whenever
+where while window with within without work write
+`.trim().split(/\s+/).join(' ');
+
+export const FLINK_TYPES = [
+  'char', 'varchar', 'string', 'boolean', 'binary', 'varbinary', 'bytes', 'decimal', 'dec',
+  'numeric', 'tinyint', 'smallint', 'int', 'integer', 'bigint', 'float', 'double', 'precision',
+  'date', 'time', 'timestamp', 'timestamp_ltz', 'zone', 'local', 'interval', 'array', 'multiset',
+  'map', 'raw', 'variant', 'year', 'month', 'day', 'hour', 'minute', 'second', 'real', 'character',
+  'varying', 'without', 'with',
+].join(' ');
+
+// Words an inserted identifier must not collide with: the keywords and type names above, plus
+// reserved aggregate and function names. Quoting a word that is not reserved is still valid SQL.
+const RESERVED_WORDS = new Set([...FLINK_KEYWORDS.split(' '), ...FLINK_TYPES.split(' '),
+  'min', 'max', 'sum', 'upper', 'lower', 'floor', 'ceil', 'ceiling', 'power', 'mod', 'rank', 'lag', 'lead']);
+
+/** `name` as SQL text: backticked (with `` for `) unless it is a plain, non-reserved identifier. */
+export function quoteIdentifier(name) {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !RESERVED_WORDS.has(name.toLowerCase())) return name;
+  return '`' + name.replace(/`/g, '``') + '`';
+}
+
 /** Values worth offering for a few options, by the last segment of the option key. */
 const OPTION_VALUES = { 'kind': ['random', 'sequence'], 'standard-error': ['true', 'false'], 'var-len': ['true', 'false'] };
 
@@ -255,7 +310,7 @@ export function columnCandidates(statement, tables) {
     const key = c.name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ label: c.name, detail: c.type ? `${c.type} · ${t.name}` : t.name });
+    out.push({ label: c.name, apply: quoteIdentifier(c.name), detail: c.type ? `${c.type} · ${t.name}` : t.name });
   }));
   return out;
 }

@@ -78,6 +78,17 @@ test('the Schema editor suggests connectors and their per-column options', async
     .toEqual(['random', 'sequence']);
 });
 
+test('accepting a table name that needs quoting inserts it in backticks', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/');
+  await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+  await setEditorText(page, 'schema', "CREATE TABLE `page views` (url STRING) WITH ('connector' = 'faker');");
+  await expect.poll(() => suggestions(page, 'query', 'SELECT * FROM pa')).toContain('page views');
+  await page.locator('.cm-tooltip-autocomplete li', { has: page.locator('.cm-completionLabel', { hasText: /^page views$/ }) })
+    .click();
+  await expect.poll(() => page.evaluate(() => queryEditor.getValue())).toBe('SELECT * FROM `page views`');
+});
+
 test('Flink keywords are highlighted with the theme keyword colour', async ({ page }) => {
   await openApp(page);
   await replaceQuery(page, 'SELECT window_start FROM TABLE(TUMBLE(TABLE orders, DESCRIPTOR(ts), INTERVAL \'1\' MINUTE))');
