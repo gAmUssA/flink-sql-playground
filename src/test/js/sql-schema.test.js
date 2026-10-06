@@ -219,6 +219,16 @@ test('statementRelations reads every FROM item, its alias and each JOIN after a 
   assert.deepEqual(referencedTables('SELECT * FROM t, LATERAL TABLE(fn(x)) AS T(a), u'), ['t', 'u']);
 });
 
+test('statementRelations reads an INSERT target with a column list', async () => {
+  const { referencedTables, columnCandidates } = await load();
+  assert.deepEqual(referencedTables('INSERT INTO sink (a, b) SELECT x FROM src'), ['sink', 'src']);
+  const tables = [
+    { name: 'sink', columns: [{ name: 'a', type: 'INT' }, { name: 'b', type: 'INT' }] },
+    { name: 'orders', columns: [{ name: 'region', type: 'STRING' }] },
+  ];
+  assert.deepEqual(columnCandidates('INSERT INTO sink (a, ', tables).map((c) => c.label), ['a', 'b']);
+});
+
 test('columnCandidates offers the columns of every table in a comma-separated FROM list', async () => {
   const { columnCandidates } = await load();
   const tables = [

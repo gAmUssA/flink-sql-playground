@@ -244,7 +244,8 @@ export function statementRelations(text) {
       if (name) {
         const start = i;
         i += name.length;
-        if (masked[skipSpace(masked, i)] !== '(') {
+        // After INTO a ( opens the target's column list; elsewhere it calls a table function.
+        if (kind === 'into' || masked[skipSpace(masked, i)] !== '(') {
           const t = lastIdentifier(text.slice(start, i));
           if (!NOT_TABLES.test(t)) table = t;
         } else i = skipSpace(masked, i); // a table function: TABLE(...), UNNEST(...)
