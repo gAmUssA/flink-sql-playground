@@ -180,13 +180,20 @@ test('datagen options follow DataGenTableSourceFactory per column type', async (
     ['fields.id.kind', 'fields.id.min', 'fields.id.max', 'fields.id.start', 'fields.id.end', 'fields.id.null-rate']);
   assert.deepEqual(fields('s STRING'),
     ['fields.s.kind', 'fields.s.length', 'fields.s.var-len', 'fields.s.start', 'fields.s.end', 'fields.s.null-rate']);
+  // VARBINARY / BYTES: visit(VarBinaryType) declares length and var-len only, no null-rate.
   assert.deepEqual(fields('b BYTES'),
-    ['fields.b.kind', 'fields.b.length', 'fields.b.var-len', 'fields.b.start', 'fields.b.end', 'fields.b.null-rate']);
+    ['fields.b.kind', 'fields.b.length', 'fields.b.var-len', 'fields.b.start', 'fields.b.end']);
+  assert.deepEqual(fields('vb VARBINARY(8)'),
+    ['fields.vb.kind', 'fields.vb.length', 'fields.vb.var-len', 'fields.vb.start', 'fields.vb.end']);
+  // BINARY: visit(BinaryType) declares no option; the sequence generator reads start / end.
+  assert.deepEqual(fields('bin BINARY(4)'), ['fields.bin.kind', 'fields.bin.start', 'fields.bin.end']);
   assert.deepEqual(fields('c CHAR(3)'), ['fields.c.kind', 'fields.c.start', 'fields.c.end', 'fields.c.null-rate']);
   assert.deepEqual(fields('ts TIMESTAMP_LTZ(3)'), ['fields.ts.kind', 'fields.ts.max-past', 'fields.ts.null-rate']);
   assert.deepEqual(fields('tags ARRAY<INT>'), ['fields.tags.kind', 'fields.tags.length', 'fields.tags.null-rate']);
   assert.deepEqual(fields('m MAP<STRING, INT>'), ['fields.m.kind', 'fields.m.length', 'fields.m.null-rate']);
-  assert.deepEqual(fields('flag BOOLEAN, d DATE'), ['fields.flag.kind', 'fields.flag.null-rate', 'fields.d.kind', 'fields.d.null-rate']);
+  // DATE and TIME: DataGenVisitorBase declares no option for them.
+  assert.deepEqual(fields('flag BOOLEAN, d DATE, tm TIME(3)'),
+    ['fields.flag.kind', 'fields.flag.null-rate', 'fields.d.kind', 'fields.tm.kind']);
 });
 
 test('tableAliases maps aliases and table names, ignoring clause keywords', async () => {

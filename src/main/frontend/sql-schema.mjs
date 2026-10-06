@@ -11,17 +11,20 @@ export const CONNECTOR_OPTIONS = {
 };
 
 /**
- * Per-column datagen options by type family, as Flink 2.2's DataGenTableSourceFactory accepts
- * them: min / max for numbers, max-past for timestamps, length for variable-length strings and
- * bytes and for collections, var-len for variable-length strings and bytes, start / end
- * (sequence) for numbers, strings and bytes.
+ * Per-column datagen options by type family: exactly the options each Flink 2.2.1 generator
+ * declares (RandomGeneratorVisitor and DataGenVisitorBase visit methods), plus kind for every
+ * column and start / end where SequenceGeneratorVisitor supports the type. Any other fields.*
+ * key fails DataGenTableSourceFactory's unconsumed-option check.
  */
 const DATAGEN_COLUMN_OPTIONS = {
   numeric: ['kind', 'min', 'max', 'start', 'end', 'null-rate'],
   interval: ['kind', 'min', 'max', 'null-rate'],
   varchar: ['kind', 'length', 'var-len', 'start', 'end', 'null-rate'],
+  varbinary: ['kind', 'length', 'var-len', 'start', 'end'],
   char: ['kind', 'start', 'end', 'null-rate'],
+  binary: ['kind', 'start', 'end'],
   timestamp: ['kind', 'max-past', 'null-rate'],
+  datetime: ['kind'],
   collection: ['kind', 'length', 'null-rate'],
   other: ['kind', 'null-rate'],
 };
@@ -332,9 +335,12 @@ export function typeFamily(type) {
   if (/^ROW\b/.test(t)) return 'row';
   if (/^(TINYINT|SMALLINT|INT|INTEGER|BIGINT|FLOAT|DOUBLE|REAL|DECIMAL|DEC|NUMERIC)\b/.test(t)) return 'numeric';
   if (/^INTERVAL\b/.test(t)) return 'interval';
-  if (/^(VARCHAR|STRING|VARBINARY|BYTES)\b|^(CHAR|CHARACTER|BINARY)\s+VARYING\b/.test(t)) return 'varchar';
-  if (/^(CHAR|CHARACTER|BINARY)\b/.test(t)) return 'char';
+  if (/^(VARCHAR|STRING)\b|^(CHAR|CHARACTER)\s+VARYING\b/.test(t)) return 'varchar';
+  if (/^(VARBINARY|BYTES)\b|^BINARY\s+VARYING\b/.test(t)) return 'varbinary';
+  if (/^(CHAR|CHARACTER)\b/.test(t)) return 'char';
+  if (/^BINARY\b/.test(t)) return 'binary';
   if (/^TIMESTAMP(?:_LTZ)?\b/.test(t)) return 'timestamp';
+  if (/^(DATE|TIME)\b/.test(t)) return 'datetime';
   return 'other';
 }
 
