@@ -2,8 +2,11 @@ package com.flinksqlfiddle.execution;
 
 import com.flinksqlfiddle.flink.FlinkEnvironmentFactory;
 import com.flinksqlfiddle.flink.FlinkProperties;
+import com.flinksqlfiddle.flink.SharedMiniCluster;
 import com.flinksqlfiddle.security.SqlSecurityValidator;
 import com.flinksqlfiddle.session.FlinkSession;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -15,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Smoke tests for every UI example query in examples.js.
- * Uses the session-based execution path — the same code path the real app uses.
+ * Uses the session-based execution path and the shared MiniCluster — the same code path
+ * the real app uses.
  *
  * Streaming adaptations for testability:
  * - 'rows-per-second' → 'number-of-rows' (bounded source so tests terminate)
@@ -26,14 +30,27 @@ import static org.junit.jupiter.api.Assertions.*;
 @Tag("smoke")
 class ExampleQueriesSmokeTest {
 
+    private static final FlinkProperties PROPERTIES =
+            new FlinkProperties(1, "8m", "32m", 5, null, true, 0, null, null);
+    private static SharedMiniCluster cluster;
+
     private FlinkEnvironmentFactory factory;
     private SqlExecutionService service;
 
+    @BeforeAll
+    static void startCluster() {
+        cluster = new SharedMiniCluster(PROPERTIES);
+        cluster.startAsync();
+    }
+
+    @AfterAll
+    static void stopCluster() throws Exception {
+        cluster.close();
+    }
+
     @BeforeEach
     void setUp() {
-        factory = new FlinkEnvironmentFactory(
-                new FlinkProperties(1, "8m", "32m", 5, null)
-        );
+        factory = new FlinkEnvironmentFactory(PROPERTIES, cluster);
         service = new SqlExecutionService(new SqlSecurityValidator(), ExecutionLimits.defaults());
     }
 

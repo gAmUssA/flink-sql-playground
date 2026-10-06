@@ -77,7 +77,7 @@ The dedicated planner thread per session exists because Calcite's metadata handl
 
 ## Flink Embedding
 
-Flink runs in embedded single-JVM mode — no explicit MiniCluster instantiation. `TableEnvironment.create()` internally provisions a `StreamExecutionEnvironment` with an embedded TaskManager.
+Flink runs in embedded single-JVM mode. `SharedMiniCluster` starts one long-lived MiniCluster in the background at boot (REST endpoint on `127.0.0.1`, ephemeral port; two task slots per session by default), and every `TableEnvironment` submits its jobs to it (`execution.target=remote`). Set `flink.shared-cluster=false` to fall back to Flink's per-job local executor, which starts and tears down a MiniCluster for every query.
 
 **Configuration per environment:**
 - Parallelism: 1

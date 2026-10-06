@@ -181,7 +181,7 @@ docker run -p 9090:9090 \
 |------------------------|-----------------|
 | JVM heap               | up to 1.5 GB    |
 | JVM metaspace          | 128 MB - 384 MB |
-| Flink MiniCluster (x5) | ~500 MB         |
+| Shared Flink MiniCluster | ~150 MB       |
 | OS / overhead          | ~200 MB         |
 | **Total**              | **~2 GB**       |
 

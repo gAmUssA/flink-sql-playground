@@ -26,7 +26,11 @@ public class AppConfig {
                 config.networkMemory(),
                 config.managedMemory(),
                 config.maxSessions(),
-                config.sessionIdleTimeout());
+                config.sessionIdleTimeout(),
+                config.sharedCluster(),
+                config.clusterSlots(),
+                config.clusterNetworkMemory(),
+                config.clusterStartTimeout());
     }
 
     @Produces

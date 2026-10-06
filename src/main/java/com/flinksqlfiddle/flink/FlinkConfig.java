@@ -27,4 +27,19 @@ public interface FlinkConfig {
 
     @WithDefault("15m")
     Duration sessionIdleTimeout();
+
+    /** Submit every query to one long-lived MiniCluster instead of one per job. */
+    @WithDefault("true")
+    boolean sharedCluster();
+
+    /** Task slots in the shared cluster; 0 means two per session (BATCH + STREAMING). */
+    @WithDefault("0")
+    int clusterSlots();
+
+    /** Network buffer memory for the shared cluster, allocated when it starts. */
+    @WithDefault("64m")
+    String clusterNetworkMemory();
+
+    @WithDefault("60s")
+    Duration clusterStartTimeout();
 }

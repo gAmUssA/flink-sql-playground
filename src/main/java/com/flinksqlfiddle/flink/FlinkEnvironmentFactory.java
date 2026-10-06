@@ -1,13 +1,17 @@
 package com.flinksqlfiddle.flink;
 
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.DeploymentOptions;
 import org.apache.flink.configuration.PipelineOptions;
+import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
 import java.net.URL;
 import java.util.List;
 
@@ -17,9 +21,21 @@ public class FlinkEnvironmentFactory {
     private static final Logger log = LoggerFactory.getLogger(FlinkEnvironmentFactory.class);
 
     private final FlinkProperties properties;
+    private final SharedMiniCluster sharedCluster;
 
+    /** Per-job MiniCluster: Flink's local executor starts a cluster for every query. */
     public FlinkEnvironmentFactory(FlinkProperties properties) {
+        this(properties, null);
+    }
+
+    /**
+     * Submits to {@code sharedCluster} when {@link FlinkProperties#sharedCluster()} is set;
+     * otherwise falls back to a per-job MiniCluster.
+     */
+    @Inject
+    public FlinkEnvironmentFactory(FlinkProperties properties, SharedMiniCluster sharedCluster) {
         this.properties = properties;
+        this.sharedCluster = properties.sharedCluster() ? sharedCluster : null;
     }
 
     public TableEnvironment createBatchEnvironment() {
@@ -49,7 +65,23 @@ public class FlinkEnvironmentFactory {
         config.setString("taskmanager.memory.network.max", properties.networkMemory());
         config.setString("taskmanager.memory.managed.size", properties.managedMemory());
         applyUserClasspath(config);
+        applySharedCluster(config);
         return config;
+    }
+
+    /**
+     * Points job submission at the shared MiniCluster's REST endpoint. The planner and
+     * the job graph stay in this JVM; only submission and result fetching go through
+     * the loopback REST endpoint.
+     */
+    private void applySharedCluster(Configuration config) {
+        if (sharedCluster == null) {
+            return;
+        }
+        URI rest = sharedCluster.awaitRestAddress();
+        config.set(DeploymentOptions.TARGET, "remote");
+        config.set(RestOptions.ADDRESS, rest.getHost());
+        config.set(RestOptions.PORT, rest.getPort());
     }
 
     /**
