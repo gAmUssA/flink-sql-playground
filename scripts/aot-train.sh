@@ -47,7 +47,8 @@ main() {
 
   cd "$app_dir"
   rm -f "$cache"
-  java "$@" -XX:AOTCacheOutput="$cache" -Dquarkus.http.port="$PORT" -jar quarkus-run.jar &
+  # The app's own output goes to stderr so stdout carries only the result line.
+  java "$@" -XX:AOTCacheOutput="$cache" -Dquarkus.http.port="$PORT" -jar quarkus-run.jar >&2 &
   APP_PID=$!
   local pid=$APP_PID
   trap 'stop_app "$APP_PID"' EXIT
