@@ -9,7 +9,7 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLi
 import { EditorState, Prec } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { syntaxHighlighting, syntaxTree, HighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
-import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { autocompletion, completionKeymap, completionStatus, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { sql, SQLDialect } from '@codemirror/lang-sql';
 import { tags as t } from '@lezer/highlight';
@@ -227,4 +227,5 @@ export function create(parent, { value = '', onRun = null, onChange = null, labe
   };
 }
 
-window.FlinkEditor = { create, parseCreateTables, mergeTables, FlinkSQL };
+// completionStatus lets browser tests read suggestions only once completion has settled.
+window.FlinkEditor = { create, parseCreateTables, mergeTables, completionStatus, FlinkSQL };

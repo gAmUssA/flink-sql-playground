@@ -3,6 +3,7 @@
 // the getValue/setValue paths (presets, share links) and same-origin loading.
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
+const { setEditorText, suggestions } = require('./completion');
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -46,45 +47,34 @@ test('Ctrl/Cmd+Enter in the query editor runs the query', async ({ page }) => {
   expect(await page.evaluate(() => document.querySelectorAll('#query-editor .cm-line').length)).toBe(1);
 });
 
-async function suggestions(page, editor, text) {
-  await page.keyboard.press('Escape');
-  await page.locator(`${editor} .cm-content`).click();
-  await page.keyboard.press(`${MOD}+A`);
-  await page.keyboard.press('Delete');
-  await page.keyboard.type(text, { delay: 10 });
-  const items = page.locator('.cm-tooltip-autocomplete li .cm-completionLabel');
-  await items.first().waitFor({ timeout: 3000 }).catch(() => {}); // no popup is a valid outcome
-  return items.allInnerTexts();
-}
-
 test('typing suggests built tables and their columns, with or without the table prefix', async ({ page }) => {
   await openApp(page);
-  expect(await suggestions(page, '#query-editor', 'SELECT * FROM ord')).toContain('orders');
-  expect((await suggestions(page, '#query-editor', 'SELECT reg'))[0]).toBe('region');
-  expect((await suggestions(page, '#query-editor', 'SELECT * FROM orders WHERE stat'))[0]).toBe('status');
-  expect((await suggestions(page, '#query-editor', 'SELECT orders.reg'))[0]).toBe('region');
-  expect((await suggestions(page, '#query-editor', 'SELECT * FROM orders o WHERE o.reg'))[0]).toBe('region');
-  expect(await suggestions(page, '#query-editor', "SELECT 'reg")).not.toContain('region');
+  await expect.poll(() => suggestions(page, 'query', 'SELECT * FROM ord')).toContain('orders');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT reg'))[0]).toBe('region');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT * FROM orders WHERE stat'))[0]).toBe('status');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT orders.reg'))[0]).toBe('region');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT * FROM orders o WHERE o.reg'))[0]).toBe('region');
+  expect(await suggestions(page, 'query', "SELECT 'reg")).not.toContain('region');
 });
 
 test('tables declared in the Schema editor complete before Build Schema', async ({ page }) => {
   await stubApi(page);
   await page.goto('/');
   await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
-  await suggestions(page, '#schema-editor', 'CREATE TABLE trades (trade_id BIGINT, venue STRING)');
-  await expect.poll(() => suggestions(page, '#query-editor', 'SELECT * FROM tra')).toContain('trades');
-  expect((await suggestions(page, '#query-editor', 'SELECT ven'))[0]).toBe('venue');
+  await setEditorText(page, 'schema', 'CREATE TABLE trades (trade_id BIGINT, venue STRING)');
+  // The editors pick up Schema editor tables after a debounce.
+  await expect.poll(() => suggestions(page, 'query', 'SELECT * FROM tra')).toContain('trades');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT ven'))[0]).toBe('venue');
 });
 
 test('the Schema editor suggests connectors and their per-column options', async ({ page }) => {
   await openApp(page);
-  expect(await suggestions(page, '#schema-editor', "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'fa"))
+  await expect.poll(() => suggestions(page, 'schema', "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'fa"))
     .toEqual(['faker']);
-  const keys = await suggestions(page, '#schema-editor',
-    "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'faker', 'fields.n");
+  const keys = await suggestions(page, 'schema', "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'faker', 'fields.n");
   expect(keys).toContain('fields.name.expression');
   expect(keys).not.toContain('fields.name.min'); // a datagen option
-  expect(await suggestions(page, '#schema-editor', "CREATE TABLE t (id INT) WITH ('connector' = 'datagen', 'fields.id.kind' = '"))
+  await expect.poll(() => suggestions(page, 'schema', "CREATE TABLE t (id INT) WITH ('connector' = 'datagen', 'fields.id.kind' = '"))
     .toEqual(['random', 'sequence']);
 });
 

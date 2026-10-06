@@ -3,6 +3,7 @@
 // each in Chromium and WebKit (see playwright.config.js).
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
+const { setEditorText, waitForSettledCompletion } = require('./completion');
 
 const PRIMARY_ACTIONS = ['#build-schema-btn', '#run-query-btn', '#mode-segmented [data-mode="STREAMING"]',
   '#mode-segmented [data-mode="BATCH"]', '#example-select', '#share-btn'];
@@ -316,8 +317,8 @@ test('a column suggestion appears while typing and inserts on tap', async ({ pag
   await page.locator('#build-schema-btn').tap();
   await expect(page.locator('#sb-phone-status-text')).toHaveText('Schema built');
   await page.locator('#query-editor .cm-content').tap();
-  await page.evaluate(() => queryEditor.setValue(''));
-  await page.keyboard.type('SELECT regi', { delay: 20 });
+  await setEditorText(page, 'query', 'SELECT regi', { typed: true });
+  await waitForSettledCompletion(page, 'query');
   const option = page.locator('.cm-tooltip-autocomplete li', { has: page.locator('.cm-completionLabel', { hasText: /^region$/ }) });
   await expect(option).toBeVisible();
   const box = await option.boundingBox();
