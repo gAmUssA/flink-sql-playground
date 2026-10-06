@@ -36,11 +36,12 @@ http() {
   printf '%s %s HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n%s' \
     "$method" "$path" "${#body}" "$body" >&3
   while true; do
-    if IFS= read -r -t "$HTTP_READ_TIMEOUT_SECONDS" line <&3; then
+    rc=0
+    IFS= read -r -t "$HTTP_READ_TIMEOUT_SECONDS" line <&3 || rc=$?
+    if (( rc == 0 )); then
       response+="$line"$'\n'
       continue
     fi
-    rc=$?
     exec 3<&-
     # read returns >128 on timeout and 1 at end of input (a last line without newline is kept).
     (( rc > 128 )) && return 1

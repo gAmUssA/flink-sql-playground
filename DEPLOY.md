@@ -59,7 +59,7 @@ For persistent fiddle storage, add the Supabase env vars below.
 
 ```bash
 fly launch --no-deploy
-fly scale memory 2048
+fly scale memory 3072   # the Dockerfile image maps a ~200 MB AOT cache; see Memory Budget
 fly deploy
 ```
 
