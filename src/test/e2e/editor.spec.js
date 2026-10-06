@@ -3,7 +3,7 @@
 // the getValue/setValue paths (presets, share links) and same-origin loading.
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
-const { setEditorText, suggestions } = require('./completion');
+const { setEditorText, settledLabels, suggestions } = require('./completion');
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -76,6 +76,20 @@ test('the Schema editor suggests connectors and their per-column options', async
   expect(keys).not.toContain('fields.name.min'); // a datagen option
   await expect.poll(() => suggestions(page, 'schema', "CREATE TABLE t (id INT) WITH ('connector' = 'datagen', 'fields.id.kind' = '"))
     .toEqual(['random', 'sequence']);
+});
+
+test('the Interval Join preset offers shipments columns after s.', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/');
+  await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+  const index = await page.evaluate(() => EXAMPLES.findIndex((e) => e.title === 'Interval Join'));
+  await page.locator('#example-select').selectOption(String(index));
+  const query = await page.evaluate((i) => EXAMPLES[i].query, index);
+  // FROM orders_stream o, shipments s: the cursor goes right after the first s.
+  await expect.poll(async () => {
+    await setEditorText(page, 'query', query.replace('s.shipment_id', 's.|'), { typed: true });
+    return settledLabels(page, 'query');
+  }).toEqual(['order_ref', 'ship_time', 'shipment_id']);
 });
 
 test('accepting a table name that needs quoting inserts it in backticks', async ({ page }) => {
