@@ -252,7 +252,8 @@ test('the guided tour is not offered on phones', async ({ page }) => {
 test('the toolbar has Build + Run on one row, mode / preset / share on the next', async ({ page }) => {
   await runBatchQuery(page);
   const layout = await page.evaluate(() => {
-    const row = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().top / 10);
+    // Vertical centre: controls on one flex row share it even when their heights differ.
+    const row = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return r.top + r.height / 2; };
     const clipped = [...document.querySelectorAll('.toolbar .btn')].filter((el) => el.offsetWidth > 0)
       .filter((el) => el.scrollWidth > el.clientWidth + 1).map((el) => el.id);
     return {
@@ -261,9 +262,10 @@ test('the toolbar has Build + Run on one row, mode / preset / share on the next'
       clipped,
     };
   });
-  expect(layout.firstRow[0]).toBe(layout.firstRow[1]);
-  expect(new Set(layout.secondRow).size).toBe(1);
-  expect(layout.secondRow[0]).toBeGreaterThan(layout.firstRow[0]);
+  const sameRow = (centres) => Math.max(...centres) - Math.min(...centres) < 2;
+  expect(sameRow(layout.firstRow)).toBe(true);
+  expect(sameRow(layout.secondRow)).toBe(true);
+  expect(Math.min(...layout.secondRow)).toBeGreaterThan(Math.max(...layout.firstRow) + 20);
   expect(layout.clipped).toEqual([]);
   await expect(page.locator('#sb-phone-status')).toBeVisible();
   await expect(page.locator('#sb-phone-status-text')).toHaveText(/5 rows in 12ms/);
