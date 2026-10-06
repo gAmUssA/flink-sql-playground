@@ -974,6 +974,9 @@ function shortType(t) { return String(t || '').replace(/\s+NOT NULL/i, '').repla
 // How long Share waits for the backend before falling back to a self-contained link.
 const SHARE_SAVE_TIMEOUT_MS = 5000;
 
+// Absolute URL for a site-relative path, honouring <base href> (the app may live under a subpath).
+function siteUrl(path) { return new URL(path, document.baseURI).href; }
+
 async function copyLink(url, copiedMessage) {
   try { await navigator.clipboard.writeText(url); setStatus(copiedMessage, 'ready'); }
   catch (e) { window.prompt('Copy this link:', url); setStatus('Fiddle link ready', 'ready'); }
@@ -989,12 +992,12 @@ async function shareFiddle() {
     });
     if (!res.ok) throw new Error('Failed to save fiddle (HTTP ' + res.status + ')');
     const data = await res.json();
-    await copyLink(`${window.location.origin}/f/${data.shortCode}`, 'Link copied to clipboard');
+    await copyLink(siteUrl(`f/${data.shortCode}`), 'Link copied to clipboard');
   } catch (err) {
     // Backend asleep, down or slow: share the fiddle inside the link itself instead.
     try {
       const fragment = await FiddleLink.encode(fiddle);
-      await copyLink(`${window.location.origin}/#${fragment}`, 'Self-contained link copied (server unavailable)');
+      await copyLink(siteUrl(`#${fragment}`), 'Self-contained link copied (server unavailable)');
     } catch (encodeErr) {
       setStatus('Share failed: ' + err.message + '; ' + encodeErr.message, 'error');
     }
@@ -1016,7 +1019,7 @@ async function loadFiddleFromUrl() {
     else setStatus('This fiddle link is damaged or from a newer version', 'error');
     return;
   }
-  const match = window.location.pathname.match(/^\/f\/([a-f0-9]+)$/);
+  const match = window.location.pathname.match(/\/f\/([a-f0-9]+)$/);
   if (!match) return;
   try {
     const res = await fetch(api(`/api/fiddles/${match[1]}`));

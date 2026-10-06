@@ -1,0 +1,53 @@
+name: Static frontend (GitHub Pages)
+
+# Publishes the SPA to GitHub Pages so it loads instantly even while the
+# Railway backend sleeps. The page calls the backend at PAGES_API_ORIGIN.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/main/resources/META-INF/resources/**'
+      - 'src/main/resources/application.properties'
+      - 'scripts/build-static-site.js'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  # Backend origin the static page calls. Override with the PAGES_API_ORIGIN repository variable.
+  API_ORIGIN: ${{ vars.PAGES_API_ORIGIN || 'https://flink-sql-playground-production.up.railway.app' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: pages
+        uses: actions/configure-pages@v6
+
+      - name: Build static site
+        run: node scripts/build-static-site.js _site "${{ steps.pages.outputs.base_path }}/" "$API_ORIGIN"
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
