@@ -45,9 +45,14 @@ COPY --from=build --chown=appuser:appuser /app/build/quarkus-app/quarkus/ ./quar
 # The training run needs the profile's config but no database: placeholder Supabase
 # settings, with startup migration and schema validation off. Pass --build-arg AOT_CACHE=false
 # to skip it; the JVM then starts without a cache. Keep the JVM flags in step with ENTRYPOINT.
+# Train as the runtime user and leave nothing behind in /tmp: Flink creates directories such
+# as /tmp/flink-web-upload during the run, and a copy owned by another user breaks job
+# submission at runtime ("File upload failed", AccessDeniedException).
 ARG QUARKUS_PROFILE=prod
 ARG AOT_CACHE=true
-COPY scripts/aot-train.sh /tmp/aot-train.sh
+RUN chown appuser:appuser /app
+USER appuser
+COPY --chown=appuser:appuser scripts/aot-train.sh /tmp/aot-train.sh
 RUN if [ "$AOT_CACHE" = "true" ]; then \
         QUARKUS_PROFILE=$QUARKUS_PROFILE \
         SUPABASE_DB_URL=jdbc:postgresql://127.0.0.1:1/aot-training SUPABASE_DB_USER=aot SUPABASE_DB_PASSWORD=aot \
@@ -56,8 +61,7 @@ RUN if [ "$AOT_CACHE" = "true" ]; then \
             -Dquarkus.flyway.migrate-at-start=false \
             -Dquarkus.hibernate-orm.schema-management.strategy=none; \
     fi \
-    && rm /tmp/aot-train.sh
-USER appuser
+    && find /tmp -mindepth 1 -maxdepth 1 -user appuser -exec rm -rf {} +
 EXPOSE 9090
 # G1 (not ZGC) and no -Xms: ZGC backs the heap with a shared-memory file, so the whole
 # committed heap is charged to the container as shmem, and -Xms768m pre-committed it at
