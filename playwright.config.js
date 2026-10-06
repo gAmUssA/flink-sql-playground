@@ -2,7 +2,8 @@
 // the API (src/test/e2e/stub-api.js), so no backend is needed.
 const { defineConfig, devices } = require('@playwright/test');
 
-const PORT = 8790;
+// E2E_PORT moves the static server off 8790, e.g. when another checkout already serves there.
+const PORT = Number(process.env.E2E_PORT || 8790);
 const phones = [
   { name: 'iphone13', device: devices['iPhone 13'], viewport: { width: 390, height: 844 } },
   { name: 'pixel7', device: devices['Pixel 7'], viewport: { width: 412, height: 915 } },
@@ -15,7 +16,7 @@ module.exports = defineConfig({
   retries: 0,
   reporter: [['list']],
   use: { baseURL: `http://127.0.0.1:${PORT}` },
-  webServer: { command: `node scripts/serve-static.js ${PORT}`, url: `http://127.0.0.1:${PORT}/`, reuseExistingServer: true },
+  webServer: { command: `node scripts/serve-static.js ${PORT}`, url: `http://127.0.0.1:${PORT}/`, reuseExistingServer: !process.env.CI },
   projects: [
     ...phones.flatMap(({ name, device, viewport }) => ['chromium', 'webkit'].map((browserName) => ({
       name: `${name}-${browserName}`,
