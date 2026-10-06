@@ -2,17 +2,31 @@
 // CREATE TABLE statements, tables a query reads, and the connector option a cursor inside a
 // WITH (...) clause is typing. Plain functions over strings, unit-tested with node --test.
 
-/** Connector options the playground allows (SecurityConstants.ALLOWED_CONNECTORS). `#` is a column. */
+/** Connectors the playground allows (SecurityConstants.ALLOWED_CONNECTORS) and their table options. */
 export const CONNECTOR_OPTIONS = {
-  datagen: ['number-of-rows', 'rows-per-second', 'scan.parallelism', 'fields.#.kind', 'fields.#.min',
-    'fields.#.max', 'fields.#.max-past', 'fields.#.length', 'fields.#.var-len', 'fields.#.start',
-    'fields.#.end', 'fields.#.null-rate'],
-  faker: ['number-of-rows', 'rows-per-second', 'fields.#.expression', 'fields.#.null-rate', 'fields.#.length'],
+  datagen: ['number-of-rows', 'rows-per-second', 'scan.parallelism'],
+  faker: ['number-of-rows', 'rows-per-second'],
   print: ['print-identifier', 'standard-error', 'sink.parallelism'],
   blackhole: [],
 };
 
-/** Values worth offering for a few options; keys match CONNECTOR_OPTIONS after `#` expansion. */
+/**
+ * Per-column datagen options by type family, as Flink 2.2's DataGenTableSourceFactory accepts
+ * them: min / max for numbers, max-past for timestamps, length for variable-length strings and
+ * bytes and for collections, var-len for variable-length strings and bytes, start / end
+ * (sequence) for numbers, strings and bytes.
+ */
+const DATAGEN_COLUMN_OPTIONS = {
+  numeric: ['kind', 'min', 'max', 'start', 'end', 'null-rate'],
+  interval: ['kind', 'min', 'max', 'null-rate'],
+  varchar: ['kind', 'length', 'var-len', 'start', 'end', 'null-rate'],
+  char: ['kind', 'start', 'end', 'null-rate'],
+  timestamp: ['kind', 'max-past', 'null-rate'],
+  collection: ['kind', 'length', 'null-rate'],
+  other: ['kind', 'null-rate'],
+};
+
+/** Values worth offering for a few options, by the last segment of the option key. */
 const OPTION_VALUES = { 'kind': ['random', 'sequence'], 'standard-error': ['true', 'false'], 'var-len': ['true', 'false'] };
 
 // Object.hasOwn needs Safari 15.4; the bundle targets Safari 15.
@@ -254,6 +268,55 @@ export function statementAt(text, pos) {
   return { text: text.slice(start, next === -1 ? text.length : next), offset: start };
 }
 
+/** Type family of a column type for connector options (datagen's type visitor, faker's checks). */
+export function typeFamily(type) {
+  const t = String(type || '').trim().toUpperCase();
+  if (/^(ARRAY|MULTISET)\b|\b(ARRAY|MULTISET)$/.test(t)) return 'collection';
+  if (/^MAP\b/.test(t)) return 'map';
+  if (/^ROW\b/.test(t)) return 'row';
+  if (/^(TINYINT|SMALLINT|INT|INTEGER|BIGINT|FLOAT|DOUBLE|REAL|DECIMAL|DEC|NUMERIC)\b/.test(t)) return 'numeric';
+  if (/^INTERVAL\b/.test(t)) return 'interval';
+  if (/^(VARCHAR|STRING|VARBINARY|BYTES)\b|^(CHAR|CHARACTER|BINARY)\s+VARYING\b/.test(t)) return 'varchar';
+  if (/^(CHAR|CHARACTER|BINARY)\b/.test(t)) return 'char';
+  if (/^TIMESTAMP(?:_LTZ)?\b/.test(t)) return 'timestamp';
+  return 'other';
+}
+
+/** Field names of a ROW<a INT, b STRING> or ROW(a INT, b STRING) type, as typed so far. */
+export function rowFields(type) {
+  const masked = maskSql(type);
+  const open = masked.search(/[<(]/);
+  if (open === -1) return [];
+  const close = masked[open] === '(' ? closingParen(masked, open) : masked.lastIndexOf('>');
+  const end = close > open ? close : masked.length;
+  return splitTopLevel(masked.slice(open + 1, end), type.slice(open + 1, end)).map((field) => {
+    const name = field.masked.match(/^(`(?:[^`]|``)*`|[\w$]+)/);
+    return name ? lastIdentifier(field.raw.slice(0, name[1].length)) : null;
+  }).filter(Boolean);
+}
+
+/** The fields.<col>.* option keys a connector accepts for one column {name, type}. */
+function columnOptions(connector, column) {
+  const prefix = `fields.${column.name}.`;
+  const family = typeFamily(column.type);
+  if (connector === 'datagen') {
+    const keys = family === 'map' ? DATAGEN_COLUMN_OPTIONS.collection
+      : family === 'row' ? DATAGEN_COLUMN_OPTIONS.other
+        : DATAGEN_COLUMN_OPTIONS[family];
+    return keys.map((k) => prefix + k);
+  }
+  if (connector === 'faker') {
+    // FlinkFakerTableSourceFactory: MAP takes key / value expressions, ROW one per field, and
+    // length only for ARRAY, MULTISET and MAP.
+    const expressions = family === 'map' ? ['key.expression', 'value.expression']
+      : family === 'row' ? rowFields(column.type).map((f) => `${f}.expression`)
+        : ['expression'];
+    const length = family === 'collection' || family === 'map' ? ['length'] : [];
+    return [...expressions, 'null-rate', ...length].map((k) => prefix + k);
+  }
+  return [];
+}
+
 /**
  * The value of the first `'connector' = '...'` pair between `from` and `to`, or null. Quotes
  * are paired in the masked text, so a pair inside a comment is not read.
@@ -274,7 +337,7 @@ function connectorOf(masked, text, from, to) {
 /**
  * When `before` (the statement text up to the cursor) ends inside an open quote in a CREATE
  * TABLE ... WITH (...) clause, returns what that quote is: an option key, or the value of `key`.
- * {kind: 'key'|'value', key, typed, connector, columns} or null.
+ * {kind: 'key'|'value', key, typed, connector, columns: [{name, type}]} or null.
  */
 export function optionContext(before) {
   const masked = maskSql(before);
@@ -290,8 +353,8 @@ export function optionContext(before) {
 
   const tables = parseCreateTables(before);
   // Connector options such as fields.<col>.kind apply to physical columns only.
-  const columns = tables.length
-    ? tables[tables.length - 1].columns.filter((c) => c.kind === 'physical').map((c) => c.name) : [];
+  const columns = tables.length ? tables[tables.length - 1].columns.filter((c) => c.kind === 'physical')
+    .map(({ name, type }) => ({ name, type })) : [];
   const connector = connectorOf(masked, before, open + 1, quote);
   const typed = before.slice(quote + 1);
   const valueOf = masked.slice(open + 1, quote).match(/'\s*=\s*$/);
@@ -312,12 +375,9 @@ export function optionCandidates(ctx) {
     return hasOwn(OPTION_VALUES, last) ? OPTION_VALUES[last] : [];
   }
   // Own properties only: a connector named constructor or __proto__ must not reach Object.prototype.
-  const templates = ctx.connector && hasOwn(CONNECTOR_OPTIONS, ctx.connector) ? CONNECTOR_OPTIONS[ctx.connector] : [];
-  const keys = ['connector'];
-  templates.forEach((t) => {
-    if (!t.includes('#')) keys.push(t);
-    else ctx.columns.forEach((c) => keys.push(t.replace('#', c)));
-  });
+  const known = ctx.connector && hasOwn(CONNECTOR_OPTIONS, ctx.connector);
+  const keys = ['connector', ...(known ? CONNECTOR_OPTIONS[ctx.connector] : [])];
+  if (known) ctx.columns.forEach((c) => keys.push(...columnOptions(ctx.connector, c)));
   return keys;
 }
 

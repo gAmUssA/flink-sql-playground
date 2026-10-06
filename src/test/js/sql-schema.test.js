@@ -59,7 +59,7 @@ test('parseCreateTables keeps columns that follow a comment, with the comment ou
 test('optionContext offers per-column options for a column after a comment', async () => {
   const { optionContext } = await load();
   const ctx = optionContext("CREATE TABLE t (\n  -- the id\n  id INT,\n  name STRING\n) WITH ('connector' = 'datagen', 'fields.");
-  assert.deepEqual(ctx.columns, ['id', 'name']);
+  assert.deepEqual(ctx.columns.map((c) => c.name), ['id', 'name']);
 });
 
 test('referencedTables finds FROM, JOIN, window TABLE and INTO targets', async () => {
@@ -103,9 +103,10 @@ test('optionContext recognises an open key quote and the value of a key', async 
   const { optionContext } = await load();
   const head = "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'faker', ";
   assert.deepEqual(optionContext(head + "'fie"),
-    { kind: 'key', key: null, typed: 'fie', connector: 'faker', columns: ['id', 'name'] });
+    { kind: 'key', key: null, typed: 'fie', connector: 'faker',
+      columns: [{ name: 'id', type: 'INT' }, { name: 'name', type: 'STRING' }] });
   assert.deepEqual(optionContext("CREATE TABLE t (id INT) WITH ('connector' = 'da"),
-    { kind: 'value', key: 'connector', typed: 'da', connector: null, columns: ['id'] });
+    { kind: 'value', key: 'connector', typed: 'da', connector: null, columns: [{ name: 'id', type: 'INT' }] });
   assert.equal(optionContext("SELECT 'abc"), null);
   assert.equal(optionContext(head + "'x' = 'y')"), null);
   assert.equal(optionContext("CREATE TABLE t (id INT) WITH ('connector' = 'faker') -- 'x"), null);
@@ -122,14 +123,14 @@ test('optionContext offers per-column options for physical columns only', async 
   const { optionContext } = await load();
   const ctx = optionContext("CREATE TABLE t (id INT, big AS id * 2, ts TIMESTAMP(3) METADATA FROM 'timestamp', "
     + "note STRING COMMENT 'no metadata here') WITH ('connector' = 'datagen', 'fields.");
-  assert.deepEqual(ctx.columns, ['id', 'note']);
+  assert.deepEqual(ctx.columns.map((c) => c.name), ['id', 'note']);
 });
 
 test('optionCandidates expands per-column options for the declared connector', async () => {
   const { optionCandidates } = await load();
-  assert.deepEqual(optionCandidates({ kind: 'key', connector: 'faker', columns: ['id'] }),
-    ['connector', 'number-of-rows', 'rows-per-second', 'fields.id.expression', 'fields.id.null-rate', 'fields.id.length']);
-  assert.deepEqual(optionCandidates({ kind: 'key', connector: null, columns: ['id'] }), ['connector']);
+  assert.deepEqual(optionCandidates({ kind: 'key', connector: 'faker', columns: [{ name: 'id', type: 'INT' }] }),
+    ['connector', 'number-of-rows', 'rows-per-second', 'fields.id.expression', 'fields.id.null-rate']);
+  assert.deepEqual(optionCandidates({ kind: 'key', connector: null, columns: [{ name: 'id', type: 'INT' }] }), ['connector']);
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'connector' }), ['datagen', 'faker', 'print', 'blackhole']);
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'fields.id.kind' }), ['random', 'sequence']);
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'number-of-rows' }), []);
@@ -139,6 +140,37 @@ test('optionCandidates expands per-column options for the declared connector', a
   }
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'constructor' }), []);
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'fields.id.__proto__' }), []);
+});
+
+test('faker options follow FlinkFakerTableSourceFactory per column type', async () => {
+  const { optionContext, optionCandidates } = await load();
+  const fields = (ddl) => optionCandidates(optionContext(`CREATE TABLE t (${ddl}) WITH ('connector' = 'faker', 'f`))
+    .filter((k) => k.startsWith('fields.'));
+  assert.deepEqual(fields('id INT'), ['fields.id.expression', 'fields.id.null-rate']);
+  assert.deepEqual(fields('tags ARRAY<STRING>, codes INT MULTISET'), [
+    'fields.tags.expression', 'fields.tags.null-rate', 'fields.tags.length',
+    'fields.codes.expression', 'fields.codes.null-rate', 'fields.codes.length']);
+  assert.deepEqual(fields('addr ROW<city STRING, `zip code` INT>'),
+    ['fields.addr.city.expression', 'fields.addr.zip code.expression', 'fields.addr.null-rate']);
+  assert.deepEqual(fields('m MAP<STRING, INT>'),
+    ['fields.m.key.expression', 'fields.m.value.expression', 'fields.m.null-rate', 'fields.m.length']);
+});
+
+test('datagen options follow DataGenTableSourceFactory per column type', async () => {
+  const { optionContext, optionCandidates } = await load();
+  const fields = (ddl) => optionCandidates(optionContext(`CREATE TABLE t (${ddl}) WITH ('connector' = 'datagen', 'f`))
+    .filter((k) => k.startsWith('fields.'));
+  assert.deepEqual(fields('id BIGINT'),
+    ['fields.id.kind', 'fields.id.min', 'fields.id.max', 'fields.id.start', 'fields.id.end', 'fields.id.null-rate']);
+  assert.deepEqual(fields('s STRING'),
+    ['fields.s.kind', 'fields.s.length', 'fields.s.var-len', 'fields.s.start', 'fields.s.end', 'fields.s.null-rate']);
+  assert.deepEqual(fields('b BYTES'),
+    ['fields.b.kind', 'fields.b.length', 'fields.b.var-len', 'fields.b.start', 'fields.b.end', 'fields.b.null-rate']);
+  assert.deepEqual(fields('c CHAR(3)'), ['fields.c.kind', 'fields.c.start', 'fields.c.end', 'fields.c.null-rate']);
+  assert.deepEqual(fields('ts TIMESTAMP_LTZ(3)'), ['fields.ts.kind', 'fields.ts.max-past', 'fields.ts.null-rate']);
+  assert.deepEqual(fields('tags ARRAY<INT>'), ['fields.tags.kind', 'fields.tags.length', 'fields.tags.null-rate']);
+  assert.deepEqual(fields('m MAP<STRING, INT>'), ['fields.m.kind', 'fields.m.length', 'fields.m.null-rate']);
+  assert.deepEqual(fields('flag BOOLEAN, d DATE'), ['fields.flag.kind', 'fields.flag.null-rate', 'fields.d.kind', 'fields.d.null-rate']);
 });
 
 test('tableAliases maps aliases and table names, ignoring clause keywords', async () => {
