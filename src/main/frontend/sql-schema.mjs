@@ -225,6 +225,16 @@ function skipSpace(masked, i) {
   return i;
 }
 
+const WINDOW_SOURCE = /\(\s*(?:tumble|hop|cumulate|session)\s*\(\s*table\s+/iy;
+
+/** The table a window TVF reads, for TABLE(TUMBLE(TABLE t, ...)) with `open` at its (; else null. */
+function windowSource(masked, text, open) {
+  const head = matchAt(WINDOW_SOURCE, masked, open);
+  if (!head) return null;
+  const name = matchAt(NAME, masked, open + head.length);
+  return name ? lastIdentifier(text.slice(open + head.length, open + head.length + name.length)) : null;
+}
+
 /**
  * Offset of the AS that ends `FOR SYSTEM_TIME AS OF <expr>` when the expression starts at `i`,
  * read at parenthesis depth 0; otherwise the offset where the expression stops (ON, USING, a
@@ -251,8 +261,8 @@ function afterTimeTravel(masked, i) {
  * Relations a statement reads or writes, [{table, alias}] in keyword order: every item of a
  * comma-separated FROM list, each JOIN target, and TABLE / INTO targets. An alias is recorded
  * for FROM and JOIN items (null when absent), including after FOR SYSTEM_TIME AS OF <expr>; a
- * clause keyword is never taken as one. Subqueries and table functions are skipped as items;
- * the TABLE inside a window function is its own target.
+ * clause keyword is never taken as one. A window TVF item, TABLE(TUMBLE(TABLE t, ...)) w, reads
+ * t under alias w; other subqueries and table functions are skipped as items.
  */
 export function statementRelations(text) {
   const masked = maskSql(text);
@@ -274,7 +284,10 @@ export function statementRelations(text) {
         if (kind === 'into' || masked[skipSpace(masked, i)] !== '(') {
           const t = lastIdentifier(text.slice(start, i));
           if (!NOT_TABLES.test(t)) table = t;
-        } else i = skipSpace(masked, i); // a table function: TABLE(...), UNNEST(...)
+        } else {
+          i = skipSpace(masked, i); // a table function: TABLE(...), UNNEST(...)
+          if (/^table$/i.test(name)) table = windowSource(masked, text, i);
+        }
       }
       if (masked[i] === '(') {
         const close = closingParen(masked, i);

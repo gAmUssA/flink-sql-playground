@@ -251,6 +251,17 @@ test('tableAliases reads the alias after FOR SYSTEM_TIME AS OF', async () => {
     { a: 'a', b: 'b', on: 'b' });
 });
 
+test('tableAliases maps a window TVF alias to the table it reads', async () => {
+  const { tableAliases, referencedTables } = await load();
+  for (const fn of ['TUMBLE', 'HOP', 'CUMULATE', 'SESSION']) {
+    const sql = `SELECT s.temp FROM TABLE(${fn}(TABLE sensors, DESCRIPTOR(ts), INTERVAL '1' MINUTE)) s JOIN tanks t ON s.id = t.id`;
+    assert.deepEqual({ ...tableAliases(sql) }, { sensors: 'sensors', s: 'sensors', tanks: 'tanks', t: 'tanks' }, fn);
+  }
+  assert.deepEqual(referencedTables('SELECT * FROM TABLE(TUMBLE(TABLE `cat`.`db`.Orders, DESCRIPTOR(ts), INTERVAL \'1\' MINUTE)) AS w'),
+    ['orders']);
+  assert.deepEqual({ ...tableAliases('SELECT * FROM TABLE(my_fn(1)) f') }, {});
+});
+
 test('columnCandidates offers the columns of every table in a comma-separated FROM list', async () => {
   const { columnCandidates } = await load();
   const tables = [
