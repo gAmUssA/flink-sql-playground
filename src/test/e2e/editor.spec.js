@@ -117,3 +117,32 @@ test('choosing a preset replaces both editors and Share sends their text', async
   expect(shared.schema).toBe(preset.schema);
   await expect.poll(() => page.evaluate(() => window.__copied)).toEqual([expect.stringMatching(/\/f\/abc123$/)]);
 });
+
+test('the Code font tweak restyles the editors', async ({ page }) => {
+  await openApp(page);
+  const font = () => page.evaluate(() => getComputedStyle(document.querySelector('#query-editor .cm-scroller')).fontFamily);
+  expect(await font()).toContain('IBM Plex Mono');
+  await page.locator('#tweaks-btn').click();
+  await page.locator('#twk-font').selectOption({ label: 'Space Mono' });
+  await expect.poll(font).toContain('Space Mono');
+});
+
+test('Ctrl/Cmd+Enter in the schema editor does not start a second build while one runs', async ({ page }) => {
+  await openApp(page);
+  let inFlight = 0;
+  let maxInFlight = 0;
+  await page.route('**/api/sessions/*/execute', async (route) => {
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    inFlight -= 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ columns: [], rows: [] }) });
+  });
+  await page.locator('#schema-editor .cm-content').click();
+  await page.keyboard.press(`${MOD}+Enter`);
+  await page.keyboard.press(`${MOD}+Enter`);
+  await page.keyboard.press(`${MOD}+Enter`);
+  await expect(page.locator('#build-schema-btn')).toBeEnabled();
+  await expect(page.locator('#status-text')).toHaveText('Schema built');
+  expect(maxInFlight).toBe(1);
+});

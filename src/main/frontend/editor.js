@@ -94,10 +94,12 @@ const theme = EditorView.theme({
   '&': { height: '100%', backgroundColor: 'var(--editor-bg)', color: 'var(--tk-id)',
     fontSize: 'var(--editor-font-size, 13.5px)' },
   '&.cm-focused': { outline: 'none' },
-  '.cm-scroller': { fontFamily: 'var(--editor-font)', lineHeight: 'var(--editor-line-height, 22px)' },
+  '.cm-scroller': { fontFamily: 'var(--mono)', lineHeight: 'var(--editor-line-height, 22px)' },
   '.cm-content': { padding: '12px 0', caretColor: '#3b82f6' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#3b82f6', borderLeftWidth: '2px' },
   '.cm-gutters': { backgroundColor: 'var(--editor-bg)', color: 'var(--tk-com)', border: 'none' },
+  // Monaco's spacing: numbers right-aligned in a 41px column, 26px before the code.
+  '.cm-lineNumbers .cm-gutterElement': { minWidth: '41px', padding: '0 26px 0 0', textAlign: 'right', boxSizing: 'content-box' },
   '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--tk-id)' },
   '.cm-activeLine': { backgroundColor: 'var(--editor-line-highlight)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection':

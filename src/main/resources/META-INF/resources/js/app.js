@@ -265,7 +265,9 @@ function setTablesDrawer(open, { restoreFocus = false } = {}) {
 function initEditors() {
   const first = (typeof EXAMPLES !== 'undefined' && EXAMPLES.length) ? EXAMPLES[0] : null;
   schemaEditor = FlinkEditor.create(document.getElementById('schema-editor'), {
-    value: first ? first.schema : '', label: 'Schema (DDL) editor', onRun: () => buildSchema()
+    value: first ? first.schema : '', label: 'Schema (DDL) editor',
+    // The button is disabled while a build runs; the shortcut must not start a second one.
+    onRun: () => { if (!document.getElementById('build-schema-btn').disabled) buildSchema(); }
   });
   queryEditor = FlinkEditor.create(document.getElementById('query-editor'), {
     value: first ? first.query : '', label: 'Query editor', onRun: () => { if (!R.running) runQuery(); }
