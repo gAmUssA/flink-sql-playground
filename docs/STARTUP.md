@@ -116,3 +116,25 @@ This keeps the single-jar bundled mode working unchanged while enabling a future
 static frontend (instant, per-PR previews) + scale-to-zero backend whose cold start is
 paid invisibly during warm-up. Splitting the deploy (static-host config, SPA fallback) is a
 deferred follow-up.
+
+## Implemented: shared MiniCluster
+
+Flink's local executor started a fresh MiniCluster (Pekko RPC, blob server, Netty
+shuffle, REST endpoint) for every query. `SharedMiniCluster` now starts one cluster in
+the background at boot and every session submits to it (`flink.shared-cluster`, default
+`true`).
+
+Measured with `scripts/measure-coldstart.py` on the same build, median of 3, Apple
+Silicon, JDK 25, G1 (`--jvm=-Dflink.shared-cluster=false|true`):
+
+| Phase | Per-job cluster | Shared cluster |
+|---|---|---|
+| Boot to HTTP ready | 1.04 s | 1.09 s |
+| Cold first query | 2.02 s | 1.34 s |
+| Warm query | 0.68 s | 0.44 s |
+| RSS after the run | 727 MB | 866 MB |
+
+The remaining warm-query time is planning and Janino code generation. The shared
+cluster holds about 140 MB more while the app is awake (network buffers and the
+long-lived TaskManager); Railway app sleeping releases it when idle.
+
