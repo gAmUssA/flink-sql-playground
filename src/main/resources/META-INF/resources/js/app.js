@@ -240,6 +240,10 @@ require(['vs/editor/editor.main'], function () {
   if (first) setMode(first.mode);
   applyMonacoTheme();
   loadFiddleFromUrl();
+  // Opening another fiddle link in the same tab changes only the fragment, with no reload.
+  window.addEventListener('hashchange', () => {
+    if (FiddleLink.isFiddleFragment(window.location.hash)) loadFiddleFromUrl();
+  });
 });
 
 /* ============================== Session ============================== */
@@ -974,6 +978,9 @@ function shortType(t) { return String(t || '').replace(/\s+NOT NULL/i, '').repla
 // How long Share waits for the backend before falling back to a self-contained link.
 const SHARE_SAVE_TIMEOUT_MS = 5000;
 
+// Absolute URL for a site-relative path, honouring <base href> (the app may live under a subpath).
+function siteUrl(path) { return new URL(path, document.baseURI).href; }
+
 async function copyLink(url, copiedMessage) {
   try { await navigator.clipboard.writeText(url); setStatus(copiedMessage, 'ready'); }
   catch (e) { window.prompt('Copy this link:', url); setStatus('Fiddle link ready', 'ready'); }
@@ -989,12 +996,12 @@ async function shareFiddle() {
     });
     if (!res.ok) throw new Error('Failed to save fiddle (HTTP ' + res.status + ')');
     const data = await res.json();
-    await copyLink(`${window.location.origin}/f/${data.shortCode}`, 'Link copied to clipboard');
+    await copyLink(siteUrl(`f/${data.shortCode}`), 'Link copied to clipboard');
   } catch (err) {
     // Backend asleep, down or slow: share the fiddle inside the link itself instead.
     try {
       const fragment = await FiddleLink.encode(fiddle);
-      await copyLink(`${window.location.origin}/#${fragment}`, 'Self-contained link copied (server unavailable)');
+      await copyLink(siteUrl(`#${fragment}`), 'Self-contained link copied (server unavailable)');
     } catch (encodeErr) {
       setStatus('Share failed: ' + err.message + '; ' + encodeErr.message, 'error');
     }
@@ -1009,20 +1016,30 @@ function applyFiddle(fiddle, message) {
   setTimeout(() => { if (sessionId) buildSchema(); }, 500);
 }
 
+// Bumped on every load request; a load whose decode or fetch finishes after a newer
+// request has started is discarded, so a slow earlier link can't overwrite a later one.
+let fiddleLoadGeneration = 0;
+
 async function loadFiddleFromUrl() {
+  const generation = ++fiddleLoadGeneration;
+  const isCurrent = () => generation === fiddleLoadGeneration;
   if (FiddleLink.isFiddleFragment(window.location.hash)) {
     const fiddle = await FiddleLink.decode(window.location.hash);
+    if (!isCurrent()) return;
     if (fiddle) applyFiddle(fiddle, 'Fiddle loaded from link');
     else setStatus('This fiddle link is damaged or from a newer version', 'error');
     return;
   }
-  const match = window.location.pathname.match(/^\/f\/([a-f0-9]+)$/);
+  const match = window.location.pathname.match(/\/f\/([a-f0-9]+)$/);
   if (!match) return;
   try {
     const res = await fetch(api(`/api/fiddles/${match[1]}`));
+    if (!isCurrent()) return;
     if (!res.ok) { setStatus('Fiddle not found', 'error'); return; }
-    applyFiddle(await res.json(), 'Fiddle loaded');
-  } catch (err) { setStatus('Failed to load fiddle', 'error'); }
+    const fiddle = await res.json();
+    if (!isCurrent()) return;
+    applyFiddle(fiddle, 'Fiddle loaded');
+  } catch (err) { if (isCurrent()) setStatus('Failed to load fiddle', 'error'); }
 }
 
 /* ============================== Build info ============================== */
