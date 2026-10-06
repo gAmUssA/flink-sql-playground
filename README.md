@@ -15,13 +15,14 @@ An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQ
 - **Embedded Flink runtime** — single-JVM execution, no cluster setup needed
 - **Batch and streaming modes** — switch between execution modes per query
 - **Built-in data generators** — `datagen` and custom `faker` connectors for realistic test data
-- **Shareable fiddles** — save and share SQL snippets via short URLs
-- **Example queries** — 9 preloaded examples covering windows, joins, pattern matching, and more
+- **Shareable fiddles** — save and share SQL snippets via short URLs; when the server is unavailable, Share copies a self-contained link that carries the SQL in the URL fragment
+- **Example queries** — 15 preloaded examples covering windows, joins, pattern matching, and more
 - **Security sandbox** — blocked UDF injection, connector whitelist, execution timeouts
 
 ## Prerequisites
 
 - **Java 25** — required to build and run locally ([Eclipse Temurin](https://adoptium.net/) recommended). Quarkus augmentation runs in the Gradle JVM and loads the compiled Java 25 classes, so the build itself must run on JDK 25.
+- **Node.js 22+** — runs the frontend unit tests (`./gradlew jsTest`, part of `./gradlew check`) with Node's built-in test runner; no npm install needed
 - **Docker** (optional) — for running the app in a container
 
 ## Local Java Build
@@ -67,7 +68,9 @@ To stop: press `Ctrl+C` or run `docker compose down`.
 ## Running Tests
 
 ```bash
-./gradlew test
+./gradlew test      # fast JVM tests
+./gradlew jsTest    # frontend unit tests (node --test on src/test/js/*.test.js)
+./gradlew check     # everything, including the Flink smoke tests
 ```
 
 ## Architecture
