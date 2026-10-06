@@ -135,7 +135,7 @@ Vanilla HTML/CSS/JavaScript with no build step.
 |------------------|-------------------------------------------------|
 | `index.html`     | SPA shell                                       |
 | `js/app.js`      | Session management, API calls, result rendering, guided tour |
-| `js/examples.js` | Preloaded example queries (9 examples)          |
+| `js/examples.js` | Preloaded example queries (15 examples)         |
 | `css/style.css`  | Theme system (Nebula/Carbon/Cobalt), responsive layout |
 
 The editors are CodeMirror 6 with a Flink SQL dialect, bundled from `src/main/frontend/editor.js` by `scripts/build-editor.js` (esbuild) into `js/editor.bundle.js`, which is generated at build time and not committed. Autocomplete offers keywords; table and column names (unqualified, `table.` or `alias.`) from the session's built tables merged with the `CREATE TABLE` statements in the Schema editor; and connector names and options inside `WITH (...)`. The SQL text analysis lives in `src/main/frontend/sql-schema.mjs`, unit-tested with `node --test`. Ctrl/Cmd+Enter runs the query (or builds the schema from the DDL editor). Results render as an HTML table with per-column filter inputs, row-kind color coding, and a truncation indicator.
