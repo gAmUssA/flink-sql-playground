@@ -1,4 +1,4 @@
-FROM eclipse-temurin:25.0.2_10-jdk AS build
+FROM eclipse-temurin:25.0.4.1_1-jdk AS build
 WORKDIR /app
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY gradle/ gradle/
@@ -24,7 +24,7 @@ RUN QUARKUS_PROFILE=$QUARKUS_PROFILE ./gradlew clean quarkusBuild --no-daemon \
     -Dquarkus.profile=$QUARKUS_PROFILE \
     -PbuildCommit=$GIT_COMMIT -PbuildBranch=$GIT_BRANCH
 
-FROM eclipse-temurin:25.0.2_10-jre
+FROM eclipse-temurin:25.0.4.1_1-jre
 WORKDIR /app
 # Run as a non-root user. This process compiles and executes untrusted user SQL in an
 # embedded Flink MiniCluster in-JVM, so dropping root limits the blast radius of any

@@ -4,7 +4,7 @@
 #
 # To build straight from source instead (Koyeb, docker compose, local), use the root
 # Dockerfile. The fast-jar must already exist at build/quarkus-app/ (run `./gradlew quarkusBuild`).
-FROM eclipse-temurin:25.0.2_10-jre
+FROM eclipse-temurin:25.0.4.1_1-jre
 WORKDIR /app
 # Run as a non-root user — this process executes untrusted user SQL in-JVM (embedded Flink),
 # so dropping root limits the blast radius of any sandbox escape.
