@@ -3,6 +3,7 @@
 // the getValue/setValue paths (presets, share links) and same-origin loading.
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
+const { setEditorText, settledLabels, suggestions } = require('./completion');
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -46,15 +47,82 @@ test('Ctrl/Cmd+Enter in the query editor runs the query', async ({ page }) => {
   expect(await page.evaluate(() => document.querySelectorAll('#query-editor .cm-line').length)).toBe(1);
 });
 
-test('autocomplete offers the session tables and their columns', async ({ page }) => {
+test('typing suggests built tables and their columns, with or without the table prefix', async ({ page }) => {
   await openApp(page);
-  await replaceQuery(page, 'SELECT * FROM ord');
-  await page.keyboard.press('Control+Space');
-  await expect(page.locator('.cm-tooltip-autocomplete li', { hasText: /^orders/ })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await replaceQuery(page, 'SELECT orders.reg');
-  await page.keyboard.press('Control+Space');
-  await expect(page.locator('.cm-tooltip-autocomplete li', { hasText: /^region/ })).toBeVisible();
+  await expect.poll(() => suggestions(page, 'query', 'SELECT * FROM ord')).toContain('orders');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT reg'))[0]).toBe('region');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT * FROM orders WHERE stat'))[0]).toBe('status');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT orders.reg'))[0]).toBe('region');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT * FROM orders o WHERE o.reg'))[0]).toBe('region');
+  expect(await suggestions(page, 'query', "SELECT 'reg")).not.toContain('region');
+});
+
+test('tables declared in the Schema editor complete before Build Schema', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/');
+  await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+  await setEditorText(page, 'schema', 'CREATE TABLE trades (trade_id BIGINT, venue STRING)');
+  // The editors pick up Schema editor tables after a debounce.
+  await expect.poll(() => suggestions(page, 'query', 'SELECT * FROM tra')).toContain('trades');
+  await expect.poll(async () => (await suggestions(page, 'query', 'SELECT ven'))[0]).toBe('venue');
+});
+
+test('the Schema editor suggests connectors and their per-column options', async ({ page }) => {
+  await openApp(page);
+  await expect.poll(() => suggestions(page, 'schema', "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'fa"))
+    .toEqual(['faker']);
+  const keys = await suggestions(page, 'schema', "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'faker', 'fields.n");
+  expect(keys).toContain('fields.name.expression');
+  expect(keys).not.toContain('fields.name.min'); // a datagen option
+  await expect.poll(() => suggestions(page, 'schema', "CREATE TABLE t (id INT) WITH ('connector' = 'datagen', 'fields.id.kind' = '"))
+    .toEqual(['random', 'sequence']);
+});
+
+/** Loads the preset titled `title`, puts the cursor right after the first `qualified` reference
+ * reduced to its qualifier (`s.shipment_id` → `s.|`), and returns the settled suggestions. */
+async function presetQualifierLabels(page, title, qualified) {
+  await stubApi(page);
+  await page.goto('/');
+  await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+  const index = await page.evaluate((t) => EXAMPLES.findIndex((e) => e.title === t), title);
+  expect(index, `preset "${title}"`).toBeGreaterThanOrEqual(0);
+  await page.locator('#example-select').selectOption(String(index));
+  const query = await page.evaluate((i) => EXAMPLES[i].query, index);
+  const qualifier = qualified.slice(0, qualified.indexOf('.') + 1);
+  return async () => {
+    await setEditorText(page, 'query', query.replace(qualified, `${qualifier}|`), { typed: true });
+    return settledLabels(page, 'query');
+  };
+}
+
+test('the Interval Join preset offers shipments columns after s.', async ({ page }) => {
+  // FROM orders_stream o, shipments s
+  const labels = await presetQualifierLabels(page, 'Interval Join', 's.shipment_id');
+  await expect.poll(labels).toEqual(['order_ref', 'ship_time', 'shipment_id']);
+});
+
+test('the Temporal Join preset offers fx_rates columns after r.', async ({ page }) => {
+  // JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
+  const labels = await presetQualifierLabels(page, 'Temporal Join — enrich at event time (Faker)', 'r.rate_to_eur');
+  await expect.poll(labels).toEqual(['ccy', 'rate_time', 'rate_to_eur']);
+});
+
+test('the Brewmaster preset offers sensor_readings columns after s.', async ({ page }) => {
+  // FROM TABLE(TUMBLE(TABLE sensor_readings, ...)) s
+  const labels = await presetQualifierLabels(page, 'Brewmaster Monitoring (Faker)', 's.temperature_c');
+  await expect.poll(labels).toEqual(['event_time', 'ph_level', 'pressure_psi', 'reading_id', 'recipe_id', 'tank_id',
+    'temperature_c']);
+});
+
+test('accepting a table name that needs quoting inserts it in backticks', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/');
+  await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+  await setEditorText(page, 'schema', "CREATE TABLE `page views` (url STRING) WITH ('connector' = 'faker');");
+  await expect.poll(() => suggestions(page, 'query', 'SELECT * FROM pa')).toContain('page views');
+  await page.locator('.cm-tooltip-autocomplete li', { has: page.locator('.cm-completionLabel', { hasText: /^page views$/ }) })
+    .click();
+  await expect.poll(() => page.evaluate(() => queryEditor.getValue())).toBe('SELECT * FROM `page views`');
 });
 
 test('Flink keywords are highlighted with the theme keyword colour', async ({ page }) => {

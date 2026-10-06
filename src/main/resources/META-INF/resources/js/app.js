@@ -269,10 +269,24 @@ function setTablesDrawer(open, { restoreFocus = false } = {}) {
 /* ============================== Editors ============================== */
 // CodeMirror editors from js/editor.bundle.js. Theme colours and the font follow CSS
 // variables, so applyTweaks() restyles them with no editor call.
+// Autocomplete tables: the session's built tables, plus tables the Schema editor declares
+// that are not built yet (built ones win, since the server reports their real types).
+function updateEditorTables() {
+  const draft = FlinkEditor.parseCreateTables(schemaEditor ? schemaEditor.getValue() : '');
+  const tables = FlinkEditor.mergeTables(schemaTables, draft);
+  [schemaEditor, queryEditor].forEach((ed) => { if (ed) ed.setTables(tables); });
+}
+
+let editorTablesTimer = null;
+function scheduleEditorTables() {
+  clearTimeout(editorTablesTimer);
+  editorTablesTimer = setTimeout(updateEditorTables, 250);
+}
+
 function initEditors() {
   const first = (typeof EXAMPLES !== 'undefined' && EXAMPLES.length) ? EXAMPLES[0] : null;
   schemaEditor = FlinkEditor.create(document.getElementById('schema-editor'), {
-    value: first ? first.schema : '', label: 'Schema (DDL) editor',
+    value: first ? first.schema : '', label: 'Schema (DDL) editor', onChange: scheduleEditorTables,
     // The button is disabled while a build runs; the shortcut must not start a second one.
     onRun: () => { if (!document.getElementById('build-schema-btn').disabled) buildSchema(); }
   });
@@ -280,6 +294,7 @@ function initEditors() {
     value: first ? first.query : '', label: 'Query editor', onRun: () => { if (!R.running) runQuery(); }
   });
   if (first) setMode(first.mode);
+  updateEditorTables();
   loadFiddleFromUrl();
   // Opening another fiddle link in the same tab changes only the fragment, with no reload.
   window.addEventListener('hashchange', () => {
@@ -947,8 +962,7 @@ async function refreshSchemaBrowser() {
     if (!res.ok) return;
     const data = await res.json();
     schemaTables = data.tables || [];
-    // Table and column names feed the editors' autocomplete.
-    [schemaEditor, queryEditor].forEach((ed) => { if (ed) ed.setTables(schemaTables); });
+    updateEditorTables();
     confirmingDrop = null;
     renderSchemaBrowser();
   } catch (e) { /* convenience feature */ }

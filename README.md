@@ -11,7 +11,7 @@ An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQ
 
 ## Features
 
-- **Browser-based SQL editor** — CodeMirror 6 with Flink SQL highlighting, autocompletion of keywords and the session's table and column names, and Ctrl/Cmd+Enter to run
+- **Browser-based SQL editor** — CodeMirror 6 with Flink SQL highlighting, schema-aware autocomplete (tables and columns — also before Build Schema, from the DDL you type — plus connector options inside `WITH (...)`), and Ctrl/Cmd+Enter to run
 - **Embedded Flink runtime** — single-JVM execution, no cluster setup needed
 - **Batch and streaming modes** — switch between execution modes per query
 - **Built-in data generators** — `datagen` and custom `faker` connectors for realistic test data
@@ -84,6 +84,9 @@ npx playwright test                                   # phone (375/390/412 px), 
 node scripts/serve-static.js 8790 &                   # then, in another step:
 node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95 performance=85 transfer-kb=400
 ```
+
+The tests serve on port 8790 and reuse a server already listening there, except on CI. Set
+`E2E_PORT` (for example `E2E_PORT=8796 npx playwright test`) when another checkout serves 8790.
 
 ## Architecture
 
