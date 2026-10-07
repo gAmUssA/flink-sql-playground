@@ -1,6 +1,7 @@
 'use strict';
-// Phone layout: runs on the iPhone 13 (390x844), Pixel 7 (412x915) and 375x667 projects,
-// each in Chromium and WebKit (see playwright.config.js).
+// Phone layout: runs on the iPhone 13 (390x844), Pixel 7 (412x915) and 375x667 projects and on
+// the rotated iPhone 13 (844x390) and Pixel 7 (915x412) projects, each in Chromium and WebKit
+// (see playwright.config.js).
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
 const { setEditorText, waitForSettledCompletion } = require('./completion');
@@ -75,10 +76,10 @@ async function expectTappable(page, selector) {
 
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
-test('runs as a touch device below the phone breakpoint', async ({ page }) => {
+test('runs as a touch device that meets the phone criterion', async ({ page }) => {
   const env = await page.evaluate(() => ({
     coarse: matchMedia('(pointer: coarse)').matches,
-    phone: matchMedia('(max-width: 767px)').matches,
+    phone: matchMedia(PHONE_QUERY).matches,
   }));
   expect(env).toEqual({ coarse: true, phone: true });
 });
@@ -250,7 +251,7 @@ test('the guided tour is not offered on phones', async ({ page }) => {
   await expect(page.locator('#tour-btn')).toBeHidden();
 });
 
-test('the toolbar has Build + Run on one row, mode / preset / share on the next', async ({ page }) => {
+test('the toolbar puts Build + Run first; upright, mode / preset / share wrap to the next row', async ({ page }) => {
   await runBatchQuery(page);
   const layout = await page.evaluate(() => {
     // Vertical centre: controls on one flex row share it even when their heights differ.
@@ -266,7 +267,9 @@ test('the toolbar has Build + Run on one row, mode / preset / share on the next'
   const sameRow = (centres) => Math.max(...centres) - Math.min(...centres) < 2;
   expect(sameRow(layout.firstRow)).toBe(true);
   expect(sameRow(layout.secondRow)).toBe(true);
-  expect(Math.min(...layout.secondRow)).toBeGreaterThan(Math.max(...layout.firstRow) + 20);
+  const { width, height } = page.viewportSize();
+  if (height > width) expect(Math.min(...layout.secondRow)).toBeGreaterThan(Math.max(...layout.firstRow) + 20);
+  else expect(sameRow([...layout.firstRow, ...layout.secondRow]), 'sideways, the whole toolbar fits one row').toBe(true);
   expect(layout.clipped).toEqual([]);
   await expect(page.locator('#sb-phone-status')).toBeVisible();
   await expect(page.locator('#sb-phone-status-text')).toHaveText(/5 rows in 12ms/);

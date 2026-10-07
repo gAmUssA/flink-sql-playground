@@ -184,12 +184,14 @@ function setMode(mode) {
 }
 
 /* ============================== Phone layout ============================== */
-const PHONE_QUERY = '(max-width: 767px)';
+// Narrower than 768px, or a short touch screen (a phone held sideways). css/style.css mirrors
+// this query for the phone @media block; layout-criterion.spec.js checks they agree.
+const PHONE_QUERY = '(max-width: 767px), (max-height: 500px) and (pointer: coarse)';
 function isPhoneLayout() { return !!(window.matchMedia && window.matchMedia(PHONE_QUERY).matches); }
 
 const PHONE_PANELS = { schema: 'schema-panel', query: 'query-panel', results: 'results-panel' };
 
-// Below 768px the Schema, Query and Results panels share the screen; one is shown at a time.
+// On phones the Schema, Query and Results panels share the screen; one is shown at a time.
 // The switcher follows the ARIA tabs pattern: only the selected tab is a Tab stop.
 function setPhoneView(view) {
   document.querySelector('.app').dataset.mview = view;
