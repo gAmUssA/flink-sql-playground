@@ -80,7 +80,7 @@
   --text-3: #696b89;
   --shadow: 0 16px 40px -20px rgba(40,30,90,0.28);
   --gutter: #b3b5c8;
-  --tk-kw: #7c3aed; --tk-ty: #0b7f75; --tk-fn: #db2777; --tk-str: #15803d;
+  --tk-kw: #7c3aed; --tk-ty: #0b7f75; --tk-fn: #d52473; --tk-str: #15803d;
   --tk-num: #b45309; --tk-id: #1f2233; --tk-pun: #6d6f8e; --tk-op: #c2410c; --tk-com: #6d708c;
   --grid-line: rgba(20,21,40,0.06);
   --editor-bg: #ffffff;
