@@ -74,6 +74,23 @@ async function expectTappable(page, selector) {
   expect(hit, `${selector} is covered by another element`).toBe(true);
 }
 
+/**
+ * The open column filter sits inside the window, and its input, Clear and Apply can each be
+ * reached: scrolled into view inside the popover if it had to cap its height, then tappable.
+ */
+async function expectFilterInsideWindow(page) {
+  const pop = page.locator('.filt-pop');
+  await expect(pop).toBeVisible();
+  const vp = page.viewportSize();
+  const box = await pop.evaluate((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
+  expect(box.top, 'popover top edge').toBeGreaterThanOrEqual(0);
+  expect(box.bottom, 'popover bottom edge').toBeLessThanOrEqual(vp.height);
+  for (const sel of ['.filt-pop .filt-v', '.filt-pop [data-clear]', '.filt-pop [data-apply]']) {
+    await page.locator(sel).scrollIntoViewIfNeeded();
+    await expectTappable(page, sel);
+  }
+}
+
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
 test('runs as a touch device that meets the phone criterion', async ({ page }) => {
@@ -314,6 +331,12 @@ test('opening the drawer closes the Tweaks panel and the column filter above it'
   await expect(page.locator('.filt-pop')).toBeVisible();
   await page.locator('#tables-drawer-btn').tap();
   await expect(page.locator('.filt-pop')).toHaveCount(0);
+});
+
+test('the column filter keeps its input, Clear and Apply inside the window', async ({ page }) => {
+  await runBatchQuery(page);
+  await page.locator('.th-btn').first().tap();
+  await expectFilterInsideWindow(page);
 });
 
 test('a column suggestion appears while typing and inserts on tap', async ({ page }) => {

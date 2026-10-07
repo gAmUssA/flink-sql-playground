@@ -399,7 +399,7 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 .rv-chip-x:hover { color: #fff; background: #ef4444; }
 .rv-clear-all { font-size: 12px; font-weight: 500; color: var(--text-3); padding: 4px 6px; white-space: nowrap; }
 .rv-clear-all:hover { color: var(--text); }
-.filt-pop { position: fixed; z-index: 340; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--r-md); box-shadow: var(--shadow), 0 0 0 1px var(--border); padding: 14px; animation: tourIn .16s ease both; }
+.filt-pop { position: fixed; z-index: 340; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--r-md); box-shadow: var(--shadow), 0 0 0 1px var(--border); padding: 14px; animation: tourIn .16s ease both; }
 .filt-pop-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 11px; }
 .filt-pop-col { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text); }
 .filt-pop-type { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); }

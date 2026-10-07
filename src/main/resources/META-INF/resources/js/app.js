@@ -772,6 +772,15 @@ function openFilterPopover(colIdx, anchorRect) {
     pop.querySelector('[data-apply]').addEventListener('click', apply);
     pop.querySelector('[data-clear]').addEventListener('click', () => removeFilter(colIdx));
     const fi = pop.querySelector('.filt-v'); if (fi) fi.focus();
+    if (pop.isConnected) place();
+  }
+  // Below the column header when it fits. In a short window (a phone held sideways, or the
+  // keyboard open) it moves up to stay inside, and scrolls once it is taller than the window.
+  function place() {
+    const margin = 10;
+    pop.style.maxHeight = (window.innerHeight - 2 * margin) + 'px';
+    const h = pop.offsetHeight;
+    pop.style.top = Math.max(margin, Math.min(anchorRect.bottom + 7, window.innerHeight - margin - h)) + 'px';
   }
   draw();
 
@@ -779,8 +788,8 @@ function openFilterPopover(colIdx, anchorRect) {
   const pw = 268;
   const left = Math.max(10, Math.min(anchorRect.left, window.innerWidth - pw - 10));
   pop.style.left = left + 'px';
-  pop.style.top = (anchorRect.bottom + 7) + 'px';
   pop.style.width = pw + 'px';
+  place();
 
   const onDocDown = (e) => {
     if (e.target.closest('.filt-pop') || e.target.closest('.th-btn') || e.target.closest('.rv-chip')) return;
@@ -789,7 +798,11 @@ function openFilterPopover(colIdx, anchorRect) {
   const onKey = (e) => { if (e.key === 'Escape') closeFilterPopover(); else if (e.key === 'Enter') apply(); };
   document.addEventListener('mousedown', onDocDown);
   document.addEventListener('keydown', onKey);
-  pop._cleanup = () => { document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey); };
+  window.addEventListener('resize', place);
+  pop._cleanup = () => {
+    document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey);
+    window.removeEventListener('resize', place);
+  };
 }
 
 // Changelog stream-control filter: op-type toggle pills + free-text highlight search.

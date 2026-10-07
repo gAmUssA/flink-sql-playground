@@ -120,3 +120,22 @@ test('growing past the criterion closes the drawer and restores the desktop sema
   expect((await layoutState(page)).sidebarInert).toBe(true);
   await expect(page.locator('#drawer-backdrop')).toBeHidden();
 });
+
+test('the column filter fits a 667x375 phone and scrolls when the keyboard leaves less room', async ({ page }) => {
+  await page.setViewportSize({ width: 667, height: 375 });
+  await runBatchQuery(page);
+  const header = page.locator('.th-btn').first();
+  await header.tap();
+  const inside = async () => page.locator('.filt-pop').evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const reach = (s) => { const b = el.querySelector(s); b.scrollIntoView({ block: 'nearest' }); const q = b.getBoundingClientRect(); return q.top >= 0 && q.bottom <= window.innerHeight; };
+    return { top: r.top >= 0, bottom: r.bottom <= window.innerHeight, input: reach('.filt-v'), clear: reach('[data-clear]'), apply: reach('[data-apply]') };
+  });
+  const ALL = { top: true, bottom: true, input: true, clear: true, apply: true };
+  expect(await inside()).toEqual(ALL);
+  // The keyboard opens over the focused input: the window shrinks below the popover's height.
+  await page.setViewportSize({ width: 667, height: 190 });
+  await expect.poll(inside).toEqual(ALL);
+  const scroll = await page.locator('.filt-pop').evaluate((el) => ({ capped: el.scrollHeight > el.clientHeight, overflowY: getComputedStyle(el).overflowY }));
+  expect(scroll).toEqual({ capped: true, overflowY: 'auto' });
+});

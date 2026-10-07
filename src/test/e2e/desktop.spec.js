@@ -51,3 +51,24 @@ test('desktop panels are plain regions and the sidebar is fully reachable', asyn
   await expect(page.locator('#schema-browser')).not.toHaveAttribute('aria-hidden', 'true');
 });
 
+// At 1280x800 the popover does not fit below the results header (on main its buttons ran past
+// the window's bottom edge), so it moves up; in a taller window it keeps its place below the header.
+for (const [height, want] of [[800, { below: false, inside: true, scrolls: false }], [1100, { below: true, inside: true, scrolls: false }]]) {
+  test(`the column filter stays inside a 1280x${height} window`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height });
+    await page.click('#mode-segmented [data-mode="BATCH"]');
+    await page.click('#run-query-btn');
+    await expect(page.locator('.rv-table')).toBeVisible();
+    await page.locator('.th-btn').first().click();
+    const g = await page.evaluate(() => {
+      const header = document.querySelector('.th-btn').getBoundingClientRect();
+      const pop = document.querySelector('.filt-pop');
+      const r = pop.getBoundingClientRect();
+      const reach = (s) => { const q = pop.querySelector(s).getBoundingClientRect(); return q.top >= 0 && q.bottom <= window.innerHeight; };
+      return { below: Math.abs(parseFloat(pop.style.top) - header.bottom - 7) < 1,
+        inside: r.top >= 0 && r.bottom <= window.innerHeight && reach('.filt-v') && reach('[data-clear]') && reach('[data-apply]'),
+        scrolls: pop.scrollHeight > pop.clientHeight };
+    });
+    expect(g).toEqual(want);
+  });
+}
