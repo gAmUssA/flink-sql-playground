@@ -77,6 +77,7 @@ for (const [height, want] of [[800, { below: false, inside: true, scrolls: false
  * WCAG contrast of each element's text against the background it is drawn on: the element's own
  * and its ancestors' background colours, composited until one is opaque. Colours are resolved
  * through a canvas, so color-mix() and alpha work whatever syntax the browser reports.
+ * It ignores `opacity` on the element and its ancestors, so it overstates contrast for dimmed text.
  */
 function measureContrast(targets) {
   const cv = document.createElement('canvas'); cv.width = cv.height = 1;
