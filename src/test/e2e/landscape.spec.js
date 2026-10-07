@@ -181,3 +181,26 @@ test('an upright phone with the keyboard open keeps its toolbar and status bar',
   await page.evaluate(() => queryEditor.focus());
   expect(await chrome(page, 'query')).toMatchObject({ toolbar: true, statusbar: true });
 });
+
+for (const view of ['schema', 'query']) {
+  test(`a ${view} pane maximized before the phone layout keeps clear of the notch`, async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'WebKit has no safe-area inset emulation');
+    const INSET = 47;
+    const landscape = page.viewportSize();
+    await page.locator(`.m-views [data-mview="${view}"]`).tap();
+    // Maximize on a tablet-sized screen (desktop layout), then shrink back to the phone held sideways.
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await page.locator(`#${view}-panel .panel-maximize-btn`).tap();
+    await expect(page.locator(`#${view}-panel`)).toHaveClass(/panel-maximized/);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: INSET, right: INSET, top: 0, bottom: 21 } });
+    await page.setViewportSize(landscape);
+    await expect.poll(async () => (await layoutState(page)).jsPhone).toBe(true);
+    // Measure the settled box, not one scaled by the maximize animation.
+    await page.locator(`#${view}-panel`).evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+    const r = await page.locator(`#${view}-panel`).evaluate((el) => { const b = el.getBoundingClientRect(); return { left: b.left, right: b.right, width: b.width }; });
+    expect(r.width, 'the maximized pane is shown').toBeGreaterThan(0);
+    expect(r.left, 'left edge').toBeGreaterThanOrEqual(INSET);
+    expect(r.right, 'right edge').toBeLessThanOrEqual(landscape.width - INSET);
+  });
+}
