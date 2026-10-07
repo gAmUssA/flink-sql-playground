@@ -1,7 +1,8 @@
 'use strict';
 // One phone criterion (PHONE_QUERY in js/app.js, mirrored by the phone @media block in
-// css/style.css) decides the layout. Short touch screens get the phone layout; mouse-driven
-// windows of any height and tablets keep the desktop layout. Runs in Chromium and WebKit.
+// css/style.css) decides the layout. Short touch screens get the phone layout; tablets keep the
+// desktop layout, and mouse-driven windows keep main's layout at any height (a narrow one gets
+// the phone layout, as on main). Runs in Chromium and WebKit.
 const { test, expect } = require('@playwright/test');
 const { openApp, layoutState, layoutOf, controlsOutsideWindow, PHONE, DESKTOP } = require('./layout');
 

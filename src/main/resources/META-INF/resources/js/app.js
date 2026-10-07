@@ -772,15 +772,27 @@ function openFilterPopover(colIdx, anchorRect) {
     pop.querySelector('[data-apply]').addEventListener('click', apply);
     pop.querySelector('[data-clear]').addEventListener('click', () => removeFilter(colIdx));
     const fi = pop.querySelector('.filt-v'); if (fi) fi.focus();
+    if (pop.isConnected) place();
+  }
+  // 7px below the column header whenever it fits inside the window. Only when it would run past
+  // the bottom edge (a phone held sideways, or the keyboard open) does it move up to a 10px
+  // margin, scrolling once it is taller than the window. Runs again on resize, so a phone
+  // rotated while it is open keeps it inside on both axes.
+  const pw = 268;
+  function place() {
+    const margin = 10;
+    pop.style.left = Math.max(margin, Math.min(anchorRect.left, window.innerWidth - pw - margin)) + 'px';
+    pop.style.maxHeight = (window.innerHeight - 2 * margin) + 'px';
+    const h = pop.offsetHeight;
+    const below = anchorRect.bottom + 7;
+    const fits = below >= 0 && below + h <= window.innerHeight;
+    pop.style.top = (fits ? below : Math.max(margin, window.innerHeight - margin - h)) + 'px';
   }
   draw();
 
   document.body.appendChild(pop);
-  const pw = 268;
-  const left = Math.max(10, Math.min(anchorRect.left, window.innerWidth - pw - 10));
-  pop.style.left = left + 'px';
-  pop.style.top = (anchorRect.bottom + 7) + 'px';
   pop.style.width = pw + 'px';
+  place();
 
   const onDocDown = (e) => {
     if (e.target.closest('.filt-pop') || e.target.closest('.th-btn') || e.target.closest('.rv-chip')) return;
@@ -789,7 +801,11 @@ function openFilterPopover(colIdx, anchorRect) {
   const onKey = (e) => { if (e.key === 'Escape') closeFilterPopover(); else if (e.key === 'Enter') apply(); };
   document.addEventListener('mousedown', onDocDown);
   document.addEventListener('keydown', onKey);
-  pop._cleanup = () => { document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey); };
+  window.addEventListener('resize', place);
+  pop._cleanup = () => {
+    document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey);
+    window.removeEventListener('resize', place);
+  };
 }
 
 // Changelog stream-control filter: op-type toggle pills + free-text highlight search.
@@ -1390,9 +1406,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tables-drawer-btn').addEventListener('click', () => {
     setTablesDrawer(!document.querySelector('.app').classList.contains('drawer-open'));
   });
-  document.getElementById('drawer-backdrop').addEventListener('click', () => setTablesDrawer(false));
+  // Tapping the backdrop closes the drawer like Esc does, focus back on the Tables button.
+  document.getElementById('drawer-backdrop').addEventListener('click', () => setTablesDrawer(false, { restoreFocus: true }));
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.querySelector('.app').classList.contains('drawer-open')) setTablesDrawer(false, { restoreFocus: true });
+  });
+  // Marks the app while a code editor has focus: on a phone held sideways with the keyboard
+  // open, css/style.css then hands the toolbar's and the status bar's room to the editor.
+  const appEl = document.querySelector('.app');
+  document.addEventListener('focusin', (e) => appEl.classList.toggle('editor-focused', !!e.target.closest('.cm-editor')));
+  document.addEventListener('focusout', (e) => {
+    if (!(e.relatedTarget && e.relatedTarget.closest('.cm-editor'))) appEl.classList.remove('editor-focused');
   });
   if (window.matchMedia) window.matchMedia(PHONE_QUERY).addEventListener('change', (e) => {
     if (!e.matches) setTablesDrawer(false);
