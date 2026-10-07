@@ -176,8 +176,16 @@ for (const view of ['query', 'schema']) {
   });
 }
 
-test('an upright phone with the keyboard open keeps its toolbar and status bar', async ({ page }) => {
+// Guards the 260px height clause: an upright phone with the keyboard open is taller than that.
+test('an upright phone with the keyboard open (taller than 260px) keeps its toolbar and status bar', async ({ page }) => {
   await page.setViewportSize({ width: 412, height: 450 });
+  await page.evaluate(() => queryEditor.focus());
+  expect(await chrome(page, 'query')).toMatchObject({ toolbar: true, statusbar: true });
+});
+
+// Guards the orientation clause: a portrait window no taller than 260px keeps both bars.
+test('a portrait touch window 260px tall or less keeps its toolbar and status bar', async ({ page }) => {
+  await page.setViewportSize({ width: 250, height: 255 });
   await page.evaluate(() => queryEditor.focus());
   expect(await chrome(page, 'query')).toMatchObject({ toolbar: true, statusbar: true });
 });
