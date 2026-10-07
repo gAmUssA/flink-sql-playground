@@ -1,6 +1,8 @@
 /* styles.css — Flink SQL Playground — bold data-infra theme system (IBM Plex) */
 
 /* ============================== TOKENS ============================== */
+/* Text colours (--text-3, --tk-*) keep at least 4.5:1 contrast on the backgrounds they sit on, in
+   every theme; desktop.spec.js measures it. */
 :root {
   --mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace;
   --ui: 'IBM Plex Sans', system-ui, sans-serif;
@@ -29,11 +31,11 @@
   --border-strong: rgba(255,255,255,0.18);
   --text: #ecebf6;
   --text-2: #a7a6c2;
-  --text-3: #6f6e8f;
+  --text-3: #84839f;
   --shadow: 0 18px 50px -18px rgba(0,0,0,0.7);
   --gutter: #6a6a8a;
   --tk-kw: #b79bff; --tk-ty: #58d6c4; --tk-fn: #f57bb8; --tk-str: #8ee98a;
-  --tk-num: #ffc25c; --tk-id: #dcdbf0; --tk-pun: #8786a8; --tk-op: #ff9d7a; --tk-com: #6a6a8a;
+  --tk-num: #ffc25c; --tk-id: #dcdbf0; --tk-pun: #8786a8; --tk-op: #ff9d7a; --tk-com: #7d7d9b;
   --grid-line: rgba(255,255,255,0.05);
   --editor-bg: #0c0c16;
   color-scheme: dark;
@@ -51,11 +53,11 @@
   --border-strong: rgba(255,255,255,0.22);
   --text: #f2f3f4;
   --text-2: #a0a3a7;
-  --text-3: #64686d;
+  --text-3: #7f848a;
   --shadow: 0 10px 28px -14px rgba(0,0,0,0.8);
   --gutter: #5c6065;
   --tk-kw: #c0a6ff; --tk-ty: #4fd6c2; --tk-fn: #ff7bb0; --tk-str: #9be88f;
-  --tk-num: #ffc15c; --tk-id: #e3e4e6; --tk-pun: #7d8186; --tk-op: #ffa07a; --tk-com: #5c6065;
+  --tk-num: #ffc15c; --tk-id: #e3e4e6; --tk-pun: #7d8186; --tk-op: #ffa07a; --tk-com: #797f85;
   --grid-line: rgba(255,255,255,0.055);
   --r-sm: 4px; --r-md: 5px; --r-lg: 7px;
   --editor-bg: #0a0b0c;
@@ -75,11 +77,11 @@
   --border-strong: rgba(20,21,40,0.22);
   --text: #1a1b2b;
   --text-2: #565873;
-  --text-3: #8b8da6;
+  --text-3: #696b89;
   --shadow: 0 16px 40px -20px rgba(40,30,90,0.28);
   --gutter: #b3b5c8;
-  --tk-kw: #7c3aed; --tk-ty: #0d9488; --tk-fn: #db2777; --tk-str: #15803d;
-  --tk-num: #b45309; --tk-id: #1f2233; --tk-pun: #8b8da6; --tk-op: #c2410c; --tk-com: #9698ad;
+  --tk-kw: #7c3aed; --tk-ty: #0b7f75; --tk-fn: #db2777; --tk-str: #15803d;
+  --tk-num: #b45309; --tk-id: #1f2233; --tk-pun: #6d6f8e; --tk-op: #c2410c; --tk-com: #6d708c;
   --grid-line: rgba(20,21,40,0.06);
   --editor-bg: #ffffff;
   color-scheme: light;

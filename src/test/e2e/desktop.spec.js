@@ -72,3 +72,85 @@ for (const [height, want] of [[800, { below: false, inside: true, scrolls: false
     expect(g).toEqual(want);
   });
 }
+
+/**
+ * WCAG contrast of each element's text against the background it is drawn on: the element's own
+ * and its ancestors' background colours, composited until one is opaque. Colours are resolved
+ * through a canvas, so color-mix() and alpha work whatever syntax the browser reports.
+ */
+function measureContrast(targets) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 1;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  const rgba = (css) => {
+    g.clearRect(0, 0, 1, 1); g.fillStyle = css; g.fillRect(0, 0, 1, 1);
+    const [r, gr, b, a] = g.getImageData(0, 0, 1, 1).data; return [r, gr, b, a / 255];
+  };
+  const over = (top, under) => top.slice(0, 3).map((c, i) => c * top[3] + under[i] * (1 - top[3]));
+  const background = (el) => {
+    const layers = [];
+    for (let n = el; n; n = n.parentElement) {
+      const c = rgba(getComputedStyle(n).backgroundColor);
+      if (c[3] > 0) layers.push(c);
+      if (c[3] === 1) break;
+    }
+    return layers.reverse().reduce((under, top) => over(top, under), [255, 255, 255]);
+  };
+  const lum = (rgb) => {
+    const [r, g2, b] = rgb.map((c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g2 + 0.0722 * b;
+  };
+  return targets.map(({ what, el }) => {
+    const bg = background(el);
+    const fg = over(rgba(getComputedStyle(el).color), bg);
+    const [hi, lo] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+    return { what, ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100, fg: fg.map(Math.round), bg: bg.map(Math.round) };
+  });
+}
+
+for (const theme of ['nebula', 'carbon', 'cobalt']) {
+  test(`${theme}: muted text, line numbers, comments, types and punctuation reach 4.5:1`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem('fsf-tweaks-v2', JSON.stringify({ theme: t, themeExplicit: true })), theme);
+    await page.reload();
+    await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await page.evaluate(() => queryEditor.setValue('-- top regions\nSELECT CAST(user_id AS INT) FROM orders'));
+    await page.click('#build-schema-btn');
+    await expect(page.locator('.tbl-col-type').first()).toBeVisible();
+    // Before a run: the results tabs, the empty-state hint and the status bar use --text-3.
+    const first = await page.evaluate((fn) => {
+      const measure = new Function(`return (${fn})`)();
+      const root = getComputedStyle(document.documentElement);
+      const same = (el, token) => {
+        const probe = document.createElement('span'); probe.style.color = root.getPropertyValue(token); document.body.appendChild(probe);
+        const want = getComputedStyle(probe).color; probe.remove();
+        return getComputedStyle(el).color === want;
+      };
+      const spans = [...document.querySelectorAll('#query-editor .cm-line span')];
+      return measure([
+        ...[...document.querySelectorAll('.rtab:not(.is-active)')].map((el) => ({ what: 'results tab', el })),
+        { what: 'empty-state hint', el: document.querySelector('.rv-empty-hint') },
+        { what: 'status bar', el: document.querySelector('#sb-state') },
+        { what: 'line number', el: document.querySelector('#query-editor .cm-gutterElement:not(.cm-activeLineGutter)') },
+        { what: 'comment', el: spans.find((el) => same(el, '--tk-com')) },
+        { what: 'type name', el: spans.find((el) => same(el, '--tk-ty')) },
+        { what: 'sidebar column type', el: document.querySelector('.tbl-col-type') },
+        { what: 'sidebar table kind', el: document.querySelector('.tbl-kind') },
+      ].map((t) => { if (!t.el) throw new Error(`no element for ${t.what}`); return t; }));
+    }, measureContrast.toString());
+
+    await page.click('#mode-segmented [data-mode="BATCH"]');
+    await page.click('#run-query-btn');
+    await expect(page.locator('.rv-table')).toBeVisible();
+    await page.locator('.tbl-card').first().hover();
+    await page.locator('.tbl-drop').first().click();
+    await expect(page.locator('.tbl-confirm')).toBeVisible();
+    const second = await page.evaluate((fn) => new Function(`return (${fn})`)()([
+      { what: 'column type', el: document.querySelector('.rv-coltype') },
+      { what: 'drop note', el: document.querySelector('.tbl-confirm-note') },
+      { what: 'drop punctuation', el: document.querySelector('.tbl-confirm-sql .tk-pun') },
+    ]), measureContrast.toString());
+
+    const low = [...first, ...second].filter((m) => m.ratio < 4.5);
+    expect(low, `${theme}: text below 4.5:1`).toEqual([]);
+  });
+}
