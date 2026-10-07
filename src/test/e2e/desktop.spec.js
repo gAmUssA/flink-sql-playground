@@ -73,13 +73,31 @@ for (const [height, want] of [[800, { below: false, inside: true, scrolls: false
   });
 }
 
-// At 1440x900 the popover ends 1-9px above the window's bottom edge: it fits, so it keeps its
-// place 7px under the header rather than moving up to a 10px margin.
+// A window where the popover ends 1-9px above the bottom edge: it fits, so it keeps its place
+// 7px under the header rather than moving up to a 10px margin. The popover's height depends on
+// the fonts the platform renders (about 1440x900 on macOS), so the test searches for that height.
 test('the column filter keeps its place when it fits with less than 10px to spare', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.click('#mode-segmented [data-mode="BATCH"]');
   await page.click('#run-query-btn');
   await expect(page.locator('.rv-table')).toBeVisible();
+  await page.locator('.th-btn').first().click();
+  const popHeight = await page.locator('.filt-pop').evaluate((el) => el.offsetHeight);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.filt-pop')).toHaveCount(0);
+  // Space left below the popover if it opened 7px under the header at the current window height.
+  const spare = () => page.evaluate((h) => window.innerHeight - (document.querySelector('.th-btn').getBoundingClientRect().bottom + 7 + h), popHeight);
+  let height = 900;
+  for (let i = 0; i < 200; i++) {
+    const left = await spare();
+    if (left >= 3 && left <= 7) break;
+    height += left < 3 ? 1 : -1;
+    await page.setViewportSize({ width: 1440, height });
+  }
+  const left = await spare();
+  expect(left, `the popover ends 1-9px above the edge of a 1440x${height} window`).toBeGreaterThanOrEqual(1);
+  expect(left, `the popover ends 1-9px above the edge of a 1440x${height} window`).toBeLessThanOrEqual(9);
+
   await page.locator('.th-btn').first().click();
   // Measure the settled box, not one shifted by the open animation.
   await page.locator('.filt-pop').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
@@ -87,11 +105,8 @@ test('the column filter keeps its place when it fits with less than 10px to spar
     const header = document.querySelector('.th-btn').getBoundingClientRect();
     const pop = document.querySelector('.filt-pop');
     const r = pop.getBoundingClientRect();
-    return { spare: window.innerHeight - (header.bottom + 7 + pop.offsetHeight), gap: parseFloat(pop.style.top) - header.bottom,
-      inside: r.top >= 0 && r.bottom <= window.innerHeight };
+    return { gap: parseFloat(pop.style.top) - header.bottom, inside: r.top >= 0 && r.bottom <= window.innerHeight };
   });
-  expect(g.spare, 'the popover ends 1-9px above the window edge').toBeGreaterThanOrEqual(1);
-  expect(g.spare, 'the popover ends 1-9px above the window edge').toBeLessThanOrEqual(9);
   expect(Math.abs(g.gap - 7), 'popover sits 7px under its header').toBeLessThan(1);
   expect(g.inside).toBe(true);
 });
