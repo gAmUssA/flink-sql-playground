@@ -766,6 +766,14 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
     /* Tweaks: a right-hand sheet that stops below the topbar row, so its buttons stay reachable. */
     .tweaks { left: auto; right: max(12px, env(safe-area-inset-right)); width: min(360px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); }
   }
+
+  /* The keyboard open on a phone held sideways leaves a window at most 260px tall: while a code
+     editor has focus, the toolbar and the status bar give it their room, and the panel head
+     shrinks to its label, so the editor keeps at least half the window (780x170 included). */
+  @media (max-height: 260px) and (orientation: landscape) and (pointer: coarse) {
+    .app.editor-focused .toolbar, .app.editor-focused .statusbar { display: none; }
+    .app.editor-focused .panel-head { padding-top: 3px; padding-bottom: 3px; }
+  }
 }
 
 /* Narrowest phones: Share goes icon-only so the second toolbar row keeps its margin. */

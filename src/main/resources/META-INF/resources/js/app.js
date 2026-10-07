@@ -1407,6 +1407,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.querySelector('.app').classList.contains('drawer-open')) setTablesDrawer(false, { restoreFocus: true });
   });
+  // Marks the app while a code editor has focus: on a phone held sideways with the keyboard
+  // open, css/style.css then hands the toolbar's and the status bar's room to the editor.
+  const appEl = document.querySelector('.app');
+  document.addEventListener('focusin', (e) => appEl.classList.toggle('editor-focused', !!e.target.closest('.cm-editor')));
+  document.addEventListener('focusout', (e) => {
+    if (!(e.relatedTarget && e.relatedTarget.closest('.cm-editor'))) appEl.classList.remove('editor-focused');
+  });
   if (window.matchMedia) window.matchMedia(PHONE_QUERY).addEventListener('change', (e) => {
     if (!e.matches) setTablesDrawer(false);
     syncPhoneSemantics();

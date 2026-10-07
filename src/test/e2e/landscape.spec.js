@@ -139,3 +139,45 @@ test('the column filter fits a 667x375 phone and scrolls when the keyboard leave
   const scroll = await page.locator('.filt-pop').evaluate((el) => ({ capped: el.scrollHeight > el.clientHeight, overflowY: getComputedStyle(el).overflowY }));
   expect(scroll).toEqual({ capped: true, overflowY: 'auto' });
 });
+
+// The on-screen keyboard (interactive-widget=resizes-content) shrinks the window; resizing the
+// viewport while an editor has focus stands in for it.
+const KEYBOARD_OPEN = [{ width: 844, height: 200 }, { width: 915, height: 220 }, { width: 780, height: 170 }, { width: 667, height: 190 }];
+
+async function chrome(page, view) {
+  return page.evaluate((v) => ({
+    toolbar: getComputedStyle(document.querySelector('.toolbar')).display !== 'none',
+    statusbar: getComputedStyle(document.querySelector('.statusbar')).display !== 'none',
+    editorShare: document.querySelector(`#${v}-panel .pane-body`).getBoundingClientRect().height / window.innerHeight,
+  }), view);
+}
+
+for (const view of ['query', 'schema']) {
+  test(`with the keyboard open, the focused ${view} editor gets the toolbar's and status bar's room`, async ({ page }) => {
+    const landscape = page.viewportSize();
+    await page.locator(`.m-views [data-mview="${view}"]`).tap();
+    await page.evaluate((v) => (v === 'query' ? queryEditor : schemaEditor).focus(), view);
+    // Keyboard closed: nothing changes while the editor has focus.
+    expect(await chrome(page, view)).toMatchObject({ toolbar: true, statusbar: true });
+    for (const size of KEYBOARD_OPEN) {
+      await page.setViewportSize(size);
+      const c = await chrome(page, view);
+      expect({ toolbar: c.toolbar, statusbar: c.statusbar }, `${size.width}x${size.height}`).toEqual({ toolbar: false, statusbar: false });
+      expect(c.editorShare, `${size.width}x${size.height} editor share of the window`).toBeGreaterThanOrEqual(0.5);
+    }
+    // Focus leaves the editor: both bars come back.
+    await page.evaluate(() => document.activeElement.blur());
+    expect(await chrome(page, view)).toMatchObject({ toolbar: true, statusbar: true });
+    // Focus returns, then the keyboard closes and the window grows: both bars come back.
+    await page.evaluate((v) => (v === 'query' ? queryEditor : schemaEditor).focus(), view);
+    expect(await chrome(page, view)).toMatchObject({ toolbar: false, statusbar: false });
+    await page.setViewportSize(landscape);
+    expect(await chrome(page, view)).toMatchObject({ toolbar: true, statusbar: true });
+  });
+}
+
+test('an upright phone with the keyboard open keeps its toolbar and status bar', async ({ page }) => {
+  await page.setViewportSize({ width: 412, height: 450 });
+  await page.evaluate(() => queryEditor.focus());
+  expect(await chrome(page, 'query')).toMatchObject({ toolbar: true, statusbar: true });
+});
