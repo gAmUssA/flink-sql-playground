@@ -204,3 +204,43 @@ for (const view of ['schema', 'query']) {
     expect(r.right, 'right edge').toBeLessThanOrEqual(landscape.width - INSET);
   });
 }
+
+// Rotating the phone while the column filter is open: the popover is re-clamped on both axes.
+async function filterInside(page) {
+  return page.locator('.filt-pop').evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const reach = (s) => { const b = el.querySelector(s); b.scrollIntoView({ block: 'nearest' }); const q = b.getBoundingClientRect(); return q.left >= 0 && q.right <= window.innerWidth && q.top >= 0 && q.bottom <= window.innerHeight; };
+    return { left: r.left >= 0, right: r.right <= window.innerWidth, top: r.top >= 0, bottom: r.bottom <= window.innerHeight,
+      input: reach('.filt-v'), clear: reach('[data-clear]'), apply: reach('[data-apply]') };
+  });
+}
+const FILTER_INSIDE = { left: true, right: true, top: true, bottom: true, input: true, clear: true, apply: true };
+
+/** Opens the filter on the rightmost column header that is fully on screen. */
+async function openRightmostFilter(page) {
+  const i = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.th-btn')];
+    return btns.reduce((best, b, n) => (b.getBoundingClientRect().right <= window.innerWidth ? n : best), 0);
+  });
+  await page.locator('.th-btn').nth(i).tap();
+  await expect(page.locator('.filt-pop')).toBeVisible();
+}
+
+test('the column filter stays inside the window when the phone turns upright while it is open', async ({ page }) => {
+  const landscape = page.viewportSize();
+  await runBatchQuery(page);
+  await openRightmostFilter(page);
+  expect(await filterInside(page)).toEqual(FILTER_INSIDE);
+  await page.setViewportSize({ width: landscape.height, height: landscape.width });
+  await expect.poll(() => filterInside(page)).toEqual(FILTER_INSIDE);
+});
+
+test('the column filter stays inside the window when the phone turns sideways while it is open', async ({ page }) => {
+  const landscape = page.viewportSize();
+  await page.setViewportSize({ width: landscape.height, height: landscape.width });
+  await runBatchQuery(page);
+  await openRightmostFilter(page);
+  expect(await filterInside(page)).toEqual(FILTER_INSIDE);
+  await page.setViewportSize(landscape);
+  await expect.poll(() => filterInside(page)).toEqual(FILTER_INSIDE);
+});

@@ -776,8 +776,11 @@ function openFilterPopover(colIdx, anchorRect) {
   }
   // Below the column header when it fits. In a short window (a phone held sideways, or the
   // keyboard open) it moves up to stay inside, and scrolls once it is taller than the window.
+  // Runs again on resize, so a phone rotated while it is open keeps it inside on both axes.
+  const pw = 268;
   function place() {
     const margin = 10;
+    pop.style.left = Math.max(margin, Math.min(anchorRect.left, window.innerWidth - pw - margin)) + 'px';
     pop.style.maxHeight = (window.innerHeight - 2 * margin) + 'px';
     const h = pop.offsetHeight;
     pop.style.top = Math.max(margin, Math.min(anchorRect.bottom + 7, window.innerHeight - margin - h)) + 'px';
@@ -785,9 +788,6 @@ function openFilterPopover(colIdx, anchorRect) {
   draw();
 
   document.body.appendChild(pop);
-  const pw = 268;
-  const left = Math.max(10, Math.min(anchorRect.left, window.innerWidth - pw - 10));
-  pop.style.left = left + 'px';
   pop.style.width = pw + 'px';
   place();
 
