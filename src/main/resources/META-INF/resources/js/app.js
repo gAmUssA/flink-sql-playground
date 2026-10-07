@@ -1403,7 +1403,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tables-drawer-btn').addEventListener('click', () => {
     setTablesDrawer(!document.querySelector('.app').classList.contains('drawer-open'));
   });
-  document.getElementById('drawer-backdrop').addEventListener('click', () => setTablesDrawer(false));
+  // Tapping the backdrop closes the drawer like Esc does, focus back on the Tables button.
+  document.getElementById('drawer-backdrop').addEventListener('click', () => setTablesDrawer(false, { restoreFocus: true }));
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.querySelector('.app').classList.contains('drawer-open')) setTablesDrawer(false, { restoreFocus: true });
   });

@@ -264,6 +264,16 @@ test('the closed drawer is out of the tab order; Esc closes it and returns focus
   await expect(page.locator('#tables-drawer-btn')).toBeFocused();
 });
 
+test('tapping the backdrop closes the drawer and returns focus to the Tables button', async ({ page }) => {
+  await page.locator('#tables-drawer-btn').tap();
+  await expect(page.locator('#drawer-backdrop')).toBeVisible();
+  expect(await page.evaluate(() => document.getElementById('schema-browser').contains(document.activeElement))).toBe(true);
+  await page.locator('#drawer-backdrop').tap({ position: { x: page.viewportSize().width - 10, y: 200 } });
+  await expect(page.locator('#drawer-backdrop')).toBeHidden();
+  expect(await page.locator('#schema-browser').evaluate((el) => el.inert)).toBe(true);
+  await expect(page.locator('#tables-drawer-btn')).toBeFocused();
+});
+
 test('the guided tour is not offered on phones', async ({ page }) => {
   await expect(page.locator('#tour-btn')).toBeHidden();
 });
