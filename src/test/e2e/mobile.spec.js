@@ -106,8 +106,10 @@ test('viewport meta resizes content for the keyboard and the app fills the dynam
   expect(meta).toContain('interactive-widget=resizes-content');
   expect(meta).toContain('width=device-width');
   const { appHeight, innerHeight, usesDvh } = await page.evaluate(() => {
-    // Cross-origin sheets (Google Fonts) refuse cssRules access; only our own sheet matters.
-    const readable = [...document.styleSheets].flatMap((s) => { try { return [...s.cssRules]; } catch (e) { return []; } });
+    // Cross-origin sheets (Google Fonts) refuse cssRules with a SecurityError; anything else is a bug.
+    const readable = [...document.styleSheets].flatMap((s) => {
+      try { return [...s.cssRules]; } catch (e) { if (e.name !== 'SecurityError') throw e; return []; }
+    });
     const rule = readable.find((r) => r.selectorText === '.app' && r.cssText.includes('100dvh'));
     return { appHeight: document.querySelector('.app').getBoundingClientRect().height,
       innerHeight: window.innerHeight, usesDvh: !!rule };
