@@ -73,6 +73,29 @@ for (const [height, want] of [[800, { below: false, inside: true, scrolls: false
   });
 }
 
+// At 1440x900 the popover ends 1-9px above the window's bottom edge: it fits, so it keeps its
+// place 7px under the header rather than moving up to a 10px margin.
+test('the column filter keeps its place when it fits with less than 10px to spare', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.click('#mode-segmented [data-mode="BATCH"]');
+  await page.click('#run-query-btn');
+  await expect(page.locator('.rv-table')).toBeVisible();
+  await page.locator('.th-btn').first().click();
+  // Measure the settled box, not one shifted by the open animation.
+  await page.locator('.filt-pop').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  const g = await page.evaluate(() => {
+    const header = document.querySelector('.th-btn').getBoundingClientRect();
+    const pop = document.querySelector('.filt-pop');
+    const r = pop.getBoundingClientRect();
+    return { spare: window.innerHeight - (header.bottom + 7 + pop.offsetHeight), gap: parseFloat(pop.style.top) - header.bottom,
+      inside: r.top >= 0 && r.bottom <= window.innerHeight };
+  });
+  expect(g.spare, 'the popover ends 1-9px above the window edge').toBeGreaterThanOrEqual(1);
+  expect(g.spare, 'the popover ends 1-9px above the window edge').toBeLessThanOrEqual(9);
+  expect(Math.abs(g.gap - 7), 'popover sits 7px under its header').toBeLessThan(1);
+  expect(g.inside).toBe(true);
+});
+
 /**
  * WCAG contrast of each element's text against the background it is drawn on: the element's own
  * and its ancestors' background colours, composited until one is opaque. Colours are resolved

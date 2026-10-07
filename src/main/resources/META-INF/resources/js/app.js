@@ -774,16 +774,19 @@ function openFilterPopover(colIdx, anchorRect) {
     const fi = pop.querySelector('.filt-v'); if (fi) fi.focus();
     if (pop.isConnected) place();
   }
-  // Below the column header when it fits. In a short window (a phone held sideways, or the
-  // keyboard open) it moves up to stay inside, and scrolls once it is taller than the window.
-  // Runs again on resize, so a phone rotated while it is open keeps it inside on both axes.
+  // 7px below the column header whenever it fits inside the window. Only when it would run past
+  // the bottom edge (a phone held sideways, or the keyboard open) does it move up to a 10px
+  // margin, scrolling once it is taller than the window. Runs again on resize, so a phone
+  // rotated while it is open keeps it inside on both axes.
   const pw = 268;
   function place() {
     const margin = 10;
     pop.style.left = Math.max(margin, Math.min(anchorRect.left, window.innerWidth - pw - margin)) + 'px';
     pop.style.maxHeight = (window.innerHeight - 2 * margin) + 'px';
     const h = pop.offsetHeight;
-    pop.style.top = Math.max(margin, Math.min(anchorRect.bottom + 7, window.innerHeight - margin - h)) + 'px';
+    const below = anchorRect.bottom + 7;
+    const fits = below >= 0 && below + h <= window.innerHeight;
+    pop.style.top = (fits ? below : Math.max(margin, window.innerHeight - margin - h)) + 'px';
   }
   draw();
 
