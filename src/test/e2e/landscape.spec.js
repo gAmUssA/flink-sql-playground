@@ -120,3 +120,135 @@ test('growing past the criterion closes the drawer and restores the desktop sema
   expect((await layoutState(page)).sidebarInert).toBe(true);
   await expect(page.locator('#drawer-backdrop')).toBeHidden();
 });
+
+test('the column filter fits a 667x375 phone and scrolls when the keyboard leaves less room', async ({ page }) => {
+  await page.setViewportSize({ width: 667, height: 375 });
+  await runBatchQuery(page);
+  const header = page.locator('.th-btn').first();
+  await header.tap();
+  const inside = async () => page.locator('.filt-pop').evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const reach = (s) => { const b = el.querySelector(s); b.scrollIntoView({ block: 'nearest' }); const q = b.getBoundingClientRect(); return q.top >= 0 && q.bottom <= window.innerHeight; };
+    return { top: r.top >= 0, bottom: r.bottom <= window.innerHeight, input: reach('.filt-v'), clear: reach('[data-clear]'), apply: reach('[data-apply]') };
+  });
+  const ALL = { top: true, bottom: true, input: true, clear: true, apply: true };
+  expect(await inside()).toEqual(ALL);
+  // The keyboard opens over the focused input: the window shrinks below the popover's height.
+  await page.setViewportSize({ width: 667, height: 190 });
+  await expect.poll(inside).toEqual(ALL);
+  const scroll = await page.locator('.filt-pop').evaluate((el) => ({ capped: el.scrollHeight > el.clientHeight, overflowY: getComputedStyle(el).overflowY }));
+  expect(scroll).toEqual({ capped: true, overflowY: 'auto' });
+});
+
+// The on-screen keyboard (interactive-widget=resizes-content) shrinks the window; resizing the
+// viewport while an editor has focus stands in for it.
+const KEYBOARD_OPEN = [{ width: 844, height: 200 }, { width: 915, height: 220 }, { width: 780, height: 170 }, { width: 667, height: 190 }];
+
+async function chrome(page, view) {
+  return page.evaluate((v) => ({
+    toolbar: getComputedStyle(document.querySelector('.toolbar')).display !== 'none',
+    statusbar: getComputedStyle(document.querySelector('.statusbar')).display !== 'none',
+    editorShare: document.querySelector(`#${v}-panel .pane-body`).getBoundingClientRect().height / window.innerHeight,
+  }), view);
+}
+
+for (const view of ['query', 'schema']) {
+  test(`with the keyboard open, the focused ${view} editor gets the toolbar's and status bar's room`, async ({ page }) => {
+    const landscape = page.viewportSize();
+    await page.locator(`.m-views [data-mview="${view}"]`).tap();
+    await page.evaluate((v) => (v === 'query' ? queryEditor : schemaEditor).focus(), view);
+    // Keyboard closed: nothing changes while the editor has focus.
+    expect(await chrome(page, view)).toMatchObject({ toolbar: true, statusbar: true });
+    for (const size of KEYBOARD_OPEN) {
+      await page.setViewportSize(size);
+      const c = await chrome(page, view);
+      expect({ toolbar: c.toolbar, statusbar: c.statusbar }, `${size.width}x${size.height}`).toEqual({ toolbar: false, statusbar: false });
+      expect(c.editorShare, `${size.width}x${size.height} editor share of the window`).toBeGreaterThanOrEqual(0.5);
+    }
+    // Focus leaves the editor: both bars come back.
+    await page.evaluate(() => document.activeElement.blur());
+    expect(await chrome(page, view)).toMatchObject({ toolbar: true, statusbar: true });
+    // Focus returns, then the keyboard closes and the window grows: both bars come back.
+    await page.evaluate((v) => (v === 'query' ? queryEditor : schemaEditor).focus(), view);
+    expect(await chrome(page, view)).toMatchObject({ toolbar: false, statusbar: false });
+    await page.setViewportSize(landscape);
+    expect(await chrome(page, view)).toMatchObject({ toolbar: true, statusbar: true });
+  });
+}
+
+// Guards the 260px height clause: an upright phone with the keyboard open is taller than that.
+test('an upright phone with the keyboard open (taller than 260px) keeps its toolbar and status bar', async ({ page }) => {
+  await page.setViewportSize({ width: 412, height: 450 });
+  await page.evaluate(() => queryEditor.focus());
+  expect(await chrome(page, 'query')).toMatchObject({ toolbar: true, statusbar: true });
+});
+
+// Guards the orientation clause: a portrait window no taller than 260px keeps both bars.
+test('a portrait touch window 260px tall or less keeps its toolbar and status bar', async ({ page }) => {
+  await page.setViewportSize({ width: 250, height: 255 });
+  await page.evaluate(() => queryEditor.focus());
+  expect(await chrome(page, 'query')).toMatchObject({ toolbar: true, statusbar: true });
+});
+
+for (const view of ['schema', 'query']) {
+  test(`a ${view} pane maximized before the phone layout keeps clear of the notch`, async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'WebKit has no safe-area inset emulation');
+    const INSET = 47;
+    const landscape = page.viewportSize();
+    await page.locator(`.m-views [data-mview="${view}"]`).tap();
+    // Maximize on a tablet-sized screen (desktop layout), then shrink back to the phone held sideways.
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await page.locator(`#${view}-panel .panel-maximize-btn`).tap();
+    await expect(page.locator(`#${view}-panel`)).toHaveClass(/panel-maximized/);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: INSET, right: INSET, top: 0, bottom: 21 } });
+    await page.setViewportSize(landscape);
+    await expect.poll(async () => (await layoutState(page)).jsPhone).toBe(true);
+    // Measure the settled box, not one scaled by the maximize animation.
+    await page.locator(`#${view}-panel`).evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+    const r = await page.locator(`#${view}-panel`).evaluate((el) => { const b = el.getBoundingClientRect(); return { left: b.left, right: b.right, width: b.width }; });
+    expect(r.width, 'the maximized pane is shown').toBeGreaterThan(0);
+    expect(r.left, 'left edge').toBeGreaterThanOrEqual(INSET);
+    expect(r.right, 'right edge').toBeLessThanOrEqual(landscape.width - INSET);
+  });
+}
+
+// Rotating the phone while the column filter is open: the popover is re-clamped on both axes.
+async function filterInside(page) {
+  return page.locator('.filt-pop').evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const reach = (s) => { const b = el.querySelector(s); b.scrollIntoView({ block: 'nearest' }); const q = b.getBoundingClientRect(); return q.left >= 0 && q.right <= window.innerWidth && q.top >= 0 && q.bottom <= window.innerHeight; };
+    return { left: r.left >= 0, right: r.right <= window.innerWidth, top: r.top >= 0, bottom: r.bottom <= window.innerHeight,
+      input: reach('.filt-v'), clear: reach('[data-clear]'), apply: reach('[data-apply]') };
+  });
+}
+const FILTER_INSIDE = { left: true, right: true, top: true, bottom: true, input: true, clear: true, apply: true };
+
+/** Opens the filter on the rightmost column header that is fully on screen. */
+async function openRightmostFilter(page) {
+  const i = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.th-btn')];
+    return btns.reduce((best, b, n) => (b.getBoundingClientRect().right <= window.innerWidth ? n : best), 0);
+  });
+  await page.locator('.th-btn').nth(i).tap();
+  await expect(page.locator('.filt-pop')).toBeVisible();
+}
+
+test('the column filter stays inside the window when the phone turns upright while it is open', async ({ page }) => {
+  const landscape = page.viewportSize();
+  await runBatchQuery(page);
+  await openRightmostFilter(page);
+  expect(await filterInside(page)).toEqual(FILTER_INSIDE);
+  await page.setViewportSize({ width: landscape.height, height: landscape.width });
+  await expect.poll(() => filterInside(page)).toEqual(FILTER_INSIDE);
+});
+
+test('the column filter stays inside the window when the phone turns sideways while it is open', async ({ page }) => {
+  const landscape = page.viewportSize();
+  await page.setViewportSize({ width: landscape.height, height: landscape.width });
+  await runBatchQuery(page);
+  await openRightmostFilter(page);
+  expect(await filterInside(page)).toEqual(FILTER_INSIDE);
+  await page.setViewportSize(landscape);
+  await expect.poll(() => filterInside(page)).toEqual(FILTER_INSIDE);
+});

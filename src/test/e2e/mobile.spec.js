@@ -74,6 +74,23 @@ async function expectTappable(page, selector) {
   expect(hit, `${selector} is covered by another element`).toBe(true);
 }
 
+/**
+ * The open column filter sits inside the window, and its input, Clear and Apply can each be
+ * reached: scrolled into view inside the popover if it had to cap its height, then tappable.
+ */
+async function expectFilterInsideWindow(page) {
+  const pop = page.locator('.filt-pop');
+  await expect(pop).toBeVisible();
+  const vp = page.viewportSize();
+  const box = await pop.evaluate((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
+  expect(box.top, 'popover top edge').toBeGreaterThanOrEqual(0);
+  expect(box.bottom, 'popover bottom edge').toBeLessThanOrEqual(vp.height);
+  for (const sel of ['.filt-pop .filt-v', '.filt-pop [data-clear]', '.filt-pop [data-apply]']) {
+    await page.locator(sel).scrollIntoViewIfNeeded();
+    await expectTappable(page, sel);
+  }
+}
+
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
 test('runs as a touch device that meets the phone criterion', async ({ page }) => {
@@ -89,8 +106,10 @@ test('viewport meta resizes content for the keyboard and the app fills the dynam
   expect(meta).toContain('interactive-widget=resizes-content');
   expect(meta).toContain('width=device-width');
   const { appHeight, innerHeight, usesDvh } = await page.evaluate(() => {
-    // Cross-origin sheets (Google Fonts) refuse cssRules access; only our own sheet matters.
-    const readable = [...document.styleSheets].flatMap((s) => { try { return [...s.cssRules]; } catch (e) { return []; } });
+    // Cross-origin sheets (Google Fonts) refuse cssRules with a SecurityError; anything else is a bug.
+    const readable = [...document.styleSheets].flatMap((s) => {
+      try { return [...s.cssRules]; } catch (e) { if (e.name !== 'SecurityError') throw e; return []; }
+    });
     const rule = readable.find((r) => r.selectorText === '.app' && r.cssText.includes('100dvh'));
     return { appHeight: document.querySelector('.app').getBoundingClientRect().height,
       innerHeight: window.innerHeight, usesDvh: !!rule };
@@ -247,6 +266,16 @@ test('the closed drawer is out of the tab order; Esc closes it and returns focus
   await expect(page.locator('#tables-drawer-btn')).toBeFocused();
 });
 
+test('tapping the backdrop closes the drawer and returns focus to the Tables button', async ({ page }) => {
+  await page.locator('#tables-drawer-btn').tap();
+  await expect(page.locator('#drawer-backdrop')).toBeVisible();
+  expect(await page.evaluate(() => document.getElementById('schema-browser').contains(document.activeElement))).toBe(true);
+  await page.locator('#drawer-backdrop').tap({ position: { x: page.viewportSize().width - 10, y: 200 } });
+  await expect(page.locator('#drawer-backdrop')).toBeHidden();
+  expect(await page.locator('#schema-browser').evaluate((el) => el.inert)).toBe(true);
+  await expect(page.locator('#tables-drawer-btn')).toBeFocused();
+});
+
 test('the guided tour is not offered on phones', async ({ page }) => {
   await expect(page.locator('#tour-btn')).toBeHidden();
 });
@@ -314,6 +343,12 @@ test('opening the drawer closes the Tweaks panel and the column filter above it'
   await expect(page.locator('.filt-pop')).toBeVisible();
   await page.locator('#tables-drawer-btn').tap();
   await expect(page.locator('.filt-pop')).toHaveCount(0);
+});
+
+test('the column filter keeps its input, Clear and Apply inside the window', async ({ page }) => {
+  await runBatchQuery(page);
+  await page.locator('.th-btn').first().tap();
+  await expectFilterInsideWindow(page);
 });
 
 test('a column suggestion appears while typing and inserts on tap', async ({ page }) => {
