@@ -777,6 +777,9 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
     #build-schema-btn, #run-query-btn { flex: 0 0 auto; }
     /* Tweaks: a right-hand sheet that stops below the topbar row, so its buttons stay reachable. */
     .tweaks { left: auto; right: max(12px, env(safe-area-inset-right)); width: min(360px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); }
+    /* The results box is too short to pin both the filter bar and the column headers (77px at
+       568x320): the bar scrolls away with the rows, so the pinned headers never sit under it. */
+    .rv-filterbar { position: static; }
   }
 
   /* The keyboard open on a phone held sideways leaves a window at most 260px tall: while a code

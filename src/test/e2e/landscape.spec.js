@@ -252,3 +252,67 @@ test('the column filter stays inside the window when the phone turns sideways wh
   await page.setViewportSize(landscape);
   await expect.poll(() => filterInside(page)).toEqual(FILTER_INSIDE);
 });
+
+/**
+ * The column header row against the results box and its filter bar: whether the whole row is
+ * inside the box and clear of the bar, and which on-screen headers a tap at their centre misses,
+ * landing on the filter bar (`bar`) or on anything else (`miss`).
+ */
+async function headerRow(page) {
+  return page.evaluate(() => {
+    const box = document.getElementById('results-container');
+    const b = box.getBoundingClientRect();
+    const view = { top: b.top + box.clientTop, bottom: b.top + box.clientTop + box.clientHeight };
+    const head = document.querySelector('.rv-table thead').getBoundingClientRect();
+    const bar = document.querySelector('.rv-filterbar').getBoundingClientRect();
+    const barShown = { top: Math.max(bar.top, view.top), bottom: Math.min(bar.bottom, view.bottom) };
+    const bars = [], misses = [];
+    [...document.querySelectorAll('.th-btn')].forEach((btn, i) => {
+      const r = btn.getBoundingClientRect();
+      if (r.left < 0 || r.right > window.innerWidth) return;
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (hit && hit.closest('.rv-filterbar')) bars.push(i);
+      else if (!hit || hit.closest('.th-btn') !== btn) misses.push(i);
+    });
+    return { inBox: head.top >= view.top - 0.5 && head.bottom <= view.bottom + 0.5,
+      clearOfBar: barShown.bottom <= barShown.top || head.top >= barShown.bottom - 0.5 || head.bottom <= barShown.top + 0.5, bars, misses };
+  });
+}
+
+/** Taps the on-screen part of column header `i`, as a finger would: no scrolling first. */
+async function tapHeader(page, i) {
+  const p = await page.evaluate((n) => {
+    const box = document.getElementById('results-container').getBoundingClientRect();
+    const r = document.querySelectorAll('.th-btn')[n].getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: (r.top + Math.min(r.bottom, box.bottom)) / 2 };
+  }, i);
+  await page.touchscreen.tap(p.x, p.y);
+}
+
+// A 568x320 window is a 4-inch phone held sideways: its results box is too short for the filter
+// bar and the header row together. On main, opening a filter or scrolling the rows slid the
+// headers under the bar, which then took their taps.
+for (const [width, height] of [[568, 320], [667, 375], [844, 390], [915, 412]]) {
+  test(`at ${width}x${height}, opening a column filter keeps the header row in view, clear of the filter bar`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await runBatchQuery(page);
+    await page.locator('.m-views [data-mview="results"]').tap();
+    const onScreen = await page.evaluate(() => [...document.querySelectorAll('.th-btn')]
+      .map((b, i) => (b.getBoundingClientRect().right <= window.innerWidth ? i : -1)).filter((i) => i >= 0));
+    expect(onScreen.length, 'columns on screen').toBeGreaterThanOrEqual(3);
+    for (const scrolled of [0, 40]) {
+      for (const i of onScreen) {
+        await page.locator('#results-container').evaluate((el, y) => { el.scrollTop = y; }, scrolled);
+        await tapHeader(page, i);
+        await expect(page.locator('.filt-pop')).toBeVisible();
+        const open = await headerRow(page);
+        const where = `column ${i}, rows scrolled ${scrolled}px`;
+        expect({ inBox: open.inBox, clearOfBar: open.clearOfBar, bars: open.bars }, `${where}, filter open`).toEqual({ inBox: true, clearOfBar: true, bars: [] });
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.filt-pop')).toHaveCount(0);
+        const closed = await headerRow(page);
+        expect({ bars: closed.bars, misses: closed.misses }, `${where}, filter closed`).toEqual({ bars: [], misses: [] });
+      }
+    }
+  });
+}
