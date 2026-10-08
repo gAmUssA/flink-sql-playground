@@ -402,6 +402,9 @@ test('a filter bar wrapped around its chips keeps the headers below it while the
     return { pinned: getComputedStyle(bar).position === 'sticky', barH: bar.getBoundingClientRect().height,
       barBottom: bar.getBoundingClientRect().bottom, head: document.querySelector('.th-btn').getBoundingClientRect().top };
   });
+  // The upright projects (iphone13, pixel7, small375) pin the bar and check the offset; the
+  // sideways ones (iphone13-landscape, pixel7-landscape) let it scroll away (#65), so only the
+  // hit-test below applies there.
   if (g.pinned) {
     expect(g.barH, 'the chips wrap onto more rows').toBeGreaterThan(60);
     expect(g.head, 'header top at the bar bottom').toBeCloseTo(g.barBottom, 0);
