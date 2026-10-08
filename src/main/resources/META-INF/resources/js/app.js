@@ -631,12 +631,12 @@ function renderActiveView() {
   updatePhoneResultCount();
   const body = document.getElementById('results-container');
   if (!body) return;
-  if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); return; }
+  if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); releaseResultsBar(); return; }
   switch (activeTab) {
     case 'table': body.innerHTML = renderTable(); watchResultsBar(); break;
     case 'changelog': body.innerHTML = renderChangelog(); watchResultsBar(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
-    case 'throughput': body.innerHTML = renderThroughput(); break;
-    case 'graph': body.innerHTML = renderJobGraph(); break;
+    case 'throughput': body.innerHTML = renderThroughput(); releaseResultsBar(); break;
+    case 'graph': body.innerHTML = renderJobGraph(); releaseResultsBar(); break;
   }
 }
 
@@ -746,18 +746,27 @@ function fitResultsBar() {
   markScrolled();
 }
 // .is-scrolled on the results box: its rows have scrolled up (see the headers' strip in style.css).
+// Only a view with a bar keeps it.
 function markScrolled() {
   const box = document.getElementById('results-container');
-  box.classList.toggle('is-scrolled', box.scrollTop > 0);
+  box.classList.toggle('is-scrolled', box.scrollTop > 0 && !!box.querySelector('.rv-filterbar, .rv-log-bar'));
 }
 function watchResultsBar() {
   resultsBarObserver.disconnect();
   const box = document.getElementById('results-container');
   const bar = box.querySelector('.rv-filterbar, .rv-log-bar');
-  if (!bar) return;
+  if (!bar) { releaseResultsBar(); return; }
   resultsBarObserver.observe(box);
   resultsBarObserver.observe(bar);
   fitResultsBar();
+}
+// Views without a bar (throughput, job graph, an error or an empty table) stop observing and drop
+// the bar's state from the results box, so no rule keyed on it reaches them.
+function releaseResultsBar() {
+  resultsBarObserver.disconnect();
+  const box = document.getElementById('results-container');
+  box.classList.remove('is-scrolled', 'bar-scrolls');
+  box.style.removeProperty('--filterbar-h');
 }
 
 let openFilterIdx = null;

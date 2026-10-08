@@ -73,3 +73,23 @@ test('with more than 50 events, a later and taller changelog row can still be sc
   expect(r.rows).toBe(60);
   expect(r.unreachable, 'rows never shown whole').toEqual([]);
 });
+
+// The bar's state on the results box (.is-scrolled, .bar-scrolls, --filterbar-h) belongs to the
+// table and changelog views: the throughput and job graph views, which have no bar, drop it, and
+// the table recomputes it on return.
+test('views without a bar drop the bar state from the results box, and the table restores it', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 700 });
+  await runManyRows(page, false);
+  await scrollResults(page, 60);
+  const state = () => page.locator('#results-container').evaluate((el) => ({
+    scrolled: el.classList.contains('is-scrolled'), barScrolls: el.classList.contains('bar-scrolls'), barH: el.style.getPropertyValue('--filterbar-h') }));
+  expect(await state()).toEqual({ scrolled: true, barScrolls: false, barH: '44px' });
+  for (const tab of ['throughput', 'graph']) {
+    await page.locator(`.rtab[data-tab="${tab}"]`).click();
+    await scrollResults(page, 40);
+    expect(await state(), tab).toEqual({ scrolled: false, barScrolls: false, barH: '' });
+  }
+  await page.locator('.rtab[data-tab="table"]').click();
+  await scrollResults(page, 60);
+  expect(await state(), 'back on the table').toEqual({ scrolled: true, barScrolls: false, barH: '44px' });
+});
