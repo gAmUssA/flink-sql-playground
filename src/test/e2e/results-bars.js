@@ -119,19 +119,24 @@ async function changelogReach(page) {
   });
 }
 
-/** Scrolls the changelog to its top and taps each op toggle twice: off, then on again. */
+/**
+ * Taps each op toggle twice (off, then on again), each time first scrolling the box just enough
+ * to bring the toggle whole into view, as a finger would. Returns the taps that missed.
+ */
 async function opTogglesWork(page) {
-  await scrollResults(page, 0);
   const ops = await page.locator('.rv-op-toggle').evaluateAll((ts) => ts.map((t) => t.dataset.clop));
   const failed = [];
   for (const op of ops) {
     for (const want of ['is-off', 'is-on']) {
-      await scrollResults(page, 0);
-      const p = await page.locator(`.rv-op-toggle[data-clop="${op}"]`).evaluate((t) => {
+      const p = await page.locator(`.rv-op-toggle[data-clop="${op}"]`).evaluate(async (t) => {
+        const box = document.getElementById('results-container');
+        const view = () => { const b = box.getBoundingClientRect(); return { top: b.top + box.clientTop, bottom: b.top + box.clientTop + box.clientHeight }; };
+        const r0 = t.getBoundingClientRect();
+        if (r0.top < view().top) box.scrollTop -= view().top - r0.top;
+        else if (r0.bottom > view().bottom) box.scrollTop += r0.bottom - view().bottom;
+        await new Promise((r) => requestAnimationFrame(() => r()));
         const r = t.getBoundingClientRect();
-        const box = document.getElementById('results-container').getBoundingClientRect();
-        const y = (Math.max(r.top, box.top) + Math.min(r.bottom, box.bottom)) / 2;
-        return { x: r.left + r.width / 2, y, inBox: r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5 };
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, inBox: r.top >= view().top - 0.5 && r.bottom <= view().bottom + 0.5 };
       });
       await page.touchscreen.tap(p.x, p.y);
       const cls = await page.locator(`.rv-op-toggle[data-clop="${op}"]`).getAttribute('class');

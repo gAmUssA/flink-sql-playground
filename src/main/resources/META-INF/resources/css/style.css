@@ -793,6 +793,13 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
     /* The results box is too short to pin both the filter bar and the column headers (77px at
        568x320): the bar scrolls away with the rows, so the pinned headers never sit under it. */
     .rv-filterbar { position: static; }
+    /* The changelog's bar (148px) scrolls away too, and the rows and the list around them are
+       tighter, so the newest row shows whole in the 77px box at 568x320 after a run (rows 70px,
+       down from 124px). */
+    .rv-log-bar { position: static; }
+    .rv-log { padding: 4px 12px; }
+    .rv-log-row { padding: 4px 9px; gap: 8px; }
+    .rv-log-vals { gap: 0 12px; }
   }
 
   /* The keyboard open on a phone held sideways leaves a window at most 260px tall: while a code

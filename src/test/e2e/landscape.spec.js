@@ -3,7 +3,8 @@
 // projects, in Chromium and WebKit (see playwright.config.js). mobile.spec.js runs there too.
 const { test, expect } = require('@playwright/test');
 const { openApp, fontsReady, layoutState, layoutOf, PHONE, DESKTOP } = require('./layout');
-const { runManyRows, scrollResults, headerHits, openEachFilter } = require('./results-bars');
+const { runManyRows, runRetractions, scrollResults, headerHits, openEachFilter, changelogReach, opTogglesWork } = require('./results-bars');
+const { measureContrast, settleAnimations } = require('./contrast');
 
 const MIN_CONTENT = 160;
 
@@ -378,5 +379,43 @@ for (const [width, height] of [[540, 400], [559, 420], [480, 410]]) {
       expect({ bars: h.bars, under: h.under }, `rows scrolled ${top}`).toEqual({ bars: [], under: [] });
       expect(await openEachFilter(page, true, top), `rows scrolled ${top}`).toMatchObject({ failed: [] });
     }
+  });
+}
+
+// On main the changelog's 148px bar stayed pinned on a phone held sideways and covered the
+// results: at 568x320 the box is 77px tall and no row ever showed (#69). The bar now scrolls away
+// with the rows, as the filter bar does (#65), and the rows wrap tighter, so a whole row fits.
+for (const [width, height] of [[568, 320], [667, 375], [844, 390], [915, 412]]) {
+  test(`at ${width}x${height}, the changelog shows whole rows below the bar and its controls stay reachable`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await runRetractions(page, true);
+    const r = await changelogReach(page);
+    expect(r, 'changelog rows').toEqual({ rows: 8, atEnd: r.atEnd, unreachable: [], pinned: false });
+    expect(r.atEnd, 'whole rows shown after the run').toBeGreaterThanOrEqual(1);
+    expect(await opTogglesWork(page), 'op toggles reachable at the top').toEqual({ ops: 4, failed: [] });
+    const search = page.locator('.rv-log-search-input');
+    await search.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+    await fontsReady(page);
+    const p = await search.evaluate((el) => { const q = el.getBoundingClientRect(); return { x: q.left + q.width / 2, y: q.top + q.height / 2 }; });
+    await page.touchscreen.tap(p.x, p.y);
+    await expect(search).toBeFocused();
+  });
+}
+
+for (const theme of ['nebula', 'carbon', 'cobalt']) {
+  test(`${theme}: at 568x320 the changelog's op toggles and count keep 4.5:1`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem('fsf-tweaks-v2', JSON.stringify({ theme: t, themeExplicit: true })), theme);
+    await page.reload();
+    await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+    await page.setViewportSize({ width: 568, height: 320 });
+    await runRetractions(page, true);
+    await scrollResults(page, 0);
+    await page.locator('.rv-op-toggle[data-clop="-U"]').tap();
+    await settleAnimations(page);
+    const m = await page.evaluate((fn) => new Function(`return (${fn})`)()([...document.querySelectorAll('.rv-op-toggle')].flatMap((t) => [
+      { what: `${t.dataset.clop} mark`, el: t.querySelector('.rv-op-toggle-mark') }, { what: `${t.dataset.clop} label`, el: t.querySelector('.rv-op-toggle-label') },
+      { what: `${t.dataset.clop} count`, el: t.querySelector('.rv-op-toggle-n') }]).concat([{ what: 'event count', el: document.getElementById('cl-count') }])), measureContrast.toString());
+    expect(m.length).toBe(13);
+    expect(m.filter((x) => x.ratio < 4.5), `${theme}: below 4.5:1`).toEqual([]);
   });
 }
