@@ -736,7 +736,11 @@ function fitResultsBar() {
   const box = document.getElementById('results-container');
   const bar = box && box.querySelector('.rv-filterbar, .rv-log-bar');
   if (!bar) return;
-  const height = (el) => (el ? el.getBoundingClientRect().height : 0);
+  // Layout heights, not rendered ones: a transform on an ancestor (the maximize animation scales
+  // the results panel up from 0.985) shrinks every rect, but not box.clientHeight or the layout the
+  // headers' sticky top applies to. The box's rendered width over its layout width is that scale.
+  const scale = box.offsetWidth ? box.getBoundingClientRect().width / box.offsetWidth : 1;
+  const height = (el) => (el ? el.getBoundingClientRect().height / scale : 0);
   const below = bar.classList.contains('rv-filterbar')
     ? height(box.querySelector('.rv-table thead')) + height(box.querySelector('.rv-table tbody tr'))
     : Math.max(0, ...[...box.querySelectorAll('.rv-log-row')].map(height));

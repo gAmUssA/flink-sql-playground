@@ -3,6 +3,7 @@
 // below it stays visible and clickable while the rows scroll (#68).
 const { test, expect } = require('@playwright/test');
 const { openApp } = require('./layout');
+const { settleAnimations } = require('./contrast');
 const { runManyRows, runRetractions, runLongTail, scrollResults, headerHits, openEachFilter, changelogReach } = require('./results-bars');
 
 test.beforeEach(async ({ page }) => { await openApp(page); });
@@ -92,4 +93,22 @@ test('views without a bar drop the bar state from the results box, and the table
   await page.locator('.rtab[data-tab="table"]').click();
   await scrollResults(page, 60);
   expect(await state(), 'back on the table').toEqual({ scrolled: true, barScrolls: false, barH: '44px' });
+});
+
+// Maximizing the results panel scales it up from 0.985 (maxIn) while the box and bar resize, and
+// the ResizeObserver fits the bar in those frames. A height read through the transform left
+// --filterbar-h about 0.66px short for the rest of a batch table's maximized session, with the
+// top of every header under the bar.
+test('in a maximized results panel the headers stay below the filter bar while the rows scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await runManyRows(page, false);
+  await page.locator('#results-panel .panel-maximize-btn').click();
+  await expect(page.locator('#results-panel')).toHaveClass(/panel-maximized/);
+  await settleAnimations(page);
+  await scrollResults(page, 40);
+  const h = await headerHits(page);
+  expect({ bars: h.bars, misses: h.misses, under: h.under }).toEqual({ bars: [], misses: [], under: [] });
+  const g = await page.locator('#results-container').evaluate((el) => ({
+    var: parseFloat(el.style.getPropertyValue('--filterbar-h')), bar: el.querySelector('.rv-filterbar').getBoundingClientRect().height }));
+  expect(Math.abs(g.var - g.bar), `--filterbar-h ${g.var} against the bar's ${g.bar}px`).toBeLessThanOrEqual(0.5);
 });
