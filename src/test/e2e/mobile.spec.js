@@ -6,6 +6,7 @@ const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
 const { setEditorText, waitForSettledCompletion } = require('./completion');
 const { fontsReady } = require('./layout');
+const { runManyRows, runRetractions, scrollResults, headerHits, openEachFilter, changelogReach, opTogglesWork } = require('./results-bars');
 
 const PRIMARY_ACTIONS = ['#build-schema-btn', '#run-query-btn', '#mode-segmented [data-mode="STREAMING"]',
   '#mode-segmented [data-mode="BATCH"]', '#example-select', '#share-btn'];
@@ -371,4 +372,84 @@ test('a column suggestion appears while typing and inserts on tap', async ({ pag
   expect(box.height).toBeGreaterThanOrEqual(40);
   await option.tap();
   await expect.poll(() => page.evaluate(() => queryEditor.getValue())).toBe('SELECT region');
+});
+
+// On main, wherever the filter bar stays pinned (upright phones), the column headers slid under
+// it once the rows scrolled, and the bar took their taps (#68). Sideways the bar scrolls away.
+test('with the rows scrolled, every column header stays clear of the filter bar and opens its filter on tap', async ({ page }) => {
+  await runManyRows(page, true);
+  for (const top of [0, 40, 'end']) {
+    await scrollResults(page, top);
+    const h = await headerHits(page);
+    expect({ bars: h.bars, misses: h.misses, under: h.under }, `rows scrolled ${top}`).toEqual({ bars: [], misses: [], under: [] });
+    expect(h.points.length, 'headers on screen').toBeGreaterThanOrEqual(2);
+    expect(await openEachFilter(page, true, top), `rows scrolled ${top}`).toMatchObject({ failed: [] });
+  }
+});
+
+test('a filter bar wrapped around its chips keeps the headers below it while the rows scroll', async ({ page }) => {
+  await runManyRows(page, true);
+  for (const [col, value] of [[1, 'region'], [7, 'A']]) {
+    await page.locator('.th-btn').nth(col).evaluate((el) => el.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+    await page.locator('.th-btn').nth(col).tap();
+    await page.locator('.filt-pop .filt-v').fill(value);
+    await page.locator('.filt-pop [data-apply]').tap();
+  }
+  await expect(page.locator('.rv-chip')).toHaveCount(2);
+  await scrollResults(page, 80);
+  const g = await page.evaluate(() => {
+    const bar = document.querySelector('.rv-filterbar');
+    return { pinned: getComputedStyle(bar).position === 'sticky', barH: bar.getBoundingClientRect().height,
+      barBottom: bar.getBoundingClientRect().bottom, head: document.querySelector('.th-btn').getBoundingClientRect().top };
+  });
+  // The upright projects (iphone13, pixel7, small375) pin the bar and check the offset; the
+  // sideways ones (iphone13-landscape, pixel7-landscape) let it scroll away (#65), so only the
+  // hit-test below applies there.
+  if (g.pinned) {
+    expect(g.barH, 'the chips wrap onto more rows').toBeGreaterThan(60);
+    expect(g.head, 'header top at the bar bottom').toBeCloseTo(g.barBottom, 0);
+  }
+  const h = await headerHits(page);
+  expect({ bars: h.bars, misses: h.misses, under: h.under }).toEqual({ bars: [], misses: [], under: [] });
+});
+
+// The first column and its header stay pinned at the left; scrolled both ways, the header corner
+// stays above the pinned cells and the other headers, and no row shows above the header row where
+// the bar has moved off to the left.
+test('scrolled sideways and down, the pinned first column and its header corner keep their layering', async ({ page }) => {
+  await runManyRows(page, true);
+  await scrollResults(page, 120, 300);
+  const g = await page.evaluate(() => {
+    const box = document.getElementById('results-container');
+    const b = box.getBoundingClientRect();
+    const btns = [...document.querySelectorAll('.th-btn')];
+    const corner = btns[0].getBoundingClientRect();
+    const at = (x, y) => document.elementFromPoint(x, y);
+    const cornerHit = at(corner.left + 8, corner.top + corner.height / 2);
+    const keyCell = at(corner.left + 8, corner.bottom + 12);
+    const other = btns.findIndex((x, i) => i > 0 && x.getBoundingClientRect().left > corner.right + 8 && x.getBoundingClientRect().right < b.right);
+    const o = btns[other].getBoundingClientRect();
+    const otherHit = at((Math.max(o.left, corner.right) + Math.min(o.right, b.right)) / 2, o.top + o.height / 2);
+    // Above the header row, at the right edge of the box: the bar, or what fills its place.
+    const above = corner.top > b.top + 4 ? at(b.right - 12, (b.top + corner.top) / 2) : null;
+    return { scrolled: box.scrollTop > 0 && box.scrollLeft > 0,
+      corner: !!cornerHit && cornerHit.closest('.th-btn') === btns[0],
+      keyCell: !!keyCell && !!keyCell.closest('tbody td') && keyCell.closest('td').cellIndex === 1,
+      otherHeader: !!otherHit && otherHit.closest('.th-btn') === btns[other],
+      noRowAbove: !above || !above.closest('tbody') };
+  });
+  expect(g).toEqual({ scrolled: true, corner: true, keyCell: true, otherHeader: true, noRowAbove: true });
+});
+
+// The changelog's bar (op toggles and search) is pinned where the box leaves room below it for a
+// whole row, and scrolls away with the rows elsewhere. On main it stayed pinned on a 375x667 phone,
+// whose rows wrap to 247px under a 198px bar in a 367px box, so no row ever showed whole (#68),
+// and on a phone held sideways (#69).
+test('after a streaming run, every changelog row can be scrolled into view whole, clear of the bar', async ({ page }) => {
+  await runRetractions(page, true);
+  const r = await changelogReach(page);
+  expect(r.rows).toBe(8);
+  expect(r.atEnd, 'whole rows shown after the run').toBeGreaterThanOrEqual(1);
+  expect(r.unreachable, 'rows never shown whole').toEqual([]);
+  expect(await opTogglesWork(page), 'op toggles reachable at the top').toEqual({ ops: 4, failed: [] });
 });

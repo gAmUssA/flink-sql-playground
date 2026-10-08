@@ -30,7 +30,7 @@ module.exports = defineConfig({
     ...['chromium', 'webkit'].map((browserName) => ({
       name: `layout-criterion-${browserName}`, testMatch: /layout-criterion\.spec\.js/, use: { browserName },
     })),
-    { name: 'desktop-chromium', testMatch: /(desktop|editor)\.spec\.js/, use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } } },
-    { name: 'desktop-webkit', testMatch: /editor\.spec\.js/, use: { browserName: 'webkit', viewport: { width: 1280, height: 800 } } },
+    { name: 'desktop-chromium', testMatch: /(desktop|editor|results-bars)\.spec\.js/, use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } } },
+    { name: 'desktop-webkit', testMatch: /(editor|results-bars)\.spec\.js/, use: { browserName: 'webkit', viewport: { width: 1280, height: 800 } } },
   ],
 });

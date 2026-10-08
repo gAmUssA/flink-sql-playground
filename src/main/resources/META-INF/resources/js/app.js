@@ -631,12 +631,12 @@ function renderActiveView() {
   updatePhoneResultCount();
   const body = document.getElementById('results-container');
   if (!body) return;
-  if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); return; }
+  if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); releaseResultsBar(); return; }
   switch (activeTab) {
-    case 'table': body.innerHTML = renderTable(); break;
-    case 'changelog': body.innerHTML = renderChangelog(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
-    case 'throughput': body.innerHTML = renderThroughput(); break;
-    case 'graph': body.innerHTML = renderJobGraph(); break;
+    case 'table': body.innerHTML = renderTable(); watchResultsBar(); break;
+    case 'changelog': body.innerHTML = renderChangelog(); watchResultsBar(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
+    case 'throughput': body.innerHTML = renderThroughput(); releaseResultsBar(); break;
+    case 'graph': body.innerHTML = renderJobGraph(); releaseResultsBar(); break;
   }
 }
 
@@ -720,6 +720,57 @@ function matchFilter(val, f) {
     case 'between': return (f.v2 === '' || f.v2 == null) ? a >= b : (a >= Math.min(b, b2) && a <= Math.max(b, b2));
     default: return true;
   }
+}
+
+// The results box pins its bar: the table's filter bar, or the changelog's op toggles and search.
+// The column headers pin just below the filter bar, whose height grows with filter chips and with
+// wrapping on narrow screens: --filterbar-h on the results box follows it, and is 0 where the bar
+// scrolls with the rows. Each render replaces the bar, so it is observed afresh.
+// A box too short for the pinned bar and what must show below it (the header row and one row of
+// the table, or the tallest changelog row: every rendered row is measured, as any of the up to
+// MAX_LOG events may wrap tallest) gets .bar-scrolls: the bar scrolls away with the rows, as it
+// does on wider sideways phones. That is a phone held sideways below the 560px floor (such as
+// 540x400), or an upright 375x667 phone, whose changelog rows wrap to 247px.
+const resultsBarObserver = new ResizeObserver(() => fitResultsBar());
+function fitResultsBar() {
+  const box = document.getElementById('results-container');
+  const bar = box && box.querySelector('.rv-filterbar, .rv-log-bar');
+  if (!bar) return;
+  // Layout heights, not rendered ones: a transform on an ancestor (the maximize animation scales
+  // the results panel up from 0.985) shrinks every rect, but not box.clientHeight or the layout the
+  // headers' sticky top applies to. The box's rendered width over its layout width is that scale.
+  const scale = box.offsetWidth ? box.getBoundingClientRect().width / box.offsetWidth : 1;
+  const height = (el) => (el ? el.getBoundingClientRect().height / scale : 0);
+  const below = bar.classList.contains('rv-filterbar')
+    ? height(box.querySelector('.rv-table thead')) + height(box.querySelector('.rv-table tbody tr'))
+    : Math.max(0, ...[...box.querySelectorAll('.rv-log-row')].map(height));
+  box.classList.toggle('bar-scrolls', box.clientHeight + 0.5 < height(bar) + below);
+  const h = bar.classList.contains('rv-filterbar') && getComputedStyle(bar).position === 'sticky' ? height(bar) : 0;
+  box.style.setProperty('--filterbar-h', `${h}px`);
+  markScrolled();
+}
+// .is-scrolled on the results box: its rows have scrolled up (see the headers' strip in style.css).
+// Only a view with a bar keeps it.
+function markScrolled() {
+  const box = document.getElementById('results-container');
+  box.classList.toggle('is-scrolled', box.scrollTop > 0 && !!box.querySelector('.rv-filterbar, .rv-log-bar'));
+}
+function watchResultsBar() {
+  resultsBarObserver.disconnect();
+  const box = document.getElementById('results-container');
+  const bar = box.querySelector('.rv-filterbar, .rv-log-bar');
+  if (!bar) { releaseResultsBar(); return; }
+  resultsBarObserver.observe(box);
+  resultsBarObserver.observe(bar);
+  fitResultsBar();
+}
+// Views without a bar (throughput, job graph, an error or an empty table) stop observing and drop
+// the bar's state from the results box, so no rule keyed on it reaches them.
+function releaseResultsBar() {
+  resultsBarObserver.disconnect();
+  const box = document.getElementById('results-container');
+  box.classList.remove('is-scrolled', 'bar-scrolls');
+  box.style.removeProperty('--filterbar-h');
 }
 
 let openFilterIdx = null;
@@ -924,6 +975,7 @@ function refreshChangelogRows() {
   if (cnt) cnt.textContent = clCountText(c);
   const old = wrap.querySelector('.rv-log, .rv-log-empty, .rv-empty');
   if (old) old.outerHTML = renderClRows(c); else wrap.insertAdjacentHTML('beforeend', renderClRows(c));
+  fitResultsBar();
   const body = document.getElementById('results-container');
   if (body && !clSearching()) body.scrollTop = body.scrollHeight;
 }
@@ -1387,6 +1439,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const th = e.target.closest('.th-btn');
     if (th) { revealHeader(th.closest('th')); toggleFilter(parseInt(th.dataset.col, 10), th.closest('th').getBoundingClientRect()); return; }
   });
+  document.getElementById('results-container').addEventListener('scroll', markScrolled, { passive: true });
   // Changelog free-text search — update rows in place so the input keeps focus while typing.
   document.getElementById('results-container').addEventListener('input', (e) => {
     const inp = e.target.closest('.rv-log-search-input');
