@@ -725,11 +725,17 @@ function matchFilter(val, f) {
 // The column headers pin just below the pinned filter bar, whose height grows with filter chips
 // and with wrapping on narrow screens: --filterbar-h on the results box follows it, and is 0 where
 // the bar scrolls with the rows. Each table render replaces the bar, so it is observed afresh.
+// A box too short for the pinned bar, the header row and one row below them (a phone held
+// sideways below the 560px floor, such as 540x400) gets .bar-scrolls: the bar scrolls away with
+// the rows, as it does on wider sideways phones, and the header row and a row fit.
 const filterBarObserver = new ResizeObserver(() => fitFilterBar());
 function fitFilterBar() {
   const box = document.getElementById('results-container');
   const bar = box && box.querySelector('.rv-filterbar');
   if (!bar) return;
+  const height = (el) => (el ? el.getBoundingClientRect().height : 0);
+  const need = height(bar) + height(box.querySelector('.rv-table thead')) + height(box.querySelector('.rv-table tbody tr'));
+  box.classList.toggle('bar-scrolls', box.clientHeight + 0.5 < need);
   const h = getComputedStyle(bar).position === 'sticky' ? bar.getBoundingClientRect().height : 0;
   box.style.setProperty('--filterbar-h', `${h}px`);
   markScrolled();

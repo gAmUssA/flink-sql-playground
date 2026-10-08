@@ -3,6 +3,7 @@
 // projects, in Chromium and WebKit (see playwright.config.js). mobile.spec.js runs there too.
 const { test, expect } = require('@playwright/test');
 const { openApp, fontsReady, layoutState, layoutOf, PHONE, DESKTOP } = require('./layout');
+const { runManyRows, scrollResults, headerHits, openEachFilter } = require('./results-bars');
 
 const MIN_CONTENT = 160;
 
@@ -333,6 +334,49 @@ for (const [width, height] of [[568, 320], [667, 375], [844, 390], [915, 412]]) 
         const closed = await headerRow(page);
         expect({ bars: closed.bars, misses: closed.misses }, `${where}, filter closed`).toEqual({ bars: [], misses: [] });
       }
+    }
+  });
+}
+
+/** Whether some scroll position of the results box shows the header row and a whole data row below it. */
+async function headerAndRowFit(page) {
+  await fontsReady(page);
+  return page.locator('#results-container').evaluate(async (box) => {
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+    for (let y = 0; y <= 240; y += 4) {
+      box.scrollTop = y;
+      await frame();
+      const b = box.getBoundingClientRect();
+      const top = b.top + box.clientTop, bottom = top + box.clientHeight;
+      const bar = document.querySelector('.rv-filterbar').getBoundingClientRect();
+      const barBottom = Math.max(top, Math.min(bar.bottom, bottom));
+      const head = [...document.querySelectorAll('.th-btn')].map((x) => x.getBoundingClientRect()).find((r) => r.height > 0);
+      if (head.top < barBottom - 0.5 || head.bottom > bottom + 0.5) continue;
+      if ([...document.querySelectorAll('.rv-table tbody tr')].some((r) => {
+        const q = r.getBoundingClientRect();
+        return q.top >= head.bottom - 0.5 && q.bottom <= bottom + 0.5;
+      })) return true;
+    }
+    return false;
+  });
+}
+
+// Below the 560px floor a phone held sideways keeps the stacked layout, whose bars, tabs and
+// toolbar take 300px of a 540px-wide window: the results box is 0px tall at 540x300. On main the
+// pinned filter bar left room for the header row and a data row only from 432px tall (442 in
+// WebKit), and slid the headers under it once the rows scrolled (#68). A box too short for the
+// bar, the header row and a row now lets the bar scroll away, so both fit from 388px tall (398 in
+// WebKit, whose horizontal scrollbar takes 10px of the box).
+for (const [width, height] of [[540, 400], [559, 420], [480, 410]]) {
+  test(`at ${width}x${height}, the header row and a data row fit the results box, and the headers stay clear of the filter bar`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await runManyRows(page, true);
+    expect(await headerAndRowFit(page), 'header row and a whole data row in view').toBe(true);
+    for (const top of [0, 40, 'end']) {
+      await scrollResults(page, top);
+      const h = await headerHits(page);
+      expect({ bars: h.bars, under: h.under }, `rows scrolled ${top}`).toEqual({ bars: [], under: [] });
+      expect(await openEachFilter(page, true, top), `rows scrolled ${top}`).toMatchObject({ failed: [] });
     }
   });
 }
