@@ -723,6 +723,16 @@ function matchFilter(val, f) {
 }
 
 let openFilterIdx = null;
+// Where the filter bar scrolls with the rows (a phone held sideways), a column header cut off by
+// the bottom of the short results box scrolls fully into view before its filter opens. Where the
+// bar is pinned, scrolling would slide the header under it, so the box stays put.
+function revealHeader(cell) {
+  const box = document.getElementById('results-container');
+  const bar = box.querySelector('.rv-filterbar');
+  if (!bar || getComputedStyle(bar).position === 'sticky') return;
+  const cut = cell.getBoundingClientRect().bottom - (box.getBoundingClientRect().top + box.clientTop + box.clientHeight);
+  if (cut > 0) box.scrollTop += Math.ceil(cut);
+}
 function toggleFilter(idx, rect) {
   if (openFilterIdx === idx) closeFilterPopover();
   else openFilterPopover(idx, rect);
@@ -1375,7 +1385,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chip = e.target.closest('.rv-chip');
     if (chip) { toggleFilter(parseInt(chip.dataset.chip, 10), chip.getBoundingClientRect()); return; }
     const th = e.target.closest('.th-btn');
-    if (th) { toggleFilter(parseInt(th.dataset.col, 10), th.closest('th').getBoundingClientRect()); return; }
+    if (th) { revealHeader(th.closest('th')); toggleFilter(parseInt(th.dataset.col, 10), th.closest('th').getBoundingClientRect()); return; }
   });
   // Changelog free-text search — update rows in place so the input keeps focus while typing.
   document.getElementById('results-container').addEventListener('input', (e) => {

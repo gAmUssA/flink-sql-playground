@@ -5,6 +5,7 @@
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
 const { setEditorText, waitForSettledCompletion } = require('./completion');
+const { fontsReady } = require('./layout');
 
 const PRIMARY_ACTIONS = ['#build-schema-btn', '#run-query-btn', '#mode-segmented [data-mode="STREAMING"]',
   '#mode-segmented [data-mode="BATCH"]', '#example-select', '#share-btn'];
@@ -23,6 +24,7 @@ async function runBatchQuery(page) {
 }
 
 async function expectNoHorizontalScroll(page) {
+  await fontsReady(page);
   const overflow = await page.evaluate(() => ({
     doc: document.documentElement.scrollWidth - window.innerWidth,
     body: document.body.scrollWidth - window.innerWidth,
@@ -33,6 +35,7 @@ async function expectNoHorizontalScroll(page) {
 
 /** Every visible interactive control outside the code editor, with its size. */
 async function visibleControls(page) {
+  await fontsReady(page);
   return page.evaluate(() => {
     const sel = 'button, select, input, a[href], [role="tab"], [tabindex]:not([tabindex="-1"])';
     return [...document.querySelectorAll(sel)]
@@ -60,6 +63,7 @@ async function expectTouchTargets(page) {
 async function expectTappable(page, selector) {
   const el = page.locator(selector).first();
   await expect(el).toBeVisible();
+  await fontsReady(page);
   const box = await el.boundingBox();
   const vp = page.viewportSize();
   expect(box.x, `${selector} left edge`).toBeGreaterThanOrEqual(0);
@@ -81,6 +85,7 @@ async function expectTappable(page, selector) {
 async function expectFilterInsideWindow(page) {
   const pop = page.locator('.filt-pop');
   await expect(pop).toBeVisible();
+  await fontsReady(page);
   const vp = page.viewportSize();
   const box = await pop.evaluate((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
   expect(box.top, 'popover top edge').toBeGreaterThanOrEqual(0);
@@ -209,6 +214,7 @@ test('text inputs and the editor use at least 16px so iOS does not zoom on focus
 
 test('wide results keep the first column pinned and scroll inside the panel', async ({ page }) => {
   await runBatchQuery(page);
+  await fontsReady(page);
   const layout = await page.evaluate(() => {
     const body = document.getElementById('results-container');
     const firstData = document.querySelector('.rv-table tbody tr td:nth-child(2)');
@@ -282,6 +288,7 @@ test('the guided tour is not offered on phones', async ({ page }) => {
 
 test('the toolbar puts Build + Run first; upright, mode / preset / share wrap to the next row', async ({ page }) => {
   await runBatchQuery(page);
+  await fontsReady(page);
   const layout = await page.evaluate(() => {
     // Vertical centre: controls on one flex row share it even when their heights differ.
     const row = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return r.top + r.height / 2; };
@@ -359,6 +366,7 @@ test('a column suggestion appears while typing and inserts on tap', async ({ pag
   await waitForSettledCompletion(page, 'query');
   const option = page.locator('.cm-tooltip-autocomplete li', { has: page.locator('.cm-completionLabel', { hasText: /^region$/ }) });
   await expect(option).toBeVisible();
+  await fontsReady(page);
   const box = await option.boundingBox();
   expect(box.height).toBeGreaterThanOrEqual(40);
   await option.tap();
