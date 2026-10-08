@@ -91,4 +91,54 @@ async function openEachFilter(page, touch, top, left = 0) {
   return { opened: points.length - failed.length, failed };
 }
 
-module.exports = { runManyRows, runRetractions, scrollResults, headerHits, openEachFilter };
+/**
+ * The changelog against its bar: for each row, scrolls the box to bring the row's top just below
+ * the bar (or to the box's top where the bar scrolls away), and lists the rows that still do not
+ * show whole, clear of the bar. Also counts the whole rows clear of the bar after the run, where
+ * the box has scrolled to the newest row.
+ */
+async function changelogReach(page) {
+  await fontsReady(page);
+  return page.locator('#results-container').evaluate(async (box) => {
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+    const view = () => { const b = box.getBoundingClientRect(); return { top: b.top + box.clientTop, bottom: b.top + box.clientTop + box.clientHeight }; };
+    const barBottom = () => { const v = view(); const bar = document.querySelector('.rv-log-bar').getBoundingClientRect(); return Math.max(v.top, Math.min(bar.bottom, v.bottom)); };
+    const rows = [...document.querySelectorAll('.rv-log-row')];
+    const whole = (r) => { const q = r.getBoundingClientRect(); return q.top >= barBottom() - 0.5 && q.bottom <= view().bottom + 0.5; };
+    const atEnd = rows.filter(whole).length;
+    const unreachable = [];
+    for (const [i, r] of rows.entries()) {
+      box.scrollTop += r.getBoundingClientRect().top - barBottom();
+      await frame();
+      // A bar that scrolls away has left the box once the row reaches the top.
+      box.scrollTop += r.getBoundingClientRect().top - barBottom();
+      await frame();
+      if (!whole(r)) unreachable.push(i);
+    }
+    return { rows: rows.length, atEnd, unreachable, pinned: getComputedStyle(document.querySelector('.rv-log-bar')).position === 'sticky' };
+  });
+}
+
+/** Scrolls the changelog to its top and taps each op toggle twice: off, then on again. */
+async function opTogglesWork(page) {
+  await scrollResults(page, 0);
+  const ops = await page.locator('.rv-op-toggle').evaluateAll((ts) => ts.map((t) => t.dataset.clop));
+  const failed = [];
+  for (const op of ops) {
+    for (const want of ['is-off', 'is-on']) {
+      await scrollResults(page, 0);
+      const p = await page.locator(`.rv-op-toggle[data-clop="${op}"]`).evaluate((t) => {
+        const r = t.getBoundingClientRect();
+        const box = document.getElementById('results-container').getBoundingClientRect();
+        const y = (Math.max(r.top, box.top) + Math.min(r.bottom, box.bottom)) / 2;
+        return { x: r.left + r.width / 2, y, inBox: r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5 };
+      });
+      await page.touchscreen.tap(p.x, p.y);
+      const cls = await page.locator(`.rv-op-toggle[data-clop="${op}"]`).getAttribute('class');
+      if (!p.inBox || !cls.split(' ').includes(want)) failed.push(`${op} ${want}`);
+    }
+  }
+  return { ops: ops.length, failed };
+}
+
+module.exports = { runManyRows, runRetractions, scrollResults, headerHits, openEachFilter, changelogReach, opTogglesWork };

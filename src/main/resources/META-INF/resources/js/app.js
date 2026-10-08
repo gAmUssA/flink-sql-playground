@@ -633,8 +633,8 @@ function renderActiveView() {
   if (!body) return;
   if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); return; }
   switch (activeTab) {
-    case 'table': body.innerHTML = renderTable(); watchFilterBar(); break;
-    case 'changelog': body.innerHTML = renderChangelog(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
+    case 'table': body.innerHTML = renderTable(); watchResultsBar(); break;
+    case 'changelog': body.innerHTML = renderChangelog(); watchResultsBar(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
     case 'throughput': body.innerHTML = renderThroughput(); break;
     case 'graph': body.innerHTML = renderJobGraph(); break;
   }
@@ -722,21 +722,25 @@ function matchFilter(val, f) {
   }
 }
 
-// The column headers pin just below the pinned filter bar, whose height grows with filter chips
-// and with wrapping on narrow screens: --filterbar-h on the results box follows it, and is 0 where
-// the bar scrolls with the rows. Each table render replaces the bar, so it is observed afresh.
-// A box too short for the pinned bar, the header row and one row below them (a phone held
-// sideways below the 560px floor, such as 540x400) gets .bar-scrolls: the bar scrolls away with
-// the rows, as it does on wider sideways phones, and the header row and a row fit.
-const filterBarObserver = new ResizeObserver(() => fitFilterBar());
-function fitFilterBar() {
+// The results box pins its bar: the table's filter bar, or the changelog's op toggles and search.
+// The column headers pin just below the filter bar, whose height grows with filter chips and with
+// wrapping on narrow screens: --filterbar-h on the results box follows it, and is 0 where the bar
+// scrolls with the rows. Each render replaces the bar, so it is observed afresh.
+// A box too short for the pinned bar and what must show below it (the header row and one row of
+// the table, or the tallest changelog row) gets .bar-scrolls: the bar scrolls away with the rows,
+// as it does on wider sideways phones. That is a phone held sideways below the 560px floor (such
+// as 540x400), or an upright 375x667 phone, whose changelog rows wrap to 247px.
+const resultsBarObserver = new ResizeObserver(() => fitResultsBar());
+function fitResultsBar() {
   const box = document.getElementById('results-container');
-  const bar = box && box.querySelector('.rv-filterbar');
+  const bar = box && box.querySelector('.rv-filterbar, .rv-log-bar');
   if (!bar) return;
   const height = (el) => (el ? el.getBoundingClientRect().height : 0);
-  const need = height(bar) + height(box.querySelector('.rv-table thead')) + height(box.querySelector('.rv-table tbody tr'));
-  box.classList.toggle('bar-scrolls', box.clientHeight + 0.5 < need);
-  const h = getComputedStyle(bar).position === 'sticky' ? bar.getBoundingClientRect().height : 0;
+  const below = bar.classList.contains('rv-filterbar')
+    ? height(box.querySelector('.rv-table thead')) + height(box.querySelector('.rv-table tbody tr'))
+    : Math.max(0, ...[...box.querySelectorAll('.rv-log-row')].slice(0, 50).map(height));
+  box.classList.toggle('bar-scrolls', box.clientHeight + 0.5 < height(bar) + below);
+  const h = bar.classList.contains('rv-filterbar') && getComputedStyle(bar).position === 'sticky' ? height(bar) : 0;
   box.style.setProperty('--filterbar-h', `${h}px`);
   markScrolled();
 }
@@ -745,14 +749,14 @@ function markScrolled() {
   const box = document.getElementById('results-container');
   box.classList.toggle('is-scrolled', box.scrollTop > 0);
 }
-function watchFilterBar() {
-  filterBarObserver.disconnect();
+function watchResultsBar() {
+  resultsBarObserver.disconnect();
   const box = document.getElementById('results-container');
-  const bar = box.querySelector('.rv-filterbar');
+  const bar = box.querySelector('.rv-filterbar, .rv-log-bar');
   if (!bar) return;
-  filterBarObserver.observe(box);
-  filterBarObserver.observe(bar);
-  fitFilterBar();
+  resultsBarObserver.observe(box);
+  resultsBarObserver.observe(bar);
+  fitResultsBar();
 }
 
 let openFilterIdx = null;
@@ -957,6 +961,7 @@ function refreshChangelogRows() {
   if (cnt) cnt.textContent = clCountText(c);
   const old = wrap.querySelector('.rv-log, .rv-log-empty, .rv-empty');
   if (old) old.outerHTML = renderClRows(c); else wrap.insertAdjacentHTML('beforeend', renderClRows(c));
+  fitResultsBar();
   const body = document.getElementById('results-container');
   if (body && !clSearching()) body.scrollTop = body.scrollHeight;
 }

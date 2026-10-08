@@ -6,7 +6,7 @@ const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
 const { setEditorText, waitForSettledCompletion } = require('./completion');
 const { fontsReady } = require('./layout');
-const { runManyRows, scrollResults, headerHits, openEachFilter } = require('./results-bars');
+const { runManyRows, runRetractions, scrollResults, headerHits, openEachFilter, changelogReach, opTogglesWork } = require('./results-bars');
 
 const PRIMARY_ACTIONS = ['#build-schema-btn', '#run-query-btn', '#mode-segmented [data-mode="STREAMING"]',
   '#mode-segmented [data-mode="BATCH"]', '#example-select', '#share-btn'];
@@ -436,4 +436,17 @@ test('scrolled sideways and down, the pinned first column and its header corner 
       noRowAbove: !above || !above.closest('tbody') };
   });
   expect(g).toEqual({ scrolled: true, corner: true, keyCell: true, otherHeader: true, noRowAbove: true });
+});
+
+// The changelog's bar (op toggles and search) is pinned where the box leaves room below it for a
+// whole row, and scrolls away with the rows elsewhere. On main it stayed pinned on a 375x667 phone,
+// whose rows wrap to 247px under a 198px bar in a 367px box, so no row ever showed whole (#68),
+// and on a phone held sideways (#69).
+test('after a streaming run, every changelog row can be scrolled into view whole, clear of the bar', async ({ page }) => {
+  await runRetractions(page, true);
+  const r = await changelogReach(page);
+  expect(r.rows).toBe(8);
+  expect(r.atEnd, 'whole rows shown after the run').toBeGreaterThanOrEqual(1);
+  expect(r.unreachable, 'rows never shown whole').toEqual([]);
+  expect(await opTogglesWork(page), 'op toggles reachable at the top').toEqual({ ops: 4, failed: [] });
 });
