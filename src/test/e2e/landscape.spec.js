@@ -183,6 +183,16 @@ test('an upright phone with the keyboard open (taller than 260px) keeps its tool
   expect(await chrome(page, 'query')).toMatchObject({ toolbar: true, statusbar: true });
 });
 
+// Guards the 560px width floor: a focused editor in a window 260px tall or less hides both bars
+// only when the window is at least 560px wide, as the compaction query requires.
+for (const [width, height, bars] of [[520, 240, true], [844, 200, false]]) {
+  test(`a focused editor in a ${width}x${height} touch window ${bars ? 'keeps' : 'hides'} its toolbar and status bar`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => queryEditor.focus());
+    expect(await chrome(page, 'query')).toMatchObject({ toolbar: bars, statusbar: bars });
+  });
+}
+
 // Guards the orientation clause: a portrait window no taller than 260px keeps both bars.
 test('a portrait touch window 260px tall or less keeps its toolbar and status bar', async ({ page }) => {
   await page.setViewportSize({ width: 250, height: 255 });

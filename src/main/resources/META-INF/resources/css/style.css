@@ -784,8 +784,10 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 
   /* The keyboard open on a phone held sideways leaves a window at most 260px tall: while a code
      editor has focus, the toolbar and the status bar give it their room, and the panel head
-     shrinks to its label, so the editor keeps at least half the window (780x170 included). */
-  @media (max-height: 260px) and (orientation: landscape) and (pointer: coarse) {
+     shrinks to its label, so the editor keeps at least half the window (780x170 included). The
+     560px floor matches the compaction query above: a narrower window keeps the stacked layout
+     and both bars. */
+  @media (max-height: 260px) and (orientation: landscape) and (pointer: coarse) and (min-width: 560px) {
     .app.editor-focused .toolbar, .app.editor-focused .statusbar { display: none; }
     .app.editor-focused .panel-head { padding-top: 3px; padding-bottom: 3px; }
   }
