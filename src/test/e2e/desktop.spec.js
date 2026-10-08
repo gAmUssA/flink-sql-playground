@@ -3,6 +3,7 @@
 // and both editors side by side, toolbar on one row, results below the editors.
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
+const { fontsReady } = require('./layout');
 
 test.beforeEach(async ({ page }) => {
   await stubApi(page);
@@ -17,6 +18,7 @@ test('phone-only controls are not rendered', async ({ page }) => {
 });
 
 test('sidebar, editors, toolbar and results keep the desktop arrangement', async ({ page }) => {
+  await fontsReady(page);
   const g = await page.evaluate(() => {
     const box = (s) => document.querySelector(s).getBoundingClientRect();
     const tb = [...document.querySelectorAll('.toolbar > *')].filter((el) => el.getBoundingClientRect().width > 0);
@@ -40,6 +42,7 @@ test('sidebar, editors, toolbar and results keep the desktop arrangement', async
 
 test('the sidebar still collapses to a rail', async ({ page }) => {
   await page.click('#schema-browser-toggle');
+  await fontsReady(page);
   await expect.poll(() => page.locator('#schema-browser').evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(44);
 });
 
@@ -60,6 +63,7 @@ for (const [height, want] of [[800, { below: false, inside: true, scrolls: false
     await page.click('#run-query-btn');
     await expect(page.locator('.rv-table')).toBeVisible();
     await page.locator('.th-btn').first().click();
+    await fontsReady(page);
     const g = await page.evaluate(() => {
       const header = document.querySelector('.th-btn').getBoundingClientRect();
       const pop = document.querySelector('.filt-pop');
@@ -82,6 +86,8 @@ test('the column filter keeps its place when it fits with less than 10px to spar
   await page.click('#run-query-btn');
   await expect(page.locator('.rv-table')).toBeVisible();
   await page.locator('.th-btn').first().click();
+  // The popover's Plex Mono 600 face may still be loading: measure the height it settles at.
+  await fontsReady(page);
   const popHeight = await page.locator('.filt-pop').evaluate((el) => el.offsetHeight);
   await page.keyboard.press('Escape');
   await expect(page.locator('.filt-pop')).toHaveCount(0);
@@ -101,6 +107,7 @@ test('the column filter keeps its place when it fits with less than 10px to spar
   await page.locator('.th-btn').first().click();
   // Measure the settled box, not one shifted by the open animation.
   await page.locator('.filt-pop').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  await fontsReady(page);
   const g = await page.evaluate(() => {
     const header = document.querySelector('.th-btn').getBoundingClientRect();
     const pop = document.querySelector('.filt-pop');
@@ -112,10 +119,10 @@ test('the column filter keeps its place when it fits with less than 10px to spar
 });
 
 /**
- * WCAG contrast of each element's text against the background it is drawn on: the element's own
- * and its ancestors' background colours, composited until one is opaque. Colours are resolved
- * through a canvas, so color-mix() and alpha work whatever syntax the browser reports.
- * It ignores `opacity` on the element and its ancestors, so it overstates contrast for dimmed text.
+ * WCAG contrast of each element's text against the background it is drawn on, as rendered: the
+ * element's own and its ancestors' background colours composited from the root down, with each
+ * `opacity` below 1 blending its subtree into what lies behind it. Colours are resolved through a
+ * canvas, so color-mix() and alpha work whatever syntax the browser reports.
  */
 function measureContrast(targets) {
   const cv = document.createElement('canvas'); cv.width = cv.height = 1;
@@ -125,25 +132,37 @@ function measureContrast(targets) {
     const [r, gr, b, a] = g.getImageData(0, 0, 1, 1).data; return [r, gr, b, a / 255];
   };
   const over = (top, under) => top.slice(0, 3).map((c, i) => c * top[3] + under[i] * (1 - top[3]));
-  const background = (el) => {
-    const layers = [];
-    for (let n = el; n; n = n.parentElement) {
-      const c = rgba(getComputedStyle(n).backgroundColor);
-      if (c[3] > 0) layers.push(c);
-      if (c[3] === 1) break;
-    }
-    return layers.reverse().reduce((under, top) => over(top, under), [255, 255, 255]);
+  const mix = (a, b, t) => a.map((c, i) => c * t + b[i] * (1 - t));
+  // The colour of one pixel of `content` (or of the background, when content is fully
+  // transparent) drawn inside path[i..], with `under` showing behind path[i].
+  const render = (path, i, under, content) => {
+    const s = getComputedStyle(path[i]);
+    const inside = over(rgba(s.backgroundColor), under);
+    const drawn = i === path.length - 1 ? over(content, inside) : render(path, i + 1, inside, content);
+    return mix(drawn, under, parseFloat(s.opacity));
   };
   const lum = (rgb) => {
     const [r, g2, b] = rgb.map((c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
     return 0.2126 * r + 0.7152 * g2 + 0.0722 * b;
   };
   return targets.map(({ what, el }) => {
-    const bg = background(el);
-    const fg = over(rgba(getComputedStyle(el).color), bg);
+    const path = [];
+    for (let n = el; n; n = n.parentElement) path.unshift(n);
+    const bg = render(path, 0, [255, 255, 255], [0, 0, 0, 0]);
+    const fg = render(path, 0, [255, 255, 255], rgba(getComputedStyle(el).color));
     const [hi, lo] = [lum(fg), lum(bg)].sort((x, y) => y - x);
     return { what, ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100, fg: fg.map(Math.round), bg: bg.map(Math.round) };
   });
+}
+
+/**
+ * Waits for the page's finite animations (cards and rows fading in) to end, so opacity is settled.
+ * An animation whose element a re-render removed is cancelled: nothing of it is left to settle.
+ */
+async function settleAnimations(page) {
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((a) => a.effect.getComputedTiming().endTime !== Infinity)
+    .map((a) => a.finished.catch((e) => { if (e.name !== 'AbortError') throw e; }))));
 }
 
 for (const theme of ['nebula', 'carbon', 'cobalt']) {
@@ -155,6 +174,7 @@ for (const theme of ['nebula', 'carbon', 'cobalt']) {
     await page.evaluate(() => queryEditor.setValue('-- top regions\nSELECT CAST(user_id AS INT) FROM orders'));
     await page.click('#build-schema-btn');
     await expect(page.locator('.tbl-col-type').first()).toBeVisible();
+    await settleAnimations(page);
     // Before a run: the results tabs, the empty-state hint and the status bar use --text-3.
     const first = await page.evaluate((fn) => {
       const measure = new Function(`return (${fn})`)();
@@ -183,6 +203,7 @@ for (const theme of ['nebula', 'carbon', 'cobalt']) {
     await page.locator('.tbl-card').first().hover();
     await page.locator('.tbl-drop').first().click();
     await expect(page.locator('.tbl-confirm')).toBeVisible();
+    await settleAnimations(page);
     const second = await page.evaluate((fn) => new Function(`return (${fn})`)()([
       { what: 'column type', el: document.querySelector('.rv-coltype') },
       { what: 'drop note', el: document.querySelector('.tbl-confirm-note') },
@@ -191,5 +212,45 @@ for (const theme of ['nebula', 'carbon', 'cobalt']) {
 
     const low = [...first, ...second].filter((m) => m.ratio < 4.5);
     expect(low, `${theme}: text below 4.5:1`).toEqual([]);
+  });
+}
+
+// After a streaming run whose changelog holds all four ops: each op's toggle (its mark, label and
+// count), row mark, row label and cells, then a toggle switched off.
+for (const theme of ['nebula', 'carbon', 'cobalt']) {
+  test(`${theme}: the changelog's op toggles and rows reach 4.5:1 after a run`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem('fsf-tweaks-v2', JSON.stringify({ theme: t, themeExplicit: true })), theme);
+    await page.reload();
+    await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await page.evaluate(() => queryEditor.setValue('-- stub: retractions\nSELECT * FROM orders'));
+    await page.click('#mode-segmented [data-mode="STREAMING"]');
+    await page.click('#run-query-btn');
+    await expect(page.locator('#run-query-btn')).toBeEnabled();
+    await page.click('.rtab[data-tab="changelog"]');
+    await expect(page.locator('.rv-log-row')).toHaveCount(8);
+    const toggles = (fn) => page.evaluate((f) => new Function(`return (${f})`)()([...document.querySelectorAll('.rv-op-toggle')].flatMap((t) => {
+      const state = `${t.dataset.clop} toggle (${t.classList.contains('is-on') ? 'on' : 'off'})`;
+      return [{ what: `${state} mark`, el: t.querySelector('.rv-op-toggle-mark') }, { what: `${state} label`, el: t.querySelector('.rv-op-toggle-label') },
+        { what: `${state} count`, el: t.querySelector('.rv-op-toggle-n') }];
+    })), fn);
+    await settleAnimations(page);
+    const rows = await page.evaluate((fn) => new Function(`return (${fn})`)()(['+I', '-U', '+U', '-D'].flatMap((op) => {
+      const row = [...document.querySelectorAll('.rv-log-row')].find((r) => r.querySelector('.rv-op').textContent === op);
+      return [{ what: `${op} row mark`, el: row.querySelector('.rv-op') }, { what: `${op} row label`, el: row.querySelector('.rv-op-label') },
+        { what: `${op} row cell`, el: row.querySelector('.rv-log-cell') }, { what: `${op} row column name`, el: row.querySelector('.rv-log-cell i') }];
+    })), measureContrast.toString());
+    const on = await toggles(measureContrast.toString());
+    // Each toggle switched off in turn, the -U toggle included.
+    const off = [];
+    for (const op of ['+I', '-U', '+U', '-D']) {
+      await page.locator(`.rv-op-toggle[data-clop="${op}"]`).click();
+      await settleAnimations(page);
+      off.push(...(await toggles(measureContrast.toString())).filter((x) => x.what.startsWith(`${op} toggle (off)`)));
+      await page.locator(`.rv-op-toggle[data-clop="${op}"]`).click();
+    }
+    expect([rows.length, on.length, off.length]).toEqual([16, 12, 12]);
+    const low = [...rows, ...on, ...off].filter((x) => x.ratio < 4.5);
+    expect(low, `${theme}: changelog text below 4.5:1`).toEqual([]);
   });
 }

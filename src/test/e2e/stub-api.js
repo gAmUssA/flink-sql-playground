@@ -20,9 +20,14 @@ async function stubApi(page) {
       return json(200, { tables: [{ name: 'orders', columns: COLUMNS.map((c, i) => ({ name: c, type: TYPES[i] })) }] });
     }
     if (/\/execute\/stream$/.test(path)) {
+      // A query containing "-- stub: retractions" also updates row 1 and deletes row 3, so the
+      // changelog shows all four ops (+I, -U, +U, -D).
+      const retractions = /-- stub: retractions/.test(route.request().postData() || '');
+      const changes = retractions ? [{ kind: '-U', values: ROWS[0] }, { kind: '+U', values: [1, ...ROWS[0].slice(1, 2), 11, ...ROWS[0].slice(3)] },
+        { kind: '-D', values: ROWS[2] }] : [];
       const lines = [{ type: 'schema', columns: COLUMNS, columnTypes: TYPES },
-        ...ROWS.map((values) => ({ type: 'row', kind: '+I', values })),
-        { type: 'end', rowCount: ROWS.length, truncated: false, executionTimeMs: 12 }];
+        ...ROWS.map((values) => ({ type: 'row', kind: '+I', values })), ...changes.map((c) => ({ type: 'row', ...c })),
+        { type: 'end', rowCount: ROWS.length + changes.length, truncated: false, executionTimeMs: 12 }];
       return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: lines.map((l) => JSON.stringify(l)).join('\n') + '\n' });
     }
     if (/\/execute$/.test(path)) {

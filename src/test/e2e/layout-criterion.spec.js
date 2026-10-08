@@ -4,7 +4,7 @@
 // desktop layout, and mouse-driven windows keep main's layout at any height (a narrow one gets
 // the phone layout, as on main). Runs in Chromium and WebKit.
 const { test, expect } = require('@playwright/test');
-const { openApp, layoutState, layoutOf, controlsOutsideWindow, PHONE, DESKTOP } = require('./layout');
+const { openApp, fontsReady, layoutState, layoutOf, controlsOutsideWindow, PHONE, DESKTOP } = require('./layout');
 
 const CASES = [
   { name: 'iPhone 13 landscape', use: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true }, want: PHONE },
@@ -65,6 +65,7 @@ for (const c of STACKED) {
 
     test('keeps the stacked phone layout: full-width tabs below the topbar', async ({ page }) => {
       await openApp(page);
+      await fontsReady(page);
       const g = await page.evaluate(() => ({
         topbarBottom: document.querySelector('.topbar').getBoundingClientRect().bottom,
         innerWidth: window.innerWidth,
@@ -93,6 +94,7 @@ for (const [width, height] of SIDEWAYS) {
 
     test('shares the topbar row with the panel tabs', async ({ page }) => {
       await openApp(page);
+      await fontsReady(page);
       const rowGap = await page.evaluate(() => {
         const centre = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.top + r.height / 2; };
         return Math.abs(centre('.m-views') - centre('.topbar'));

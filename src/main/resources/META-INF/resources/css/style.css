@@ -1,8 +1,9 @@
 /* styles.css — Flink SQL Playground — bold data-infra theme system (IBM Plex) */
 
 /* ============================== TOKENS ============================== */
-/* Text colours (--text-3, --tk-*) keep at least 4.5:1 contrast on the backgrounds they sit on, in
-   every theme; desktop.spec.js measures it. */
+/* Text colours (--text-3, --tk-*, --op-*) keep at least 4.5:1 contrast on the backgrounds they sit
+   on, in every theme; desktop.spec.js measures it. --op-* colour the changelog's ops: green insert
+   (+I), amber update (+U), red retract (-U) and delete (-D). */
 :root {
   --mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace;
   --ui: 'IBM Plex Sans', system-ui, sans-serif;
@@ -36,6 +37,7 @@
   --gutter: #6a6a8a;
   --tk-kw: #b79bff; --tk-ty: #58d6c4; --tk-fn: #f57bb8; --tk-str: #8ee98a;
   --tk-num: #ffc25c; --tk-id: #dcdbf0; --tk-pun: #8786a8; --tk-op: #ff9d7a; --tk-com: #7d7d9b;
+  --op-i: #34d399; --op-uu: #fbbf24; --op-du: #f87171; --op-d: #ef4444;
   --grid-line: rgba(255,255,255,0.05);
   --editor-bg: #0c0c16;
   color-scheme: dark;
@@ -58,6 +60,7 @@
   --gutter: #5c6065;
   --tk-kw: #c0a6ff; --tk-ty: #4fd6c2; --tk-fn: #ff7bb0; --tk-str: #9be88f;
   --tk-num: #ffc15c; --tk-id: #e3e4e6; --tk-pun: #7d8186; --tk-op: #ffa07a; --tk-com: #797f85;
+  --op-i: #34d399; --op-uu: #fbbf24; --op-du: #f87171; --op-d: #ef4444;
   --grid-line: rgba(255,255,255,0.055);
   --r-sm: 4px; --r-md: 5px; --r-lg: 7px;
   --editor-bg: #0a0b0c;
@@ -82,6 +85,7 @@
   --gutter: #b3b5c8;
   --tk-kw: #7c3aed; --tk-ty: #0b7f75; --tk-fn: #d52473; --tk-str: #15803d;
   --tk-num: #b45309; --tk-id: #1f2233; --tk-pun: #6d6f8e; --tk-op: #c2410c; --tk-com: #6d708c;
+  --op-i: #047857; --op-uu: #b45309; --op-du: #dc2626; --op-d: #b91c1c;
   --grid-line: rgba(20,21,40,0.06);
   --editor-bg: #ffffff;
   color-scheme: light;
@@ -370,7 +374,7 @@ svg { display: block; }
 .rv-key { color: var(--accent) !important; font-weight: 600; }
 .rv-null { color: var(--text-3); font-style: italic; }
 .rv-op-badge { font-family: var(--mono); font-size: 10px; font-weight: 700; }
-.rv-op-badge.op-i { color: #34d399; } .rv-op-badge.op-uu { color: #fbbf24; } .rv-op-badge.op-du { color: #f87171; } .rv-op-badge.op-d { color: #ef4444; }
+.rv-op-badge.op-i { color: var(--op-i); } .rv-op-badge.op-uu { color: var(--op-uu); } .rv-op-badge.op-du { color: var(--op-du); } .rv-op-badge.op-d { color: var(--op-d); }
 td.al-right, th.al-right { text-align: right; }
 
 /* ---- Table column filtering ---- */
@@ -427,11 +431,13 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 }
 @keyframes logIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
 .rv-op { font-weight: 700; font-size: 12px; width: 26px; flex: 0 0 auto; }
-.rv-op-label { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; width: 62px; opacity: 0.7; flex: 0 0 auto; }
-.op-i { border-left: 3px solid #22c55e; } .op-i .rv-op, .op-i .rv-op-label { color: #34d399; }
-.op-uu { border-left: 3px solid #fbbf24; } .op-uu .rv-op, .op-uu .rv-op-label { color: #fbbf24; }
-.op-du { border-left: 3px solid #f87171; opacity: 0.62; } .op-du .rv-op, .op-du .rv-op-label { color: #f87171; }
-.op-d { border-left: 3px solid #ef4444; } .op-d .rv-op, .op-d .rv-op-label { color: #ef4444; }
+.rv-op-label { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; width: 62px; flex: 0 0 auto; }
+.op-i { border-left: 3px solid var(--op-i); } .op-i .rv-op, .op-i .rv-op-label { color: var(--op-i); }
+.op-uu { border-left: 3px solid var(--op-uu); } .op-uu .rv-op, .op-uu .rv-op-label { color: var(--op-uu); }
+.op-du { border-left: 3px solid var(--op-du); } .op-du .rv-op, .op-du .rv-op-label { color: var(--op-du); }
+.op-d { border-left: 3px solid var(--op-d); } .op-d .rv-op, .op-d .rv-op-label { color: var(--op-d); }
+/* A retracted row reads as superseded through muted cell text, not opacity, so it keeps 4.5:1. */
+.rv-log-row.op-du .rv-log-cell { color: var(--text-2); }
 .rv-log-vals { display: flex; gap: 16px; flex-wrap: wrap; }
 .rv-log-cell { color: var(--text); }
 .rv-log-cell i { color: var(--text-3); font-style: normal; margin-right: 6px; }
@@ -450,24 +456,26 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
   font-family: var(--mono); font-size: 12px; padding: 5px 10px; border-radius: 999px;
   border: 1px solid var(--border-2); background: var(--surface); color: var(--text-2);
-  transition: opacity .14s, border-color .14s, color .14s;
+  transition: border-color .14s, color .14s;
 }
 .rv-op-toggle-mark { font-weight: 700; }
-.rv-op-toggle-label { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.8; }
+.rv-op-toggle-label { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; }
 .rv-op-toggle-n {
   font-size: 11px; padding: 0 6px; border-radius: 999px; min-width: 18px; text-align: center;
   background: color-mix(in oklab, var(--text-3) 18%, transparent); color: var(--text-2);
 }
-.rv-op-toggle.is-off { opacity: 0.4; border-style: dashed; }
+/* An op switched off: dashed, struck through and in --text-3, not faded, so it keeps 4.5:1. */
+.rv-op-toggle.is-off { color: var(--text-3); border-style: dashed; }
+.rv-op-toggle.is-off .rv-op-toggle-n { color: var(--text-3); background: none; }
 .rv-op-toggle.is-off .rv-op-toggle-mark, .rv-op-toggle.is-off .rv-op-toggle-label { text-decoration: line-through; }
-.rv-op-toggle.op-i.is-on { border-color: color-mix(in oklab, #22c55e 50%, transparent); }
-.rv-op-toggle.op-i.is-on .rv-op-toggle-mark { color: #34d399; }
-.rv-op-toggle.op-uu.is-on { border-color: color-mix(in oklab, #fbbf24 50%, transparent); }
-.rv-op-toggle.op-uu.is-on .rv-op-toggle-mark { color: #fbbf24; }
-.rv-op-toggle.op-du.is-on { border-color: color-mix(in oklab, #f87171 50%, transparent); }
-.rv-op-toggle.op-du.is-on .rv-op-toggle-mark { color: #f87171; }
-.rv-op-toggle.op-d.is-on { border-color: color-mix(in oklab, #ef4444 50%, transparent); }
-.rv-op-toggle.op-d.is-on .rv-op-toggle-mark { color: #ef4444; }
+.rv-op-toggle.op-i.is-on { border-color: color-mix(in oklab, var(--op-i) 50%, transparent); }
+.rv-op-toggle.op-i.is-on .rv-op-toggle-mark { color: var(--op-i); }
+.rv-op-toggle.op-uu.is-on { border-color: color-mix(in oklab, var(--op-uu) 50%, transparent); }
+.rv-op-toggle.op-uu.is-on .rv-op-toggle-mark { color: var(--op-uu); }
+.rv-op-toggle.op-du.is-on { border-color: color-mix(in oklab, var(--op-du) 50%, transparent); }
+.rv-op-toggle.op-du.is-on .rv-op-toggle-mark { color: var(--op-du); }
+.rv-op-toggle.op-d.is-on { border-color: color-mix(in oklab, var(--op-d) 50%, transparent); }
+.rv-op-toggle.op-d.is-on .rv-op-toggle-mark { color: var(--op-d); }
 .rv-log-search {
   display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; max-width: 300px;
   padding: 6px 10px; border-radius: var(--r-sm); border: 1px solid var(--border-2);
@@ -769,12 +777,17 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
     #build-schema-btn, #run-query-btn { flex: 0 0 auto; }
     /* Tweaks: a right-hand sheet that stops below the topbar row, so its buttons stay reachable. */
     .tweaks { left: auto; right: max(12px, env(safe-area-inset-right)); width: min(360px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); }
+    /* The results box is too short to pin both the filter bar and the column headers (77px at
+       568x320): the bar scrolls away with the rows, so the pinned headers never sit under it. */
+    .rv-filterbar { position: static; }
   }
 
   /* The keyboard open on a phone held sideways leaves a window at most 260px tall: while a code
      editor has focus, the toolbar and the status bar give it their room, and the panel head
-     shrinks to its label, so the editor keeps at least half the window (780x170 included). */
-  @media (max-height: 260px) and (orientation: landscape) and (pointer: coarse) {
+     shrinks to its label, so the editor keeps at least half the window (780x170 included). The
+     560px floor matches the compaction query above: a narrower window keeps the stacked layout
+     and both bars. */
+  @media (max-height: 260px) and (orientation: landscape) and (pointer: coarse) and (min-width: 560px) {
     .app.editor-focused .toolbar, .app.editor-focused .statusbar { display: none; }
     .app.editor-focused .panel-head { padding-top: 3px; padding-bottom: 3px; }
   }
