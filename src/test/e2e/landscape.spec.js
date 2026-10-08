@@ -2,7 +2,7 @@
 // Phones held sideways: runs on the iPhone 13 (844x390) and Pixel 7 (915x412) landscape
 // projects, in Chromium and WebKit (see playwright.config.js). mobile.spec.js runs there too.
 const { test, expect } = require('@playwright/test');
-const { openApp, layoutState, layoutOf, PHONE, DESKTOP } = require('./layout');
+const { openApp, fontsReady, layoutState, layoutOf, PHONE, DESKTOP } = require('./layout');
 
 const MIN_CONTENT = 160;
 
@@ -23,6 +23,7 @@ test('the active panel keeps at least 160px for its content in every view', asyn
   await runBatchQuery(page);
   for (const [view, sel] of Object.entries(body)) {
     await page.locator(`.m-views [data-mview="${view}"]`).tap();
+    await fontsReady(page);
     const h = await page.locator(sel).evaluate((el) => el.getBoundingClientRect().height);
     expect(h, `${view} content height`).toBeGreaterThanOrEqual(MIN_CONTENT);
   }
@@ -32,6 +33,7 @@ test('the chrome is compact: tabs beside the brand, no subtitle, one toolbar row
   await runBatchQuery(page);
   await expect(page.locator('.brand-text p')).toBeHidden();
   await expect(page.locator('.m-views')).toBeVisible();
+  await fontsReady(page);
   const g = await page.evaluate(() => {
     const centre = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
     const tabsRow = Math.abs(centre(document.querySelector('.m-views')) - centre(document.querySelector('.topbar')));
@@ -57,6 +59,7 @@ test('left and right safe-area insets keep content clear of the notch', async ({
   await runBatchQuery(page);
   const vw = page.viewportSize().width;
   const clear = async (sel) => {
+    await fontsReady(page);
     const r = await page.locator(sel).evaluate((el) => {
       const b = el.getBoundingClientRect();
       return { left: b.left, right: b.right };
@@ -73,6 +76,7 @@ test('left and right safe-area insets keep content clear of the notch', async ({
   await page.locator('#tables-drawer-btn').tap();
   await expect.poll(() => page.locator('#schema-browser').evaluate((el) => el.getBoundingClientRect().left)).toBeGreaterThanOrEqual(-1);
   await clear('#schema-browser-toggle');
+  await fontsReady(page);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
@@ -126,11 +130,11 @@ test('the column filter fits a 667x375 phone and scrolls when the keyboard leave
   await runBatchQuery(page);
   const header = page.locator('.th-btn').first();
   await header.tap();
-  const inside = async () => page.locator('.filt-pop').evaluate((el) => {
+  const inside = async () => { await fontsReady(page); return page.locator('.filt-pop').evaluate((el) => {
     const r = el.getBoundingClientRect();
     const reach = (s) => { const b = el.querySelector(s); b.scrollIntoView({ block: 'nearest' }); const q = b.getBoundingClientRect(); return q.top >= 0 && q.bottom <= window.innerHeight; };
     return { top: r.top >= 0, bottom: r.bottom <= window.innerHeight, input: reach('.filt-v'), clear: reach('[data-clear]'), apply: reach('[data-apply]') };
-  });
+  }); };
   const ALL = { top: true, bottom: true, input: true, clear: true, apply: true };
   expect(await inside()).toEqual(ALL);
   // The keyboard opens over the focused input: the window shrinks below the popover's height.
@@ -145,6 +149,7 @@ test('the column filter fits a 667x375 phone and scrolls when the keyboard leave
 const KEYBOARD_OPEN = [{ width: 844, height: 200 }, { width: 915, height: 220 }, { width: 780, height: 170 }, { width: 667, height: 190 }];
 
 async function chrome(page, view) {
+  await fontsReady(page);
   return page.evaluate((v) => ({
     toolbar: getComputedStyle(document.querySelector('.toolbar')).display !== 'none',
     statusbar: getComputedStyle(document.querySelector('.statusbar')).display !== 'none',
@@ -225,6 +230,7 @@ for (const view of ['schema', 'query']) {
 
 // Rotating the phone while the column filter is open: the popover is re-clamped on both axes.
 async function filterInside(page) {
+  await fontsReady(page);
   return page.locator('.filt-pop').evaluate((el) => {
     const r = el.getBoundingClientRect();
     const reach = (s) => { const b = el.querySelector(s); b.scrollIntoView({ block: 'nearest' }); const q = b.getBoundingClientRect(); return q.left >= 0 && q.right <= window.innerWidth && q.top >= 0 && q.bottom <= window.innerHeight; };
@@ -236,6 +242,7 @@ const FILTER_INSIDE = { left: true, right: true, top: true, bottom: true, input:
 
 /** Opens the filter on the rightmost column header that is fully on screen. */
 async function openRightmostFilter(page) {
+  await fontsReady(page);
   const i = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.th-btn')];
     return btns.reduce((best, b, n) => (b.getBoundingClientRect().right <= window.innerWidth ? n : best), 0);
@@ -269,6 +276,7 @@ test('the column filter stays inside the window when the phone turns sideways wh
  * landing on the filter bar (`bar`) or on anything else (`miss`).
  */
 async function headerRow(page) {
+  await fontsReady(page);
   return page.evaluate(() => {
     const box = document.getElementById('results-container');
     const b = box.getBoundingClientRect();
@@ -291,6 +299,7 @@ async function headerRow(page) {
 
 /** Taps the on-screen part of column header `i`, as a finger would: no scrolling first. */
 async function tapHeader(page, i) {
+  await fontsReady(page);
   const p = await page.evaluate((n) => {
     const box = document.getElementById('results-container').getBoundingClientRect();
     const r = document.querySelectorAll('.th-btn')[n].getBoundingClientRect();
@@ -307,6 +316,7 @@ for (const [width, height] of [[568, 320], [667, 375], [844, 390], [915, 412]]) 
     await page.setViewportSize({ width, height });
     await runBatchQuery(page);
     await page.locator('.m-views [data-mview="results"]').tap();
+    await fontsReady(page);
     const onScreen = await page.evaluate(() => [...document.querySelectorAll('.th-btn')]
       .map((b, i) => (b.getBoundingClientRect().right <= window.innerWidth ? i : -1)).filter((i) => i >= 0));
     expect(onScreen.length, 'columns on screen').toBeGreaterThanOrEqual(3);

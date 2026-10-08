@@ -9,6 +9,16 @@ async function openApp(page) {
   await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
 }
 
+/**
+ * Waits until the web fonts the page is loading have arrived. IBM Plex loads with display=swap,
+ * one face at a time as text first needs it, so a measurement taken before the swap sees the
+ * fallback font's sizes and one taken after sees Plex's (#66). Reading layout first starts the
+ * loads that text rendered since the last frame needs; with nothing loading it returns at once.
+ */
+async function fontsReady(page) {
+  await page.evaluate(() => { void document.body.offsetHeight; return document.fonts.ready.then(() => undefined); });
+}
+
 /** What the phone criterion says, and what the page actually shows. */
 async function layoutState(page) {
   return page.evaluate(() => {
@@ -44,6 +54,7 @@ async function layoutState(page) {
  * off. .app has overflow: hidden, so such a control is unreachable without making the page scroll.
  */
 async function controlsOutsideWindow(page) {
+  await fontsReady(page);
   return page.evaluate(() => [...document.querySelectorAll('.m-views [role="tab"], .topbar button, .toolbar button, .toolbar select')]
     .filter((el) => getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0)
     .filter((el) => {
@@ -62,4 +73,4 @@ function layoutOf(state) {
   return Object.fromEntries(Object.keys(PHONE).map((k) => [k, state[k]]));
 }
 
-module.exports = { openApp, layoutState, layoutOf, controlsOutsideWindow, PHONE, DESKTOP };
+module.exports = { openApp, fontsReady, layoutState, layoutOf, controlsOutsideWindow, PHONE, DESKTOP };

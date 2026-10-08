@@ -3,6 +3,7 @@
 // and both editors side by side, toolbar on one row, results below the editors.
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
+const { fontsReady } = require('./layout');
 
 test.beforeEach(async ({ page }) => {
   await stubApi(page);
@@ -17,6 +18,7 @@ test('phone-only controls are not rendered', async ({ page }) => {
 });
 
 test('sidebar, editors, toolbar and results keep the desktop arrangement', async ({ page }) => {
+  await fontsReady(page);
   const g = await page.evaluate(() => {
     const box = (s) => document.querySelector(s).getBoundingClientRect();
     const tb = [...document.querySelectorAll('.toolbar > *')].filter((el) => el.getBoundingClientRect().width > 0);
@@ -40,6 +42,7 @@ test('sidebar, editors, toolbar and results keep the desktop arrangement', async
 
 test('the sidebar still collapses to a rail', async ({ page }) => {
   await page.click('#schema-browser-toggle');
+  await fontsReady(page);
   await expect.poll(() => page.locator('#schema-browser').evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(44);
 });
 
@@ -60,6 +63,7 @@ for (const [height, want] of [[800, { below: false, inside: true, scrolls: false
     await page.click('#run-query-btn');
     await expect(page.locator('.rv-table')).toBeVisible();
     await page.locator('.th-btn').first().click();
+    await fontsReady(page);
     const g = await page.evaluate(() => {
       const header = document.querySelector('.th-btn').getBoundingClientRect();
       const pop = document.querySelector('.filt-pop');
@@ -82,6 +86,8 @@ test('the column filter keeps its place when it fits with less than 10px to spar
   await page.click('#run-query-btn');
   await expect(page.locator('.rv-table')).toBeVisible();
   await page.locator('.th-btn').first().click();
+  // The popover's Plex Mono 600 face may still be loading: measure the height it settles at.
+  await fontsReady(page);
   const popHeight = await page.locator('.filt-pop').evaluate((el) => el.offsetHeight);
   await page.keyboard.press('Escape');
   await expect(page.locator('.filt-pop')).toHaveCount(0);
@@ -101,6 +107,7 @@ test('the column filter keeps its place when it fits with less than 10px to spar
   await page.locator('.th-btn').first().click();
   // Measure the settled box, not one shifted by the open animation.
   await page.locator('.filt-pop').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  await fontsReady(page);
   const g = await page.evaluate(() => {
     const header = document.querySelector('.th-btn').getBoundingClientRect();
     const pop = document.querySelector('.filt-pop');
