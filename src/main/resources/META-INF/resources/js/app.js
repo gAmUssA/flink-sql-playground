@@ -633,7 +633,7 @@ function renderActiveView() {
   if (!body) return;
   if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); return; }
   switch (activeTab) {
-    case 'table': body.innerHTML = renderTable(); break;
+    case 'table': body.innerHTML = renderTable(); watchFilterBar(); break;
     case 'changelog': body.innerHTML = renderChangelog(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
     case 'throughput': body.innerHTML = renderThroughput(); break;
     case 'graph': body.innerHTML = renderJobGraph(); break;
@@ -720,6 +720,33 @@ function matchFilter(val, f) {
     case 'between': return (f.v2 === '' || f.v2 == null) ? a >= b : (a >= Math.min(b, b2) && a <= Math.max(b, b2));
     default: return true;
   }
+}
+
+// The column headers pin just below the pinned filter bar, whose height grows with filter chips
+// and with wrapping on narrow screens: --filterbar-h on the results box follows it, and is 0 where
+// the bar scrolls with the rows. Each table render replaces the bar, so it is observed afresh.
+const filterBarObserver = new ResizeObserver(() => fitFilterBar());
+function fitFilterBar() {
+  const box = document.getElementById('results-container');
+  const bar = box && box.querySelector('.rv-filterbar');
+  if (!bar) return;
+  const h = getComputedStyle(bar).position === 'sticky' ? bar.getBoundingClientRect().height : 0;
+  box.style.setProperty('--filterbar-h', `${h}px`);
+  markScrolled();
+}
+// .is-scrolled on the results box: its rows have scrolled up (see the headers' strip in style.css).
+function markScrolled() {
+  const box = document.getElementById('results-container');
+  box.classList.toggle('is-scrolled', box.scrollTop > 0);
+}
+function watchFilterBar() {
+  filterBarObserver.disconnect();
+  const box = document.getElementById('results-container');
+  const bar = box.querySelector('.rv-filterbar');
+  if (!bar) return;
+  filterBarObserver.observe(box);
+  filterBarObserver.observe(bar);
+  fitFilterBar();
 }
 
 let openFilterIdx = null;
@@ -1387,6 +1414,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const th = e.target.closest('.th-btn');
     if (th) { revealHeader(th.closest('th')); toggleFilter(parseInt(th.dataset.col, 10), th.closest('th').getBoundingClientRect()); return; }
   });
+  document.getElementById('results-container').addEventListener('scroll', markScrolled, { passive: true });
   // Changelog free-text search — update rows in place so the input keeps focus while typing.
   document.getElementById('results-container').addEventListener('input', (e) => {
     const inp = e.target.closest('.rv-log-search-input');
