@@ -16,18 +16,28 @@ async function runManyRows(page, touch) {
   await expect(page.locator('.rv-table tbody tr')).toHaveCount(40);
 }
 
-/** Runs the streaming query whose changelog holds all four ops, and shows the changelog. */
-async function runRetractions(page, touch) {
+/** Runs a streaming query with the given stub marker, and shows its changelog of `events` rows. */
+async function runStream(page, touch, marker, events) {
   const act = (sel) => (touch ? page.locator(sel).tap() : page.locator(sel).click());
-  await page.evaluate(() => queryEditor.setValue('-- stub: retractions\nSELECT * FROM orders'));
+  await page.evaluate((m) => queryEditor.setValue(`-- stub: ${m}\nSELECT * FROM orders`), marker);
   await act('#mode-segmented [data-mode="STREAMING"]');
   await act('#run-query-btn');
   await expect(page.locator('#run-query-btn')).toBeEnabled();
   if (touch) await act('.m-views [data-mview="results"]');
   await act('.rtab[data-tab="changelog"]');
-  await expect(page.locator('.rv-log-row')).toHaveCount(8);
+  await expect(page.locator('.rv-log-row')).toHaveCount(events);
   // Rows slide in (logIn); measure where they settle.
   await settleAnimations(page);
+}
+
+/** Runs the streaming query whose changelog holds all four ops, and shows the changelog. */
+async function runRetractions(page, touch) {
+  await runStream(page, touch, 'retractions', 8);
+}
+
+/** Runs the streaming query whose 60 events include a 55th that wraps taller than the 50 before it. */
+async function runLongTail(page, touch) {
+  await runStream(page, touch, 'long tail', 60);
 }
 
 /** Scrolls the results box, then waits a frame so the page has handled the scroll, as before a tap. */
@@ -147,4 +157,4 @@ async function opTogglesWork(page) {
   return { ops: ops.length, failed };
 }
 
-module.exports = { runManyRows, runRetractions, scrollResults, headerHits, openEachFilter, changelogReach, opTogglesWork };
+module.exports = { runManyRows, runRetractions, runLongTail, scrollResults, headerHits, openEachFilter, changelogReach, opTogglesWork };

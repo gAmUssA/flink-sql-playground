@@ -727,9 +727,10 @@ function matchFilter(val, f) {
 // wrapping on narrow screens: --filterbar-h on the results box follows it, and is 0 where the bar
 // scrolls with the rows. Each render replaces the bar, so it is observed afresh.
 // A box too short for the pinned bar and what must show below it (the header row and one row of
-// the table, or the tallest changelog row) gets .bar-scrolls: the bar scrolls away with the rows,
-// as it does on wider sideways phones. That is a phone held sideways below the 560px floor (such
-// as 540x400), or an upright 375x667 phone, whose changelog rows wrap to 247px.
+// the table, or the tallest changelog row: every rendered row is measured, as any of the up to
+// MAX_LOG events may wrap tallest) gets .bar-scrolls: the bar scrolls away with the rows, as it
+// does on wider sideways phones. That is a phone held sideways below the 560px floor (such as
+// 540x400), or an upright 375x667 phone, whose changelog rows wrap to 247px.
 const resultsBarObserver = new ResizeObserver(() => fitResultsBar());
 function fitResultsBar() {
   const box = document.getElementById('results-container');
@@ -738,7 +739,7 @@ function fitResultsBar() {
   const height = (el) => (el ? el.getBoundingClientRect().height : 0);
   const below = bar.classList.contains('rv-filterbar')
     ? height(box.querySelector('.rv-table thead')) + height(box.querySelector('.rv-table tbody tr'))
-    : Math.max(0, ...[...box.querySelectorAll('.rv-log-row')].slice(0, 50).map(height));
+    : Math.max(0, ...[...box.querySelectorAll('.rv-log-row')].map(height));
   box.classList.toggle('bar-scrolls', box.clientHeight + 0.5 < height(bar) + below);
   const h = bar.classList.contains('rv-filterbar') && getComputedStyle(bar).position === 'sticky' ? height(bar) : 0;
   box.style.setProperty('--filterbar-h', `${h}px`);

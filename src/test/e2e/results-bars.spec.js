@@ -3,7 +3,7 @@
 // below it stays visible and clickable while the rows scroll (#68).
 const { test, expect } = require('@playwright/test');
 const { openApp } = require('./layout');
-const { runManyRows, runRetractions, scrollResults, headerHits, openEachFilter } = require('./results-bars');
+const { runManyRows, runRetractions, runLongTail, scrollResults, headerHits, openEachFilter, changelogReach } = require('./results-bars');
 
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
@@ -61,4 +61,15 @@ test('the changelog bar stays pinned and a whole row shows below it while the ro
     expect(g.pinned, `bar pinned, rows scrolled ${top}`).toBe(true);
     expect(g.whole, `whole rows below the bar, rows scrolled ${top}`).toBeGreaterThanOrEqual(1);
   }
+});
+
+// The changelog keeps up to 400 events, and a row's height depends on how far its values wrap.
+// At 1024x700 the 197px box holds the 51px bar and the tallest of the first 50 rows (93px), but
+// not event 55 (169px): measuring only the first 50 rows left the bar pinned over it.
+test('with more than 50 events, a later and taller changelog row can still be scrolled into view whole', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 700 });
+  await runLongTail(page, false);
+  const r = await changelogReach(page);
+  expect(r.rows).toBe(60);
+  expect(r.unreachable, 'rows never shown whole').toEqual([]);
 });
