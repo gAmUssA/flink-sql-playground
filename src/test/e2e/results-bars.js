@@ -4,6 +4,7 @@
 // mobile and landscape specs.
 const { expect } = require('@playwright/test');
 const { fontsReady } = require('./layout');
+const { settleAnimations } = require('./contrast');
 
 /** Runs a batch query returning 40 rows (stub-api.js), enough to scroll the box in a tall window. */
 async function runManyRows(page, touch) {
@@ -26,7 +27,7 @@ async function runRetractions(page, touch) {
   await act('.rtab[data-tab="changelog"]');
   await expect(page.locator('.rv-log-row')).toHaveCount(8);
   // Rows slide in (logIn); measure where they settle.
-  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  await settleAnimations(page);
 }
 
 /** Scrolls the results box, then waits a frame so the page has handled the scroll, as before a tap. */
