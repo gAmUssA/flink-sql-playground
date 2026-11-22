@@ -14,7 +14,8 @@
   "devDependencies": {
     "@playwright/test": "1.65.1",
     "chrome-launcher": "1.2.3",
-    "lighthouse": "13.6.0"
+    "lighthouse": "13.6.0",
+    "railway": "3.17.0"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.4",

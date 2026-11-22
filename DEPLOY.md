@@ -11,8 +11,24 @@ Application will be available at `http://localhost:9090`.
 ## Railway (primary)
 
 Railway builds the app from the repo `Dockerfile` and gives per-PR preview
-environments plus scale-to-zero. Config lives in [`railway.json`](railway.json)
-(Dockerfile builder + `/api/build-info` health check).
+environments plus scale-to-zero. The service is defined as Infrastructure as Code in
+[`.railway/railway.ts`](.railway/railway.ts): Dockerfile builder, `/api/build-info`
+health check, the Flyway pre-deploy command, restart policy, resources, app sleep and the
+custom domain. Variables are not in the file (`variables: { managed: false }`); they stay
+in the Railway dashboard.
+
+Railway stopped reading Config as Code (`railway.json`) on 2026-12-01, so the repo has
+none. Change service settings in `.railway/railway.ts`, never only in the dashboard:
+
+```bash
+npm ci                                  # installs the `railway` IaC SDK (dev dependency)
+railway link --project insightful-harmony --environment production --service flink-sql-playground
+railway config plan                     # review the diff against the live service
+railway config apply                    # apply it (asks for confirmation)
+```
+
+A merge to `main` only deploys the code; it does not apply `.railway/railway.ts`. Run
+`railway config apply` after merging a change to that file.
 
 ### First deploy
 
@@ -135,8 +151,8 @@ railway variables \
 
 With app sleeping enabled, every wake-up is a cold start, and running Flyway
 plus Hibernate schema validation against Supabase adds about 3 s to each one.
-`railway.json` therefore runs the migration once per deploy as a
-`preDeployCommand`. The command boots Quarkus with `quarkus.init-and-exit=true`,
+`.railway/railway.ts` therefore runs the migration once per deploy as its
+`preDeploy` command. The command boots Quarkus with `quarkus.init-and-exit=true`,
 which runs Flyway and exits before the HTTP server starts. A failed migration
 fails the deploy, and the previous version keeps serving.
 
