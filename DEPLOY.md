@@ -11,8 +11,32 @@ Application will be available at `http://localhost:9090`.
 ## Railway (primary)
 
 Railway builds the app from the repo `Dockerfile` and gives per-PR preview
-environments plus scale-to-zero. Config lives in [`railway.json`](railway.json)
-(Dockerfile builder + `/api/build-info` health check).
+environments plus scale-to-zero. The service is defined as Infrastructure as Code in
+[`.railway/railway.ts`](.railway/railway.ts): Dockerfile builder, `/api/build-info`
+health check, the Flyway pre-deploy command, restart policy, resources, app sleep and the
+custom domain. Variables are not in the file (`variables: { managed: false }`); they stay
+in the Railway dashboard.
+
+Railway stops reading Config as Code (`railway.json`) on 2026-12-01. This service was
+moved off it on 2026-11-22, and the repo has no `railway.json`. Change service settings in
+`.railway/railway.ts`, never only in the dashboard:
+
+```bash
+npm ci                                  # installs the `railway` IaC SDK (dev dependency)
+# The production service; a new project needs its own link (see "First deploy").
+railway link --project insightful-harmony --environment production --service flink-sql-playground
+railway config plan                     # review the diff against the live service
+railway config apply                    # apply it (asks for confirmation)
+```
+
+A merge to `main` deploys the code at once (Railway does not wait for CI or for an
+apply), and it never applies `.railway/railway.ts`. So order the two:
+
+- A settings change that works with the code already on `main` (a new health-check
+  timeout, more memory): apply it from the PR branch before merging.
+- A change tied to new code (moving the `Dockerfile` and `dockerfilePath`, a new
+  pre-deploy command): stage it. First merge code that works under both the old and new
+  settings, then apply, then merge the part that needs the new settings.
 
 ### First deploy
 
@@ -34,6 +58,12 @@ environments plus scale-to-zero. Config lives in [`railway.json`](railway.json)
    behind the loading state.
 5. **Domain**: generate a `*.up.railway.app` domain (Settings → Networking), then
    add a custom domain if desired (free TLS).
+6. **Service settings**: `railway up` does not apply `.railway/railway.ts`. Copy it, change
+   the project name, service, source and domain to the new environment's, `railway link`
+   to the new project, then `railway config plan` and `railway config apply`. Until the
+   pre-deploy command is applied, keep Flyway at startup (do not set the variables in
+   "migrate before deploy" below): without either, the health check passes while every
+   fiddle save fails on a missing table.
 
 ### Deployed-build footer
 
@@ -135,12 +165,13 @@ railway variables \
 
 With app sleeping enabled, every wake-up is a cold start, and running Flyway
 plus Hibernate schema validation against Supabase adds about 3 s to each one.
-`railway.json` therefore runs the migration once per deploy as a
-`preDeployCommand`. The command boots Quarkus with `quarkus.init-and-exit=true`,
+`.railway/railway.ts` therefore runs the migration once per deploy as its
+`preDeploy` command. The command boots Quarkus with `quarkus.init-and-exit=true`,
 which runs Flyway and exits before the HTTP server starts. A failed migration
 fails the deploy, and the previous version keeps serving.
 
-To stop the running service repeating that work on each wake-up, also set:
+Only once that pre-deploy command is applied to the service (check `railway config plan`
+reports no changes), stop the running service repeating that work on each wake-up:
 
 ```bash
 railway variables \
