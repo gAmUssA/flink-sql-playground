@@ -13,7 +13,7 @@ import { autocompletion, completionKeymap, completionStatus, closeBrackets, clos
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { SQLDialect, keywordCompletionSource } from '@codemirror/lang-sql';
 import { tags as t } from '@lezer/highlight';
-import { parseCreateTables, mergeTables, columnCandidates, statementAt, optionContext, optionCandidates,
+import { parseCreateTables, declaredTablePaths, mergeTables, columnCandidates, statementAt, optionContext, optionCandidates,
   tableAliases, expectsTableName, isDdlWithoutQuery, quoteIdentifier, qualifierBefore, sqlStringText,
   FLINK_KEYWORDS, FLINK_TYPES } from './sql-schema.mjs';
 
@@ -198,4 +198,4 @@ export function create(parent, { value = '', onRun = null, onChange = null, labe
 }
 
 // completionStatus lets browser tests read suggestions only once completion has settled.
-window.FlinkEditor = { create, parseCreateTables, mergeTables, completionStatus, FlinkSQL };
+window.FlinkEditor = { create, parseCreateTables, declaredTablePaths, mergeTables, completionStatus, FlinkSQL };

@@ -1,4 +1,19 @@
 package com.flinksqlfiddle.api.dto;
 
-public record ErrorResponse(String error, String code) {
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import java.util.List;
+
+/**
+ * An API error: {@code error} is the message (for a Flink failure, Flink's own text) and
+ * {@code code} names the kind. {@code TABLE_NOT_FOUND} adds {@code table}, the missing table or
+ * view, {@code path}, its name parts ending with {@code table}, and {@code suggestion}, Flink's
+ * "did you mean" name when it has one. Absent fields are left out of the JSON. See docs/adr/0007-table-not-found-error-contract.md.
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record ErrorResponse(String error, String code, String table, List<String> path, String suggestion) {
+
+    public ErrorResponse(String error, String code) {
+        this(error, code, null, null, null);
+    }
 }

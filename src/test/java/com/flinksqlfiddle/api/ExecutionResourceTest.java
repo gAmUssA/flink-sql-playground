@@ -5,6 +5,7 @@ import com.flinksqlfiddle.execution.ExecutionTimeoutException;
 import com.flinksqlfiddle.execution.QueryResult;
 import com.flinksqlfiddle.execution.NotExplainableException;
 import com.flinksqlfiddle.execution.SqlExecutionService;
+import com.flinksqlfiddle.execution.TableNotFoundException;
 import com.flinksqlfiddle.execution.plan.ExplainResult;
 import com.flinksqlfiddle.execution.plan.PlanAdvice;
 import com.flinksqlfiddle.execution.plan.PlanNode;
@@ -19,7 +20,10 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -182,18 +186,75 @@ class ExecutionResourceTest {
     }
 
     @Test
-    void explainOfUnknownTableIsABadRequest() {
+    void explainOfInvalidSqlIsABadRequest() {
         FlinkSession session = mock(FlinkSession.class);
         when(sessionManager.getSession("test-session")).thenReturn(session);
         when(executionService.explain(eq(session), any(), any()))
-                .thenThrow(new NotExplainableException("Object 'nope' not found", "INVALID_SQL"));
+                .thenThrow(new NotExplainableException("Column 'nope' not found in any table", "INVALID_SQL"));
 
         given().contentType("application/json")
-                .body("{\"sql\": \"SELECT * FROM nope\", \"mode\": \"STREAMING\"}")
+                .body("{\"sql\": \"SELECT nope FROM t\", \"mode\": \"STREAMING\"}")
                 .when().post("/api/sessions/test-session/explain")
                 .then().statusCode(400)
                 .body("code", is("INVALID_SQL"))
-                .body("error", is("Object 'nope' not found"));
+                .body("error", is("Column 'nope' not found in any table"))
+                .body("$", not(hasKey("table")));
+    }
+
+    private static final String NOT_FOUND =
+            "SQL validation failed. From line 1, column 15 to line 1, column 20: Object 'orders' not found";
+
+    @Test
+    void explainOfUnknownTableNamesTheTable() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        when(executionService.explain(eq(session), any(), any()))
+                .thenThrow(new TableNotFoundException("orders", null, NOT_FOUND, null));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"SELECT * FROM orders\", \"mode\": \"STREAMING\"}")
+                .when().post("/api/sessions/test-session/explain")
+                .then().statusCode(400)
+                .body("code", is("TABLE_NOT_FOUND"))
+                .body("table", is("orders"))
+                .body("path", is(java.util.List.of("orders")))
+                .body("error", is(NOT_FOUND))
+                .body("$", not(hasKey("suggestion")));
+    }
+
+    @Test
+    void executeOfUnknownTableNamesTheTableAndSuggestion() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        String message = "SQL validation failed. From line 1, column 15 to line 1, column 19: "
+                + "Object 'Users' not found within 'default_catalog.default_database'; did you mean 'users'?";
+        when(executionService.execute(any(FlinkSession.class), any(ExecutionMode.class), any(String.class)))
+                .thenThrow(new TableNotFoundException("Users", "users", message, null));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"SELECT * FROM Users\", \"mode\": \"BATCH\"}")
+                .when().post(EXECUTE_URL)
+                .then().statusCode(400)
+                .body("code", is("TABLE_NOT_FOUND"))
+                .body("table", is("Users"))
+                .body("suggestion", is("users"))
+                .body("error", is(message));
+    }
+
+    @Test
+    void streamOfUnknownTableFailsBeforeStreaming() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        when(executionService.prepareStream(eq(session), any()))
+                .thenThrow(new TableNotFoundException("orders", null, NOT_FOUND, null));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"SELECT * FROM orders\", \"mode\": \"STREAMING\"}")
+                .when().post("/api/sessions/test-session/execute/stream")
+                .then().statusCode(400)
+                .body(containsString("\"code\":\"TABLE_NOT_FOUND\""))
+                .body(containsString("\"table\":\"orders\""))
+                .body(containsString("Object 'orders' not found"));
     }
 
     @Test

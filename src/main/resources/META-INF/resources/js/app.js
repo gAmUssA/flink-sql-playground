@@ -139,7 +139,8 @@ const R = {
   filters: {},               // colIndex -> { op, v, v2 }
   clMuted: {},               // changelog: op -> true when that op type is muted/hidden
   clSearch: '',              // changelog: free-text search query
-  err: null
+  err: null,
+  errInfo: null              // the error's API body ({ code, table, suggestion }) when it had one
 };
 const MAX_LOG = 400;
 const MAX_SAMPLES = 80;
@@ -148,7 +149,7 @@ let throughputTimer = null;
 
 // Watermark timeline (js/watermark-timeline.js): a probe job's records of the query's watermarked
 // source. key = plan key of the query it was recorded for.
-const TL = { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null, controller: null, view: null };
+const TL = { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null, info: null, controller: null, view: null };
 const MAX_TICKS = 2000;
 let rowsSinceSample = 0;
 let flashKeys = new Set();
@@ -391,8 +392,30 @@ function splitSqlStatements(sql) {
   return out;
 }
 
-async function buildSchema() {
-  if (!sessionId) { setStatus('No active session', 'error'); return; }
+// One build at a time: a second call (the button, Ctrl+Enter, "Build Schema and run") while a
+// build runs gets the same promise. Resolves { ok, error }: ok only when every statement ran.
+let schemaBuild = null;
+function buildSchema() {
+  if (!schemaBuild) {
+    schemaBuild = runSchemaBuild().then((result) => {
+      // Whichever button built, a missing-table state on screen tells the outcome (or drops a
+      // stale failure once a build succeeds).
+      schemaBuildFailure = result.ok ? null : buildFailureText(result);
+      if (document.querySelector('#results-container .rv-nf')) renderActiveView();
+      return result;
+    }).finally(() => { schemaBuild = null; });
+  }
+  return schemaBuild;
+}
+// A session that is gone (expired after 15 idle minutes, or the server restarted) cannot be
+// built into; the page needs a new one.
+function buildFailureText(result) {
+  return result.code === 'SESSION_NOT_FOUND' || !sessionId
+    ? 'this session has ended. Reload the page to start a new one.'
+    : result.error;
+}
+async function runSchemaBuild() {
+  if (!sessionId) { setStatus('No active session', 'error'); return { ok: false, error: 'No active session' }; }
   const btn = document.getElementById('build-schema-btn');
   btn.disabled = true;
   setStatus('Building schema…', 'compiling');
@@ -400,20 +423,27 @@ async function buildSchema() {
     const schema = schemaEditor.getValue().trim();
     const statements = schema ? splitSqlStatements(schema) : [];
     // Empty input OR comments-only input both mean "nothing to run" — don't claim success.
-    if (!statements.length) { setStatus('No schema to build', 'ready'); return; }
+    if (!statements.length) { setStatus('No schema to build', 'ready'); return { ok: false, error: 'The schema editor is empty' }; }
     for (const stmt of statements) {
       const res = await fetch(api(`/api/sessions/${sessionId}/execute`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql: stmt, mode: getMode() })
       });
-      if (!res.ok) { const err = await res.json(); setStatus('Schema error: ' + err.error, 'error'); return; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const error = err.error || `HTTP ${res.status}`;
+        setStatus('Schema error: ' + error, 'error');
+        return { ok: false, error, code: err.code };
+      }
     }
     setStatus('Schema built', 'ready');
     R.plan = null; // tables changed: the cached plan may be stale
     if (activeTab === 'graph') { ensurePlan(); renderActiveView(); }
     await refreshSchemaBrowser();
+    return { ok: true };
   } catch (err) {
     setStatus('Schema error: ' + err.message, 'error');
+    return { ok: false, error: err.message };
   } finally {
     btn.disabled = false;
   }
@@ -459,7 +489,7 @@ async function runBatchQuery(query) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: query, mode: 'BATCH' })
     });
-    if (!res.ok) { const err = await res.json(); showError(err.error); setStatus('Execution failed', 'error'); setStateBadge('error', 'error'); return; }
+    if (!res.ok) { const err = await res.json().catch(() => ({ error: `Execution failed (HTTP ${res.status})` })); showError(err.error, err); setStatus('Execution failed', 'error'); setStateBadge('error', 'error'); return; }
     const result = await res.json();
     if (!result.columns || !result.columns.length) {
       R.columns = []; renderActiveView(); setStatus('Statement executed', 'finished'); setStateBadge('finished', 'done'); return;
@@ -491,7 +521,7 @@ async function runStreamingQuery(query) {
       body: JSON.stringify({ sql: query, mode: 'STREAMING' }),
       signal: activeStreamController.signal
     });
-    if (!res.ok) { const err = await res.json().catch(() => ({ error: 'Stream failed' })); showError(err.error); setStatus('Execution failed', 'error'); setStateBadge('error', 'error'); return; }
+    if (!res.ok) { const err = await res.json().catch(() => ({ error: 'Stream failed' })); showError(err.error, err); setStatus('Execution failed', 'error'); setStateBadge('error', 'error'); return; }
     setStatus('Job running', 'running');
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -538,7 +568,8 @@ async function runStreamingQuery(query) {
 function resetResults() {
   R.columns = []; R.columnTypes = []; R.aligns = [];
   R.materialized = new Map(); R.log = []; R.samples = [];
-  R.truncated = false; R.executionTimeMs = 0; R.err = null; R.rowsReceived = 0;
+  R.truncated = false; R.executionTimeMs = 0; R.err = null; R.errInfo = null; R.rowsReceived = 0;
+  schemaBuildFailure = null;
   R.filters = {};
   R.clMuted = {}; R.clSearch = '';
   closeFilterPopover();
@@ -610,7 +641,7 @@ async function fetchPlan(query, mode) {
     const body = await res.json().catch(() => ({}));
     next = res.ok && Array.isArray(body.nodes)
       ? { key, status: 'ok', data: body }
-      : { key, status: 'error', error: body.error || `Planning failed (HTTP ${res.status})`, code: body.code };
+      : { key, status: 'error', error: body.error || `Planning failed (HTTP ${res.status})`, code: body.code, info: body };
   } catch (err) {
     next = { key, status: 'error', error: err.message };
   }
@@ -661,10 +692,115 @@ function setActiveTab(tab) {
   renderActiveView();
 }
 
-function showError(msg) {
+function showError(msg, info = null) {
   R.err = msg || 'Unknown error';
+  R.errInfo = info;
   renderActiveView();
 }
+
+/* ---- a table the session does not have (API code TABLE_NOT_FOUND) ---- */
+// The backend detects the missing table and names it; the wording depends on whether the schema
+// editor declares it (not built yet: offer to build) or not (a typo, or an undeclared table).
+let schemaBuildFailure = null;  // why the last schema build failed, until a build succeeds or a run starts
+let buildAndRunBusy = false;
+
+function isTableNotFound(info) { return !!(info && info.code === 'TABLE_NOT_FOUND' && typeof info.table === 'string' && info.table); }
+
+// A table's qualified name without the session's defaults: default_catalog.default_database.t,
+// default_database.t and t are one table; other_db.t is another, which building the schema
+// editor's `CREATE TABLE t` would not create.
+function tableKey(parts) {
+  let p = parts;
+  if (p.length === 3 && p[0] === 'default_catalog') p = p.slice(1);
+  if (p.length === 2 && p[0] === 'default_database') p = p.slice(1);
+  return p;
+}
+function missingTableKey(info) {
+  const path = Array.isArray(info.path) && info.path.length && info.path.every((x) => typeof x === 'string')
+    && info.path[info.path.length - 1] === info.table ? info.path : [info.table];
+  return tableKey(path);
+}
+function declaredTableKeys() {
+  try { return FlinkEditor.declaredTablePaths(schemaEditor ? schemaEditor.getValue() : '').map(tableKey); } catch { return []; }
+}
+function sameTable(a, b, foldCase = false) {
+  const eq = foldCase ? (x, y) => x.toLowerCase() === y.toLowerCase() : (x, y) => x === y;
+  return a.length === b.length && a.every((x, i) => eq(x, b[i]));
+}
+// One part as itself; a qualified name with each part that needs it in backticks.
+function tableLabel(key) {
+  return key.length === 1 ? key[0] : key.map((p) => (/^[A-Za-z_][\w$]*$/.test(p) ? p : '`' + p.replace(/`/g, '``') + '`')).join('.');
+}
+
+// `extra`: markup after the hint when the state offers no build (the Timeline's record button).
+function missingTableState(info, flinkMessage, extra = '') {
+  const name = info.table;
+  const missing = missingTableKey(info);
+  const shown = tableLabel(missing);
+  const code = (n) => `<code class="rv-nf-name">${escapeHtml(n)}</code>`;
+  const declared = declaredTableKeys();
+  const sameCase = declared.find((d) => !sameTable(d, missing) && sameTable(d, missing, true));
+  // Declared under the same last name but another qualification: a different table.
+  const elsewhere = declared.find((d) => !sameTable(d, missing) && d[d.length - 1] === name);
+  let label, hint, action = '';
+  if (declared.some((d) => sameTable(d, missing))) {
+    label = `Table ${code(shown)} isn’t built yet`;
+    hint = 'The schema editor declares it, but this session doesn’t have it. Build the schema to create it, then run the query again.';
+    // aria-disabled, not disabled, while busy: a disabled button drops keyboard focus.
+    action = `<div class="wt-actions"><button type="button" class="btn outline rv-nf-build" data-nf-build${buildAndRunBusy ? ' aria-disabled="true" aria-busy="true"' : ''}>`
+      + `${iconSvg('play', 14)} ${buildAndRunBusy ? 'Building schema…' : 'Build Schema and run'}</button></div>`;
+  } else if (typeof info.suggestion === 'string' && info.suggestion) {
+    label = `No table named ${code(shown)}`;
+    hint = `Did you mean ${code(info.suggestion)}? Table names are case-sensitive.`;
+  } else if (sameCase) {
+    label = `No table named ${code(shown)}`;
+    hint = `The schema editor declares ${code(tableLabel(sameCase))}. Table names are case-sensitive: use that spelling, and build the schema.`;
+  } else if (elsewhere) {
+    label = `No table named ${code(shown)}`;
+    hint = `The schema editor declares ${code(tableLabel(elsewhere))}, which is a different table. Building the schema won’t create ${code(shown)}: check the database name.`;
+  } else {
+    label = `No table named ${code(shown)}`;
+    hint = 'Check the name for a typo, or declare the table with CREATE TABLE in the schema editor and build the schema.';
+  }
+  const failed = schemaBuildFailure
+    ? `<p class="rv-nf-fail" role="alert">The schema didn’t build: ${escapeHtml(schemaBuildFailure)}</p>` : '';
+  const detail = flinkMessage ? `<p class="rv-nf-detail"><span class="rv-nf-detail-k">Flink:</span> ${escapeHtml(flinkMessage)}</p>` : '';
+  return `<div class="rv-empty rv-nf" data-missing-table="${escapeAttr(name)}"><div class="rv-empty-ic">${iconSvg('table', 26)}</div>`
+    + `<p class="rv-empty-label">${label}</p><p class="rv-nf-hint">${hint}</p>${action || extra}${failed}${detail}</div>`;
+}
+
+// "Build Schema and run": builds the schema editor's statements, then runs the query (which
+// also replans the Job Graph and, on the Timeline tab, records the timeline). It runs the query
+// and mode it was clicked for: if either changed while the schema built (the new text may be an
+// INSERT nobody meant to run yet), or another query is running by then, it only builds, and says so.
+document.addEventListener('click', async (e) => {
+  const btn = e.target instanceof Element && e.target.closest('[data-nf-build]');
+  if (!btn || buildAndRunBusy) return;
+  // Each render replaces the button: put focus back on the new one if it was on the old.
+  const keepFocus = () => { if (btn === document.activeElement || !document.activeElement || document.activeElement === document.body) document.querySelector('#results-container [data-nf-build]')?.focus(); };
+  const clickedFor = planKey(getMode(), queryEditor.getValue().trim());
+  buildAndRunBusy = true;
+  schemaBuildFailure = null;
+  renderActiveView();
+  keepFocus();
+  let result;
+  try {
+    result = await buildSchema();
+  } finally {
+    buildAndRunBusy = false;
+  }
+  const skip = !result.ok ? null
+    : R.running ? 'Schema built. Another query is running, so the query was not run.'
+    : planKey(getMode(), queryEditor.getValue().trim()) !== clickedFor ? 'Schema built. The query or mode changed while it built, so it was not run.'
+    : null;
+  if (!result.ok || skip) {
+    if (skip) setStatus(skip, 'ready');
+    // The state on screen still shows the busy button: draw it idle again.
+    if (document.querySelector('#results-container .rv-nf')) { renderActiveView(); keepFocus(); }
+    return;
+  }
+  await runQuery();
+});
 
 function emptyState(icon, label, hint, isError, extra = '') {
   return `<div class="rv-empty${isError ? ' is-error' : ''}"><div class="rv-empty-ic">${iconSvg(icon, 26)}</div><p class="rv-empty-label">${escapeHtml(label)}</p><span class="rv-empty-hint">${escapeHtml(hint)}</span>${extra}</div>`;
@@ -685,7 +821,11 @@ function renderActiveView() {
   updatePhoneResultCount();
   const body = document.getElementById('results-container');
   if (!body) return;
-  if (R.err) { body.innerHTML = emptyState('info', 'Query failed', R.err, true); releaseResultsBar(); return; }
+  if (R.err) {
+    body.innerHTML = isTableNotFound(R.errInfo) ? missingTableState(R.errInfo, R.err) : emptyState('info', 'Query failed', R.err, true);
+    releaseResultsBar();
+    return;
+  }
   switch (activeTab) {
     case 'table': body.innerHTML = renderTable(); watchResultsBar(); break;
     case 'changelog': body.innerHTML = renderChangelog(); watchResultsBar(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
@@ -1105,6 +1245,7 @@ function renderJobGraph() {
   }
   if (P.status === 'loading') return emptyState('flow', 'Planning…', 'Asking Flink for the optimized plan.');
   if (P.status === 'error') {
+    if (isTableNotFound(P.info)) return missingTableState(P.info, P.error);
     const ddl = P.code === 'NOT_EXPLAINABLE';
     return emptyState('info', ddl ? 'No job graph for this statement' : 'Flink could not plan this query', P.error, !ddl);
   }
@@ -1122,7 +1263,7 @@ function renderJobGraph() {
 
 /* ---- watermark timeline ---- */
 function resetTimeline() {
-  Object.assign(TL, { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null, view: null });
+  Object.assign(TL, { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null, info: null, view: null });
 }
 function stopTimeline() {
   if (TL.controller) TL.controller.abort();
@@ -1139,13 +1280,13 @@ async function startTimeline(query) {
   const controller = new AbortController();
   Object.assign(TL, { key: planKey('STREAMING', query), status: 'recording', controller });
   if (activeTab === 'timeline') renderActiveView();
-  const fail = (error, code) => { if (TL.controller === controller) Object.assign(TL, { status: 'error', error, code, controller: null }); };
+  const fail = (error, code, info = null) => { if (TL.controller === controller) Object.assign(TL, { status: 'error', error, code, info, controller: null }); };
   try {
     const res = await fetch(api(`/api/sessions/${sessionId}/timeline/stream`), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: query, mode: 'STREAMING' }), signal: controller.signal
     });
-    if (!res.ok) { const err = await res.json().catch(() => ({})); fail(err.error || `Timeline failed (HTTP ${res.status})`, err.code); return; }
+    if (!res.ok) { const err = await res.json().catch(() => ({})); fail(err.error || `Timeline failed (HTTP ${res.status})`, err.code, err); return; }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -1180,6 +1321,7 @@ function renderTimeline(body) {
     return emptyState('clock', 'Watermarks live in streaming mode', 'Switch to Streaming to record an event-time timeline.');
   }
   if (TL.status === 'error') {
+    if (isTableNotFound(TL.info)) return missingTableState(TL.info, TL.error, timelineButton());
     const known = TL.code === 'NO_EVENT_TIME' || TL.code === 'NOT_STREAMING' || TL.code === 'NOT_EXPLAINABLE';
     return emptyState('clock', known ? 'No event-time timeline for this query' : 'Could not record the timeline', TL.error, !known, timelineButton());
   }

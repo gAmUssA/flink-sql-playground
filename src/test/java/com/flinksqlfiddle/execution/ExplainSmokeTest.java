@@ -219,8 +219,17 @@ class ExplainSmokeTest {
 
     @Test
     void unknownTableIsAUserError() {
-        NotExplainableException e = assertThrows(NotExplainableException.class,
+        // Named, so the UI can say what to do (TABLE_NOT_FOUND, ADR 0007); see TableNotFoundSmokeTest.
+        TableNotFoundException e = assertThrows(TableNotFoundException.class,
                 () -> service.explain(session, ExecutionMode.STREAMING, "SELECT * FROM nope"));
+        assertEquals("nope", e.table());
+        assertTrue(e.getMessage().contains("Object 'nope' not found"), e.getMessage());
+    }
+
+    @Test
+    void otherInvalidSqlIsStillAUserError() {
+        NotExplainableException e = assertThrows(NotExplainableException.class,
+                () -> service.explain(session, ExecutionMode.STREAMING, "SELECT nope FROM (VALUES (1)) AS t(x)"));
         assertEquals("INVALID_SQL", e.code());
         assertTrue(e.getMessage().contains("nope"), e.getMessage());
     }

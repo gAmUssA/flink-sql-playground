@@ -1,6 +1,7 @@
 package com.flinksqlfiddle.api;
 
 import com.flinksqlfiddle.execution.NotExplainableException;
+import com.flinksqlfiddle.execution.TableNotFoundException;
 import com.flinksqlfiddle.execution.timeline.TimelineService;
 import com.flinksqlfiddle.execution.timeline.TimelineService.TimelineListener;
 import com.flinksqlfiddle.execution.timeline.TimelineService.TimelineMeta;
@@ -87,6 +88,20 @@ class TimelineResourceTest {
                 .when().post(URL)
                 .then().statusCode(400)
                 .body(containsString("\"code\":\"NO_EVENT_TIME\""));
+    }
+
+    @Test
+    void unknownTableIsABadRequestNamingTheTable() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("s1")).thenReturn(session);
+        when(timelineService.prepare(eq(session), any()))
+                .thenThrow(new TableNotFoundException("clicks", null, "Object 'clicks' not found", null));
+        given().contentType("application/json")
+                .body("{\"sql\": \"SELECT * FROM clicks\", \"mode\": \"STREAMING\"}")
+                .when().post(URL)
+                .then().statusCode(400)
+                .body(containsString("\"code\":\"TABLE_NOT_FOUND\""))
+                .body(containsString("\"table\":\"clicks\""));
     }
 
     @Test

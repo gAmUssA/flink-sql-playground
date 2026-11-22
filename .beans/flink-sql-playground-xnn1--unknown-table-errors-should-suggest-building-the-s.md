@@ -1,11 +1,11 @@
 ---
 # flink-sql-playground-xnn1
 title: Unknown-table errors should suggest building the schema first
-status: todo
+status: completed
 type: feature
 priority: high
 created_at: 2026-11-22T21:46:59Z
-updated_at: 2026-11-22T21:46:59Z
+updated_at: 2026-11-22T23:26:52Z
 ---
 
 Reported by Vik, 2026-11-22.
@@ -27,8 +27,18 @@ Keep Flink's original message available underneath for people who want it.
 - Also covers: the Job Graph and Timeline tabs opened before building the schema (they show the same raw error today).
 - Tests: unit test for the error mapping, e2e for the first-visit flow (load page → Run Query → helpful message + button), phone layout, contrast.
 
-- [ ] Backend: TABLE_NOT_FOUND error code with the table name on all four endpoints
-- [ ] Frontend: friendly message + Flink's original detail, Build Schema and run action
-- [ ] Declared-but-not-built vs not-declared wording
-- [ ] Job Graph / Timeline empty states use it too
-- [ ] Tests (unit, e2e desktop + phone)
+- [x] Backend: TABLE_NOT_FOUND error code with the table name on all four endpoints
+- [x] Frontend: friendly message + Flink's original detail, Build Schema and run action
+- [x] Declared-but-not-built vs not-declared wording
+- [x] Job Graph / Timeline empty states use it too
+- [x] Tests (unit, e2e desktop + phone)
+
+
+## Summary of Changes
+
+- Backend: `TableNotFoundException.detect` maps Flink's missing-table errors (Calcite's `Object 'x' not found [within 'p']`, `Cannot find table ... in any of the catalogs`, `Tables or views with the identifier ... doesn't exist`) to HTTP 400 `TABLE_NOT_FOUND` with `table`, `path` and Flink's `suggestion`, on execute (both modes, DDL), the stream, explain and the timeline probe. It reads the identifier at Calcite's span in the statement (comments between parts skipped, quoted dots kept), so a missing database or column is never reported as a missing table; an ambiguous span fails closed. ADR 0007 records the contract.
+- Frontend: the Table, Job Graph and Timeline views explain a missing table. Declared in the schema editor but not built offers **Build Schema and run**; not declared, a case mismatch, or the same name in another database each get their own wording. Flink's message stays underneath. Names are compared qualified (`other_db.orders` is not the declared `orders`).
+- Build Schema and run runs the query and mode it was clicked for: an edit, a mode switch or another running query during the build means it only builds, says so, and redraws the button.
+- Rebuilding a schema drops and recreates its views too (`dropStatementFor`), so a retry after a partial build gets past them.
+- Tests: unit (`TableNotFoundExceptionTest`, `SqlExecutionServiceTest`, resource tests), MiniCluster smoke (`TableNotFoundSmokeTest`), node (`declaredTablePaths`), Playwright e2e on desktop and phones, contrast in three themes.
+- Copilot's adversarial review (six findings) was fixed on this branch; see the PR comment on #81.

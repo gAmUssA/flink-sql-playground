@@ -141,11 +141,16 @@ export function stripComments(text, replacement = '') {
   return rewriteSql(text, () => replacement, (quote, contents, closed) => quote + contents + (closed ? quote : ''));
 }
 
+/** The unquoted parts of a possibly qualified identifier (`cat`.`db`.`t` → [cat, db, t]), ignoring comments in it. */
+function identifierParts(raw) {
+  return (stripComments(raw, ' ').match(/`(?:[^`]|``)*`|[^.\s]+/g) || [])
+    .map((p) => (p.startsWith('`') ? p.slice(1, -1).replace(/``/g, '`') : p));
+}
+
 /** Unquotes a possibly qualified identifier (`cat`.`db`.`t` → t), ignoring comments in it. */
 function lastIdentifier(raw) {
-  const parts = stripComments(raw, ' ').match(/`(?:[^`]|``)*`|[^.\s]+/g) || [];
-  const last = parts[parts.length - 1] || '';
-  return last.startsWith('`') ? last.slice(1, -1).replace(/``/g, '`') : last;
+  const parts = identifierParts(raw);
+  return parts[parts.length - 1] || '';
 }
 
 /**
@@ -314,6 +319,26 @@ export function parseCreateTables(text) {
   const all = tables.map((table, i) => ({ at: at[i], table }));
   for (const v of parseCreateViews(text, masked, tables)) all.push(v);
   return all.sort((a, b) => a.at - b.at).map((x) => x.table);
+}
+
+/**
+ * The qualified names of the tables and views that CREATE TABLE / CREATE VIEW statements declare,
+ * as written and unquoted: `cat`.db.t → ['cat', 'db', 't']. The same statements parseCreateTables
+ * lists, in text order.
+ */
+export function declaredTablePaths(text) {
+  const masked = maskSql(text);
+  const found = [];
+  for (const re of [CREATE_TABLE, CREATE_VIEW]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(masked)) !== null) {
+      const at = m.index + m[0].indexOf(m[1]);
+      const parts = identifierParts(text.slice(at, at + m[1].length));
+      if (parts.length) found.push({ at: m.index, parts });
+    }
+  }
+  return found.sort((a, b) => a.at - b.at).map((x) => x.parts);
 }
 
 const NAME = /(?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*/y;

@@ -129,6 +129,24 @@ There is no manual deploy step. **Merging to `main` deploys.**
   (tests passed, skipped), and a **Follow-ups** list. Advisory review findings that are not
   fixed go into a new issue and are linked, not dropped.
 - Worktrees for parallel agents live under `.claude/worktrees/` (gitignored).
+- Adversarial reviews are run by GitHub Copilot, headless in a visible Rex block, read-only. From
+  the worktree, with the prompt in a file (it names the diff, `git diff origin/main...<branch>`,
+  what to try to break, and asks for findings most-severe-first ending with `DONE`):
+
+  ```bash
+  rex run --focus=false --wait --interactive -- copilot -p "$(cat prompt.txt)" \
+    --allow-tool 'shell(git diff:*)' --allow-tool 'shell(git log:*)' --allow-tool 'shell(git show:*)' \
+    --allow-tool 'shell(node:*)' --allow-tool 'shell(rg:*)' \
+    --deny-tool 'shell(git push:*)' --deny-tool 'shell(git commit:*)' --deny-tool 'shell(git reset:*)' \
+    --deny-tool 'shell(rm:*)' --deny-tool 'write' \
+    --share build/copilot-review-<topic>.md
+  ```
+
+  `--interactive` lets Rex read `~/.zshrc` for PATH; without Rex (`rex whoami` fails), run the
+  same `copilot -p …` directly. Copilot reads files with its built-in tools; never grant `write`
+  or `--allow-all`. `--share` writes the session, final answer included, when it finishes; watch
+  it live with `rex capture -b <block> --trim`. Post the report on the PR with how each finding
+  was resolved.
 - Work is tracked as beans (`.beans/`, `beans prime` for the CLI guide). Commit bean files
   with the code they describe. Record decisions that later work depends on as an ADR in
   `docs/adr/`.

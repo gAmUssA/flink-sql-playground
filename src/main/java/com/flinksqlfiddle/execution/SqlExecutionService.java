@@ -43,6 +43,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -69,12 +70,11 @@ public class SqlExecutionService {
             "^\\s*(CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)|DROP\\s+(TEMPORARY\\s+)?(TABLE|VIEW))\\b",
             Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
-            "^\\s*CREATE\\s+(?:TEMPORARY\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(`[^`]+`|\\S+)",
+    // CREATE [TEMPORARY] TABLE|VIEW [IF NOT EXISTS] name, the name possibly qualified and quoted.
+    private static final Pattern CREATE_TABLE_OR_VIEW_PATTERN = Pattern.compile(
+            "^\\s*CREATE\\s+(TEMPORARY\\s+)?(TABLE|VIEW)\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?"
+                    + "((?:`(?:[^`]|``)*`|[^\\s.`(]+)(?:\\s*\\.\\s*(?:`(?:[^`]|``)*`|[^\\s.`(]+))*)",
             Pattern.CASE_INSENSITIVE);
-
-    private static final Pattern CREATE_TEMPORARY_TABLE_PATTERN = Pattern.compile(
-            "^\\s*CREATE\\s+TEMPORARY\\s+TABLE\\b", Pattern.CASE_INSENSITIVE);
 
     private static final Map<RowKind, String> ROW_KIND_LABELS = Map.of(
             RowKind.INSERT, "+I",
@@ -119,7 +119,7 @@ public class SqlExecutionService {
 
         if (isDdl(sql)) {
             log.debug("DDL detected, syncing to both environments: {}", SqlText.truncate(sql));
-            return executeDdlOnBothEnvironments(session, sql);
+            return planning(sql, () -> executeDdlOnBothEnvironments(session, sql));
         }
 
         log.info("Executing SQL [{}]: {}", mode, SqlText.truncate(sql));
@@ -129,6 +129,22 @@ public class SqlExecutionService {
                 : session.getStreamEnv();
 
         return executeOnSessionThread(session, tEnv, sql);
+    }
+
+    /**
+     * Runs a planning step of {@code sql}, turning a planner error about a table or view the
+     * session does not have into a {@link TableNotFoundException}. Other errors pass unchanged.
+     */
+    private static <T> T planning(String sql, Supplier<T> step) {
+        try {
+            return step.get();
+        } catch (RuntimeException e) {
+            Optional<TableNotFoundException> missing = TableNotFoundException.detect(e, sql);
+            if (missing.isPresent()) {
+                throw missing.get();
+            }
+            throw e;
+        }
     }
 
     /**
@@ -149,7 +165,7 @@ public class SqlExecutionService {
         TableEnvironment tEnv = (mode == ExecutionMode.BATCH) ? session.getBatchEnv() : session.getStreamEnv();
         String text;
         try {
-            text = session.runOnPlannerThread(() -> explainText(tEnv, mode, sql));
+            text = planning(sql, () -> session.runOnPlannerThread(() -> explainText(tEnv, mode, sql)));
         } catch (ValidationException | SqlParserException e) {
             throw new NotExplainableException(e.getMessage(), "INVALID_SQL");
         }
@@ -223,22 +239,23 @@ public class SqlExecutionService {
     }
 
     /**
-     * For a CREATE TABLE statement, returns the matching {@code DROP TABLE IF EXISTS}
-     * statement that makes re-execution safe. Empty for any other statement.
+     * For a CREATE TABLE or CREATE VIEW statement, returns the matching {@code DROP ... IF EXISTS}
+     * statement that makes re-execution safe: building the schema again after a partial build
+     * must not stop at a view the first build already created. Empty for any other statement.
      */
     static Optional<String> dropStatementFor(String sql) {
         String normalized = stripLeadingComments(sql);
-        Matcher matcher = CREATE_TABLE_PATTERN.matcher(normalized);
+        Matcher matcher = CREATE_TABLE_OR_VIEW_PATTERN.matcher(normalized);
         if (!matcher.find()) {
             return Optional.empty();
         }
-        // A temporary table must be dropped with DROP TEMPORARY TABLE — DROP TABLE only
-        // targets the permanent catalog, so it would no-op here and the re-CREATE would then
-        // fail with "table already exists". Match the idempotent DROP to the CREATE's kind.
-        String keyword = CREATE_TEMPORARY_TABLE_PATTERN.matcher(normalized).find()
-                ? "DROP TEMPORARY TABLE IF EXISTS "
-                : "DROP TABLE IF EXISTS ";
-        return Optional.of(keyword + matcher.group(1));
+        // A temporary table or view must be dropped with DROP TEMPORARY ...: the plain DROP only
+        // targets the permanent catalog, so it would no-op here (or, for a view, fail because a
+        // temporary one shadows it) and the re-CREATE would then fail with "already exists".
+        // Match the idempotent DROP to the CREATE's kind.
+        String temporary = matcher.group(1) != null ? "TEMPORARY " : "";
+        String kind = matcher.group(2).toUpperCase(java.util.Locale.ROOT);
+        return Optional.of("DROP " + temporary + kind + " IF EXISTS " + matcher.group(3));
     }
 
     static boolean isDdl(String sql) {
@@ -268,7 +285,7 @@ public class SqlExecutionService {
 
         // executeSql must run on a consistent thread per session because Calcite's
         // RelMetadataQuery uses thread-local state for the metadata handler provider.
-        TableResult tableResult = session.runOnPlannerThread(() -> tEnv.executeSql(sql));
+        TableResult tableResult = planning(sql, () -> session.runOnPlannerThread(() -> tEnv.executeSql(sql)));
 
         // Result collection only iterates rows — no planner involvement, safe on any thread.
         return awaitResult(tableResult, sql, startTime);
@@ -277,7 +294,7 @@ public class SqlExecutionService {
     private QueryResult executeDdlOnBothEnvironments(FlinkSession session, String sql) {
         long startTime = System.currentTimeMillis();
         session.runOnPlannerThread(() -> {
-            // Drop any prior table of the same name first so re-execution is idempotent.
+            // Drop any prior table or view of the same name first so re-execution is idempotent.
             dropStatementFor(sql).ifPresent(drop -> {
                 log.debug("Executing idempotent DROP: {}", drop);
                 session.getBatchEnv().executeSql(drop);
@@ -317,13 +334,13 @@ public class SqlExecutionService {
 
         if (isDdl(sql)) {
             log.debug("DDL detected on stream path, syncing to both environments: {}", SqlText.truncate(sql));
-            executeDdlOnBothEnvironments(session, sql);
+            planning(sql, () -> executeDdlOnBothEnvironments(session, sql));
             return new StreamingQuery(null, startTime);
         }
 
         log.info("Streaming SQL: {}", SqlText.truncate(sql));
         TableEnvironment tEnv = session.getStreamEnv();
-        TableResult tableResult = session.runOnPlannerThread(() -> tEnv.executeSql(sql));
+        TableResult tableResult = planning(sql, () -> session.runOnPlannerThread(() -> tEnv.executeSql(sql)));
         return new StreamingQuery(tableResult, startTime);
     }
 
