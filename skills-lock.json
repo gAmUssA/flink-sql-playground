@@ -1,0 +1,96 @@
+{
+  "version": 2,
+  "skills": {
+    "confluent-cloud-cdc-tableflow": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/confluent-cloud-cdc-tableflow/SKILL.md",
+      "computedHash": "d4abf84f6f3f72229d2fadceb5ede1eae07d7635de596ff79ab00c104dbb5103"
+    },
+    "confluent-cloud-flink-sql": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/confluent-cloud-flink-sql/SKILL.md",
+      "computedHash": "1c2c14bd2efe5427f205f1163d1d64c24a01a02e6f0c25f0b1c1c6e0f2ab640e"
+    },
+    "confluent-cloud-provider-integration": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/confluent-cloud-provider-integration/SKILL.md",
+      "computedHash": "94fc99bde971090d99425dcd3fd9f8ddc0566facdb625f2d0f7beca7cfdc0b29"
+    },
+    "confluent-skill-creator": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/confluent-skill-creator/SKILL.md",
+      "computedHash": "46476140b6d154fcd95ff1ad8c0972c86934968093d68cd8359023b5ef22f53e"
+    },
+    "confluent-skill-reviewer": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/confluent-skill-reviewer/SKILL.md",
+      "computedHash": "42721f483d66a9dbfc73c1758c01232c8b42775719a121587784a6a474ae9ac0"
+    },
+    "confluent-tuning-advisor": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/confluent-tuning-advisor/SKILL.md",
+      "computedHash": "25407049cff7e2ad6da5e28a5003660b0d9e68dce9c1f279a16180ad2c62d000"
+    },
+    "developing-kafka-java-client": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/developing-kafka-java-client/SKILL.md",
+      "computedHash": "3f2963f6682acec4d18b9235504f284c6721f9f18a019fe0a37727095efce3a5"
+    },
+    "developing-kafka-python-client": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/developing-kafka-python-client/SKILL.md",
+      "computedHash": "50542b832409eacf23c151e8c7e5afca3ae670995fdec9f366de2848c70f9e7e"
+    },
+    "flink-sql": {
+      "source": "gAmUssA/flink-sql-skill",
+      "commit": "c60242cf25ecef4974f77c76d8c1781e35b7efcd",
+      "sourceType": "github",
+      "skillPath": "tiles/flink-sql/skills/flink-sql/SKILL.md",
+      "computedHash": "e5e80fe1848262068684bede1581e9adc1babf9315ab69b9d1935f29d7b570ab"
+    },
+    "flink-udf": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/flink-udf/SKILL.md",
+      "computedHash": "05787f05ad1bfa935e88a1943cdc21e4f8c3019d2a210c6a42a235a19b97ed96"
+    },
+    "kafka-schema-registry": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/kafka-schema-registry/SKILL.md",
+      "computedHash": "f9b7e79e6aa8aab4a93287ae746ba616b71a76c0dcfa0fb71aebd154e94faed9"
+    },
+    "kafka-streams-programming": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/kafka-streams-programming/SKILL.md",
+      "computedHash": "c2f414a1fd3ce535f48aebe9c4471e73fa240a9f7064e7b380443eca00e71bb4"
+    },
+    "msk-migration": {
+      "source": "confluentinc/agent-skills",
+      "commit": "e127e024075414d3dcf06a33f5dfd9306d99ca98",
+      "sourceType": "github",
+      "skillPath": "skills/msk-migration/SKILL.md",
+      "computedHash": "5a1cc5a4d5e6e6b08455102e1495742a5e447c4493b02a140521e9a5bb2faa24"
+    }
+  }
+}

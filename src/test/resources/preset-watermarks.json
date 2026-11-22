@@ -1,0 +1,8 @@
+{
+  "_comment": "Every shipped preset that declares a WATERMARK, and what its watermark is meant to do. lossless: the delay covers the generator's disorder, so no row is late. lossy: the preset deliberately drops late rows. Checked statically by src/test/js/preset-watermarks.test.js and against real Flink by PresetWatermarkSmokeTest.",
+  "Tumbling & Hopping Windows (Faker)": "lossless",
+  "Late Data & the Watermark Dial (Faker)": "lossy",
+  "Watermark Timeline: who misses the window": "lossy",
+  "Temporal Join — enrich at event time (Faker)": "lossless",
+  "Fraud: Impossible Travel (MATCH_RECOGNIZE)": "lossless"
+}

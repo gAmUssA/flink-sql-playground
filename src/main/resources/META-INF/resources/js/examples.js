@@ -24,10 +24,12 @@ ORDER BY user_id;`
     {
         title: "Tumbling Window",
         mode: "STREAMING",
-        schema: `CREATE TEMPORARY TABLE sensor_readings (
+        schema: `-- PROCTIME() is processing time: the wall clock when a row reaches Flink. Windows
+-- close by that clock, so the table needs no WATERMARK (and nothing is ever late).
+CREATE TEMPORARY TABLE sensor_readings (
     sensor_id INT,
     temperature DOUBLE,
-    event_time AS PROCTIME()
+    proc_time AS PROCTIME()
 ) WITH (
     'connector' = 'datagen',
     'rows-per-second' = '10',
@@ -41,14 +43,16 @@ SELECT sensor_id, window_start, window_end,
     COUNT(*) AS reading_count,
     ROUND(AVG(temperature), 1) AS avg_temp
 FROM TABLE(
-    TUMBLE(TABLE sensor_readings, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+    TUMBLE(TABLE sensor_readings, DESCRIPTOR(proc_time), INTERVAL '10' SECOND)
 )
 GROUP BY sensor_id, window_start, window_end;`
     },
     {
         title: "Hopping Window",
         mode: "STREAMING",
-        schema: `CREATE TEMPORARY TABLE clicks (
+        schema: `-- PROCTIME() is processing time: the wall clock when a row reaches Flink. Windows
+-- close by that clock, so the table needs no WATERMARK (and nothing is ever late).
+CREATE TEMPORARY TABLE clicks (
     user_id INT,
     page STRING,
     click_time AS PROCTIME()
@@ -70,7 +74,9 @@ GROUP BY user_id, window_start, window_end;`
     {
         title: "Cumulate Window",
         mode: "STREAMING",
-        schema: `CREATE TEMPORARY TABLE page_views (
+        schema: `-- PROCTIME() is processing time: the wall clock when a row reaches Flink. Windows
+-- close by that clock, so the table needs no WATERMARK (and nothing is ever late).
+CREATE TEMPORARY TABLE page_views (
     page_id INT,
     view_time AS PROCTIME()
 ) WITH (
@@ -90,7 +96,9 @@ GROUP BY page_id, window_start, window_end;`
     {
         title: "Interval Join",
         mode: "STREAMING",
-        schema: `CREATE TEMPORARY TABLE orders_stream (
+        schema: `-- Both times are PROCTIME(): when each row reaches Flink, not when the order or
+-- shipment happened. No WATERMARK is needed; for event time, see the Temporal Join.
+CREATE TEMPORARY TABLE orders_stream (
     order_id INT,
     product_id INT,
     order_time AS PROCTIME()
@@ -117,7 +125,8 @@ CREATE TEMPORARY TABLE shipments (
     'fields.order_ref.min' = '1',
     'fields.order_ref.max' = '5'
 );`,
-        query: `-- Join orders with shipments within a time interval
+        query: `-- Join orders with shipments that ARRIVE within 10 seconds of each other.
+-- The interval bounds the state: Flink forgets a row once no partner can still match.
 SELECT
     o.order_id,
     o.product_id,
@@ -285,7 +294,7 @@ CREATE TEMPORARY TABLE sensor_readings (
     temperature_c   DOUBLE,
     pressure_psi    DOUBLE,
     ph_level        DOUBLE,
-    event_time      AS PROCTIME()
+    proc_time       AS PROCTIME()   -- processing time: windows close by the wall clock
 ) WITH (
     'connector' = 'faker',
     'rows-per-second' = '100',
@@ -296,25 +305,35 @@ CREATE TEMPORARY TABLE sensor_readings (
     'fields.pressure_psi.expression' = '#{Number.randomDouble ''2'',''5'',''30''}',
     'fields.ph_level.expression' = '#{Number.randomDouble ''2'',''3'',''6''}'
 );`,
-        query: `-- Real-time tank dashboard: 5-second tumbling windows
+        query: `-- Real-time tank dashboard: 5-second tumbling windows.
+-- Aggregate INSIDE the window first, then enrich. Each window fires once and
+-- forgets its rows. (Join first and GROUP BY window_start afterwards, and it is no
+-- longer a window: a plain aggregation that updates forever and never frees state.
+-- The Job Graph tab shows the difference: WindowAggregate vs GroupAggregate.)
+WITH per_tank AS (
+    SELECT window_start, window_end, tank_id, recipe_id,
+        COUNT(*)           AS readings,
+        AVG(temperature_c) AS avg_temp_c,
+        AVG(pressure_psi)  AS avg_pressure,
+        AVG(ph_level)      AS avg_ph
+    FROM TABLE(
+        TUMBLE(TABLE sensor_readings, DESCRIPTOR(proc_time), INTERVAL '5' SECOND)
+    )
+    GROUP BY window_start, window_end, tank_id, recipe_id
+)
 SELECT
+    p.window_start,
     t.tank_name,
     t.tank_type,
     r.beer_name,
     r.style,
-    COUNT(*)                            AS readings,
-    ROUND(AVG(s.temperature_c), 2)      AS avg_temp_c,
-    ROUND(AVG(s.pressure_psi), 2)       AS avg_pressure,
-    ROUND(AVG(s.ph_level), 2)           AS avg_ph
-FROM TABLE(
-    TUMBLE(TABLE sensor_readings, DESCRIPTOR(event_time), INTERVAL '5' SECOND)
-) s
-JOIN tanks t ON s.tank_id = t.tank_id
-JOIN recipes r ON s.recipe_id = r.recipe_id
-GROUP BY
-    t.tank_name, t.tank_type,
-    r.beer_name, r.style,
-    window_start, window_end;`
+    p.readings,
+    ROUND(p.avg_temp_c, 2)   AS avg_temp_c,
+    ROUND(p.avg_pressure, 2) AS avg_pressure,
+    ROUND(p.avg_ph, 2)       AS avg_ph
+FROM per_tank p
+JOIN tanks t ON p.tank_id = t.tank_id
+JOIN recipes r ON p.recipe_id = r.recipe_id;`
     },
     {
         title: "Batch vs Streaming",

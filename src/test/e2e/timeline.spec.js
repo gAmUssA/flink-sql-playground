@@ -119,6 +119,83 @@ test('the chart redraws at the new size when the results panel is maximized', as
   expect(fit).toBe(true);
 });
 
+async function recordSample(page) {
+  await page.click('.rtab[data-tab="timeline"]');
+  await page.click('#timeline-record-btn');
+  await expect(page.locator('.wt-dot')).toHaveCount(TIMELINE_TICKS.length);
+}
+
+/** The chart's box once the redraws that follow a recording (sizing to the box) have settled. */
+async function chartBox(page) {
+  let last = '';
+  await expect.poll(async () => {
+    const b = await page.locator('.wt-svg').boundingBox();
+    const key = b ? `${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}` : '';
+    const stable = key && key === last;
+    last = key;
+    return stable;
+  }, { intervals: [100] }).toBe(true);
+  return page.locator('.wt-svg').boundingBox();
+}
+
+test('dragging across the chart zooms in to the watermark steps, and All zooms out', async ({ page }) => {
+  await open(page);
+  await recordSample(page);
+  await expect(page.locator('.wt-wm-label')).toHaveCount(0); // too many records to label each step
+  const box = await chartBox(page);
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2, { steps: 4 });
+  await expect(page.locator('.wt-brush')).toBeVisible();
+  await page.mouse.up();
+  const dots = await page.locator('.wt-dot').count();
+  expect(dots).toBeLessThan(TIMELINE_TICKS.length / 3);
+  expect(dots).toBeGreaterThan(5);
+  await expect(page.locator('.wt-wm-label').first()).toHaveText(/^\+\d+\.\d+ s$|^first$/);
+  await expect(page.locator('.wt-axis').last()).toHaveText(/^records \d+–\d+ of 120 →$/);
+  await expect(page.locator('[data-wt-zoom="reset"]')).toBeEnabled();
+  await page.click('[data-wt-zoom="reset"]');
+  await expect(page.locator('.wt-dot')).toHaveCount(TIMELINE_TICKS.length);
+  await expect(page.locator('[data-wt-zoom="reset"]')).toBeDisabled();
+});
+
+test('the zoom buttons zoom and pan, and a tap does not zoom', async ({ page }) => {
+  await open(page);
+  await recordSample(page);
+  const box = await chartBox(page);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // a click is not a drag
+  await expect(page.locator('.wt-dot')).toHaveCount(TIMELINE_TICKS.length);
+  await page.click('[data-wt-zoom="in"]');
+  await page.click('[data-wt-zoom="in"]');
+  const first = await page.locator('.wt-axis').last().textContent();
+  await page.click('[data-wt-zoom="left"]');
+  await expect(page.locator('.wt-axis').last()).not.toHaveText(first);
+  await page.click('[data-wt-zoom="out"]');
+  await page.click('[data-wt-zoom="out"]');
+  await expect(page.locator('.wt-dot')).toHaveCount(TIMELINE_TICKS.length);
+});
+
+test('a trackpad pinch (ctrl + wheel) zooms; a plain wheel does not', async ({ page }) => {
+  await open(page);
+  await recordSample(page);
+  const box = await chartBox(page);
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
+  await page.mouse.wheel(0, -100);
+  await expect(page.locator('.wt-dot')).toHaveCount(TIMELINE_TICKS.length);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up('Control');
+  await expect.poll(() => page.locator('.wt-dot').count()).toBeLessThan(TIMELINE_TICKS.length);
+});
+
+test('a new recording starts at the full view', async ({ page }) => {
+  await open(page);
+  await recordSample(page);
+  await page.click('[data-wt-zoom="in"]');
+  await page.click('#timeline-record-btn');
+  await expect(page.locator('.wt-dot')).toHaveCount(TIMELINE_TICKS.length);
+});
+
 test('the canonical preset is in the example list', async ({ page }) => {
   await open(page);
   const titles = await page.locator('#example-select option').allTextContents();
@@ -134,7 +211,8 @@ for (const theme of ['nebula', 'carbon', 'cobalt']) {
     await expect(page.locator('.wt-dot')).toHaveCount(TIMELINE_TICKS.length);
     await settleAnimations(page);
     const results = await page.evaluate((fn) => new Function(`return (${fn})`)()(
-      ['.wt-lead', '.wt-lead code', '.wt-stat', '.wt-stat b', '.wt-stat.is-dropped b', '.wt-stat.is-late b', '.wt-legend span', '.wt-note', '#timeline-record-btn']
+      ['.wt-lead', '.wt-lead code', '.wt-stat', '.wt-stat b', '.wt-stat.is-dropped b', '.wt-stat.is-late b', '.wt-legend span', '.wt-note', '#timeline-record-btn',
+        '[data-wt-zoom="in"]', '.wt-zoom-hint']
         .map((sel) => ({ what: sel, el: document.querySelector(sel) }))), measureContrast.toString());
     expect(results.filter((m) => m.ratio < 4.5), `${theme}: text below 4.5:1`).toEqual([]);
   });

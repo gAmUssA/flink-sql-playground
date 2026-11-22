@@ -148,7 +148,7 @@ let throughputTimer = null;
 
 // Watermark timeline (js/watermark-timeline.js): a probe job's records of the query's watermarked
 // source. key = plan key of the query it was recorded for.
-const TL = { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null, controller: null };
+const TL = { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null, controller: null, view: null };
 const MAX_TICKS = 2000;
 let rowsSinceSample = 0;
 let flashKeys = new Set();
@@ -1108,7 +1108,7 @@ function renderJobGraph() {
 
 /* ---- watermark timeline ---- */
 function resetTimeline() {
-  Object.assign(TL, { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null });
+  Object.assign(TL, { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null, view: null });
 }
 function stopTimeline() {
   if (TL.controller) TL.controller.abort();
@@ -1176,13 +1176,67 @@ function renderTimeline(body) {
   timelineDrawn = `${body.clientWidth}x${body.clientHeight}`;
   const width = Math.max(Math.floor(body.clientWidth) - 36, 280);
   const height = Math.max(Math.min(Math.round(body.clientHeight * 0.55), 360), 200);
-  return WatermarkTimeline.render(TL.meta, TL.ticks, { width, height, recording: TL.status === 'recording', truncated: TL.truncated })
+  return WatermarkTimeline.render(TL.meta, TL.ticks, { width, height, recording: TL.status === 'recording', truncated: TL.truncated, view: TL.view })
     + (TL.status === 'recording' ? '' : timelineButton('Record again'));
 }
 
 function timelineButton(label = 'Record timeline') {
   return `<div class="wt-actions"><button class="btn outline wt-record" id="timeline-record-btn">${iconSvg('clock', 14)} ${label}</button></div>`;
 }
+
+// Zoom: the buttons, a drag across the chart (mouse, pen or a horizontal finger drag), and a
+// trackpad pinch (a ctrl+wheel event). The view is a record range; see WatermarkTimeline.zoom.
+function setTimelineView(view) {
+  TL.view = view;
+  if (activeTab === 'timeline') renderActiveView();
+}
+function svgIndexAt(svg, clientX) {
+  const box = svg.getBoundingClientRect();
+  const from = Number(svg.dataset.from), to = Number(svg.dataset.to);
+  const pl = Number(svg.dataset.pl), w = Number(svg.dataset.w);
+  const share = Math.max(0, Math.min(1, (clientX - box.left - pl) / w));
+  return from + share * (to - from);
+}
+document.addEventListener('click', (e) => {
+  const zoomBtn = e.target instanceof Element && e.target.closest('[data-wt-zoom]');
+  if (zoomBtn && !zoomBtn.disabled) setTimelineView(WatermarkTimeline.zoom(TL.view, TL.ticks.length, zoomBtn.dataset.wtZoom));
+});
+let timelineDrag = null;
+document.addEventListener('pointerdown', (e) => {
+  const svg = e.target instanceof Element && e.target.closest('.wt-svg');
+  if (!svg || e.button !== 0) return;
+  const chart = svg.closest('.wt-chart');
+  timelineDrag = { svg, chart, x0: e.clientX, brush: chart.querySelector('.wt-brush'), id: e.pointerId };
+});
+document.addEventListener('pointermove', (e) => {
+  const d = timelineDrag;
+  if (!d || e.pointerId !== d.id) return;
+  const box = d.chart.getBoundingClientRect();
+  const left = Math.min(d.x0, e.clientX) - box.left, width = Math.abs(e.clientX - d.x0);
+  if (width < 6) return;
+  Object.assign(d.brush.style, { left: `${left}px`, width: `${width}px` });
+  d.brush.hidden = false;
+});
+document.addEventListener('pointerup', (e) => {
+  const d = timelineDrag;
+  timelineDrag = null;
+  if (!d || e.pointerId !== d.id) return;
+  d.brush.hidden = true;
+  if (Math.abs(e.clientX - d.x0) < 8) return; // a tap, not a drag
+  const a = svgIndexAt(d.svg, d.x0), b = svgIndexAt(d.svg, e.clientX);
+  const next = WatermarkTimeline.clampView({ from: Math.min(a, b), to: Math.max(a, b) }, TL.ticks.length);
+  setTimelineView(next.zoomed ? { from: next.from, to: next.to } : null);
+});
+document.addEventListener('pointercancel', () => {
+  if (timelineDrag) timelineDrag.brush.hidden = true;
+  timelineDrag = null;
+});
+document.addEventListener('wheel', (e) => {
+  const svg = e.ctrlKey && e.target instanceof Element && e.target.closest('.wt-svg');
+  if (!svg) return; // a plain wheel scrolls the page as usual
+  e.preventDefault();
+  setTimelineView(WatermarkTimeline.zoom(TL.view, TL.ticks.length, e.deltaY < 0 ? 'in' : 'out', svgIndexAt(svg, e.clientX)));
+}, { passive: false });
 
 document.addEventListener('click', (e) => {
   const btn = e.target instanceof Element && e.target.closest('#timeline-record-btn');

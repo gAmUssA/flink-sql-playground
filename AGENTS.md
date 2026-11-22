@@ -5,7 +5,7 @@ dependencies or deploy. It records what earlier sessions had to figure out the h
 
 Deeper docs: `docs/ARCHITECTURE.md` (system design, packages, test layers),
 `docs/STARTUP.md` (cold start), `docs/adr/` (shared MiniCluster, AOT cache, CodeMirror,
-job graph from EXPLAIN, watermark timeline probe),
+job graph from EXPLAIN, watermark timeline probe, preset event-time contract),
 `DEPLOY.md` (Railway, Supabase, Fly, VPS).
 
 ## What this is
@@ -64,6 +64,10 @@ npx playwright test   # browser tests, static server + stubbed API, no backend
 - The Job Graph tab is the real optimized plan (`/explain`, `PlanParser`, `js/job-graph.js`;
   ADR 0004). A Flink upgrade can change the text plan format or the internal
   `CollectModifyOperation` API it relies on: run `ExplainSmokeTest` after any Flink bump.
+- Every preset with a WATERMARK must be listed in `src/test/resources/preset-watermarks.json`
+  as `lossless` or `lossy` (ADR 0006). `preset-watermarks.test.js` checks the SQL and
+  `PresetWatermarkSmokeTest` checks the claim on real Flink. Aggregate inside a window before
+  joining, and never name a `PROCTIME()` column like an event time.
 - The Timeline tab records a separate probe job (`TimelineService`, `js/watermark-timeline.js`;
   ADR 0005). It shows a sample of the stream, not the user's rows; keep that wording in the UI.
   `TimelineSmokeTest` runs the "Watermark Timeline" preset: a tight watermark must drop clicks,

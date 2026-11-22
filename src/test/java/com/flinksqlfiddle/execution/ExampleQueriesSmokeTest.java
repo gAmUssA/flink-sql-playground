@@ -463,24 +463,30 @@ class ExampleQueriesSmokeTest {
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
+                WITH per_tank AS (
+                    SELECT window_start, window_end, tank_id, recipe_id,
+                        COUNT(*)           AS readings,
+                        AVG(temperature_c) AS avg_temp_c,
+                        AVG(pressure_psi)  AS avg_pressure,
+                        AVG(ph_level)      AS avg_ph
+                    FROM TABLE(
+                        TUMBLE(TABLE sensor_readings, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+                    )
+                    GROUP BY window_start, window_end, tank_id, recipe_id
+                )
                 SELECT
+                    p.window_start,
                     t.tank_name,
                     t.tank_type,
                     r.beer_name,
                     r.style,
-                    COUNT(*)                        AS readings,
-                    ROUND(AVG(s.temperature_c), 2)  AS avg_temp_c,
-                    ROUND(AVG(s.pressure_psi), 2)   AS avg_pressure,
-                    ROUND(AVG(s.ph_level), 2)       AS avg_ph
-                FROM TABLE(
-                    TUMBLE(TABLE sensor_readings, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
-                ) s
-                JOIN tanks t ON s.tank_id = t.tank_id
-                JOIN recipes r ON s.recipe_id = r.recipe_id
-                GROUP BY
-                    t.tank_name, t.tank_type,
-                    r.beer_name, r.style,
-                    window_start, window_end
+                    p.readings,
+                    ROUND(p.avg_temp_c, 2)   AS avg_temp_c,
+                    ROUND(p.avg_pressure, 2) AS avg_pressure,
+                    ROUND(p.avg_ph, 2)       AS avg_ph
+                FROM per_tank p
+                JOIN tanks t ON p.tank_id = t.tank_id
+                JOIN recipes r ON p.recipe_id = r.recipe_id
                 """);
 
         assertTrue(result.columnNames().containsAll(
