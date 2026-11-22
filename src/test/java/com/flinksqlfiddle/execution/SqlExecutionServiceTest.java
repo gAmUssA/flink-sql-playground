@@ -214,7 +214,29 @@ class SqlExecutionServiceTest {
     void dropStatementForEmptyOnNonCreateStatements() {
         assertEquals(Optional.empty(), SqlExecutionService.dropStatementFor("SELECT * FROM t"));
         assertEquals(Optional.empty(), SqlExecutionService.dropStatementFor("DROP TABLE t"));
-        assertEquals(Optional.empty(), SqlExecutionService.dropStatementFor("CREATE VIEW v AS SELECT 1"));
+        assertEquals(Optional.empty(), SqlExecutionService.dropStatementFor("DROP VIEW v"));
+        assertEquals(Optional.empty(), SqlExecutionService.dropStatementFor("CREATE FUNCTION f AS 'x.Y'"));
+    }
+
+    @Test
+    void dropStatementForViewsMatchesTheirKind() {
+        // A rebuild after a partial build must get past the views the first build created.
+        assertEquals(Optional.of("DROP VIEW IF EXISTS v"),
+                SqlExecutionService.dropStatementFor("CREATE VIEW v AS SELECT 1"));
+        assertEquals(Optional.of("DROP TEMPORARY VIEW IF EXISTS v"),
+                SqlExecutionService.dropStatementFor("create temporary view v AS SELECT 1"));
+        assertEquals(Optional.of("DROP TEMPORARY VIEW IF EXISTS v"),
+                SqlExecutionService.dropStatementFor("-- dedup\nCREATE TEMPORARY VIEW IF NOT EXISTS v(a) AS SELECT 1"));
+    }
+
+    @Test
+    void dropStatementForKeepsTheWholeQualifiedName() {
+        assertEquals(Optional.of("DROP TEMPORARY TABLE IF EXISTS `my db`.`my-table`"),
+                SqlExecutionService.dropStatementFor("CREATE TEMPORARY TABLE `my db`.`my-table` (id INT)"));
+        assertEquals(Optional.of("DROP TABLE IF EXISTS cat.db.orders"),
+                SqlExecutionService.dropStatementFor("CREATE TABLE cat.db.orders(id INT)"));
+        assertEquals(Optional.of("DROP TEMPORARY VIEW IF EXISTS db . v"),
+                SqlExecutionService.dropStatementFor("CREATE TEMPORARY VIEW db . v AS SELECT 1"));
     }
 
     @Test
