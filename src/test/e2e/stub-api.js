@@ -80,13 +80,35 @@ function recordWebFonts() {
   document.addEventListener('error', settle, true);
 }
 
+/**
+ * The 400 TABLE_NOT_FOUND body for a statement that names a table the stub session has not built:
+ * a statement containing "-- stub: table not found NAME" (NAME is the rest of the line) fails
+ * until a CREATE TABLE/VIEW NAME has been executed (Build Schema). "-- stub: did you mean OTHER"
+ * adds Flink's case-insensitive suggestion. Null when the statement should run.
+ */
+function missingTable(sql, built) {
+  const m = /-- stub: table not found (.+)$/m.exec(sql);
+  if (!m || built.has(m[1].trim())) return null;
+  const table = m[1].trim();
+  const suggestion = (/-- stub: did you mean (.+)$/m.exec(sql) || [])[1];
+  return { error: `SQL validation failed. From line 2, column 15 to line 2, column 20: Object '${table}' not found`
+    + (suggestion ? ` within 'default_catalog.default_database'; did you mean '${suggestion.trim()}'?` : ''),
+  code: 'TABLE_NOT_FOUND', table, ...(suggestion ? { suggestion: suggestion.trim() } : {}) };
+}
+
+const CREATE = /^\s*(?:--[^\n]*\n\s*)*CREATE\s+(?:TEMPORARY\s+)?(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([^`\s(]+)/i;
+
 async function stubApi(page) {
   // Every test that opens the app stubs the API first, so the fonts record starts here too.
   await page.addInitScript(recordWebFonts);
+  const built = new Set(); // tables the stub session has, from executed CREATE statements
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^.*\/api\//, '/api/');
     const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    const postSql = () => { try { return JSON.parse(route.request().postData() || '{}').sql || ''; } catch { return ''; } };
+    const missing = missingTable(postSql(), built);
+    if (missing && /\/(execute|execute\/stream|explain|timeline\/stream)$/.test(path)) return json(400, missing);
 
     if (path === '/api/sessions' && route.request().method() === 'POST') return json(201, { sessionId: 'test-session' });
     if (path === '/api/build-info') return json(200, { commit: 'test', branch: 'main' });
@@ -109,6 +131,14 @@ async function stubApi(page) {
       return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: lines.map((l) => JSON.stringify(l)).join('\n') + '\n' });
     }
     if (/\/execute$/.test(path)) {
+      // A CREATE TABLE/VIEW (Build Schema) adds the table to the session; one containing
+      // "-- stub: build fails" fails like a broken statement (400).
+      const create = CREATE.exec(postSql());
+      if (create) {
+        if (/-- stub: build fails/.test(postSql())) return json(400, { error: 'Could not execute CreateTable in path `orders`', code: 'INTERNAL_ERROR' });
+        built.add(create[1]);
+        return json(200, { columns: [], columnTypes: [], rows: [], rowKinds: [], rowCount: 0, executionTimeMs: 3, truncated: false });
+      }
       // A query containing "WHERE 1 = 0" returns a result schema with no rows; one containing
       // "-- stub: many rows" returns 40 rows, enough to scroll the results box in a tall window.
       const sql = route.request().postData() || '';
@@ -135,4 +165,4 @@ async function stubApi(page) {
   });
 }
 
-module.exports = { stubApi, COLUMNS, STREAM_PLAN, BATCH_PLAN, TIMELINE_META, TIMELINE_TICKS };
+module.exports = { stubApi, missingTable, COLUMNS, STREAM_PLAN, BATCH_PLAN, TIMELINE_META, TIMELINE_TICKS };

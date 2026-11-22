@@ -43,6 +43,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -119,7 +120,7 @@ public class SqlExecutionService {
 
         if (isDdl(sql)) {
             log.debug("DDL detected, syncing to both environments: {}", SqlText.truncate(sql));
-            return executeDdlOnBothEnvironments(session, sql);
+            return planning(sql, () -> executeDdlOnBothEnvironments(session, sql));
         }
 
         log.info("Executing SQL [{}]: {}", mode, SqlText.truncate(sql));
@@ -129,6 +130,22 @@ public class SqlExecutionService {
                 : session.getStreamEnv();
 
         return executeOnSessionThread(session, tEnv, sql);
+    }
+
+    /**
+     * Runs a planning step of {@code sql}, turning a planner error about a table or view the
+     * session does not have into a {@link TableNotFoundException}. Other errors pass unchanged.
+     */
+    private static <T> T planning(String sql, Supplier<T> step) {
+        try {
+            return step.get();
+        } catch (RuntimeException e) {
+            Optional<TableNotFoundException> missing = TableNotFoundException.detect(e, sql);
+            if (missing.isPresent()) {
+                throw missing.get();
+            }
+            throw e;
+        }
     }
 
     /**
@@ -149,7 +166,7 @@ public class SqlExecutionService {
         TableEnvironment tEnv = (mode == ExecutionMode.BATCH) ? session.getBatchEnv() : session.getStreamEnv();
         String text;
         try {
-            text = session.runOnPlannerThread(() -> explainText(tEnv, mode, sql));
+            text = planning(sql, () -> session.runOnPlannerThread(() -> explainText(tEnv, mode, sql)));
         } catch (ValidationException | SqlParserException e) {
             throw new NotExplainableException(e.getMessage(), "INVALID_SQL");
         }
@@ -268,7 +285,7 @@ public class SqlExecutionService {
 
         // executeSql must run on a consistent thread per session because Calcite's
         // RelMetadataQuery uses thread-local state for the metadata handler provider.
-        TableResult tableResult = session.runOnPlannerThread(() -> tEnv.executeSql(sql));
+        TableResult tableResult = planning(sql, () -> session.runOnPlannerThread(() -> tEnv.executeSql(sql)));
 
         // Result collection only iterates rows — no planner involvement, safe on any thread.
         return awaitResult(tableResult, sql, startTime);
@@ -317,13 +334,13 @@ public class SqlExecutionService {
 
         if (isDdl(sql)) {
             log.debug("DDL detected on stream path, syncing to both environments: {}", SqlText.truncate(sql));
-            executeDdlOnBothEnvironments(session, sql);
+            planning(sql, () -> executeDdlOnBothEnvironments(session, sql));
             return new StreamingQuery(null, startTime);
         }
 
         log.info("Streaming SQL: {}", SqlText.truncate(sql));
         TableEnvironment tEnv = session.getStreamEnv();
-        TableResult tableResult = session.runOnPlannerThread(() -> tEnv.executeSql(sql));
+        TableResult tableResult = planning(sql, () -> session.runOnPlannerThread(() -> tEnv.executeSql(sql)));
         return new StreamingQuery(tableResult, startTime);
     }
 

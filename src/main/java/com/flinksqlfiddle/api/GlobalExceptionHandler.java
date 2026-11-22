@@ -3,6 +3,7 @@ package com.flinksqlfiddle.api;
 import com.flinksqlfiddle.api.dto.ErrorResponse;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
 import com.flinksqlfiddle.execution.NotExplainableException;
+import com.flinksqlfiddle.execution.TableNotFoundException;
 import com.flinksqlfiddle.fiddle.FiddleNotFoundException;
 import com.flinksqlfiddle.security.ForbiddenSqlException;
 import com.flinksqlfiddle.session.SessionLimitExceededException;
@@ -71,6 +72,17 @@ public class GlobalExceptionHandler {
         log.debug("Not explainable: {}", e.getMessage());
         return RestResponse.status(RestResponse.Status.BAD_REQUEST,
                 new ErrorResponse(e.getMessage(), e.code()));
+    }
+
+    /**
+     * A statement names a table the session does not have, typically because the schema was not
+     * built yet. A user error: 400, with the table name so the UI can say what to do about it.
+     */
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleTableNotFound(TableNotFoundException e) {
+        log.debug("Table not found: {}", e.table());
+        return RestResponse.status(RestResponse.Status.BAD_REQUEST,
+                new ErrorResponse(e.getMessage(), "TABLE_NOT_FOUND", e.table(), e.suggestion()));
     }
 
     @ServerExceptionMapper

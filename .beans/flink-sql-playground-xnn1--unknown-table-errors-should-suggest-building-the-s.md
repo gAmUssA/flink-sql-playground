@@ -1,11 +1,11 @@
 ---
 # flink-sql-playground-xnn1
 title: Unknown-table errors should suggest building the schema first
-status: todo
+status: in-progress
 type: feature
 priority: high
 created_at: 2026-11-22T21:46:59Z
-updated_at: 2026-11-22T21:46:59Z
+updated_at: 2026-11-22T22:31:51Z
 ---
 
 Reported by Vik, 2026-11-22.
