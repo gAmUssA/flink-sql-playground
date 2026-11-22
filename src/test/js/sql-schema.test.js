@@ -120,9 +120,10 @@ test('optionContext recognises an open key quote and the value of a key', async 
   const head = "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'faker', ";
   assert.deepEqual(optionContext(head + "'fie"),
     { kind: 'key', key: null, typed: 'fie', connector: 'faker',
-      columns: [{ name: 'id', type: 'INT' }, { name: 'name', type: 'STRING' }] });
+      columns: [{ name: 'id', type: 'INT' }, { name: 'name', type: 'STRING' }], used: ['connector'] });
   assert.deepEqual(optionContext("CREATE TABLE t (id INT) WITH ('connector' = 'da"),
-    { kind: 'value', key: 'connector', typed: 'da', connector: null, columns: [{ name: 'id', type: 'INT' }] });
+    { kind: 'value', key: 'connector', typed: 'da', connector: null, columns: [{ name: 'id', type: 'INT' }],
+      used: ['connector'] });
   assert.equal(optionContext("SELECT 'abc"), null);
   assert.equal(optionContext(head + "'x' = 'y')"), null);
   assert.equal(optionContext("CREATE TABLE t (id INT) WITH ('connector' = 'faker') -- 'x"), null);
@@ -148,7 +149,8 @@ test('optionCandidates expands per-column options for the declared connector', a
     ['connector', 'number-of-rows', 'rows-per-second', 'fields.id.expression', 'fields.id.null-rate']);
   assert.deepEqual(optionCandidates({ kind: 'key', connector: null, columns: [{ name: 'id', type: 'INT' }] }), ['connector']);
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'connector' }), ['datagen', 'faker', 'print', 'blackhole']);
-  assert.deepEqual(optionCandidates({ kind: 'value', key: 'fields.id.kind' }), ['random', 'sequence']);
+  const datagenId = { connector: 'datagen', columns: [{ name: 'id', type: 'INT' }] };
+  assert.deepEqual(optionCandidates({ kind: 'value', key: 'fields.id.kind', ...datagenId }), ['random', 'sequence']);
   assert.deepEqual(optionCandidates({ kind: 'value', key: 'number-of-rows' }), []);
   assert.deepEqual(optionCandidates(null), []);
   for (const connector of ['constructor', '__proto__', 'toString']) {
@@ -288,4 +290,188 @@ test('isDdlWithoutQuery ignores comments and strings around CREATE and AS SELECT
   assert.equal(isDdlWithoutQuery('CREATE TABLE t (id INT, -- as select\n na'), true);
   assert.equal(isDdlWithoutQuery('CREATE TABLE t AS SELECT re'), false);
   assert.equal(isDdlWithoutQuery("SELECT 'create' FROM t WHERE re"), false);
+});
+
+// Follow-ups from the #59 reviews (issue #60) and the #56 review (issue #57).
+
+const SHOP = [
+  { name: 'orders', columns: [{ name: 'user_id', type: 'INT' }, { name: 'region', type: 'STRING' }] },
+  { name: 'users', columns: [{ name: 'id', type: 'INT' }, { name: 'email', type: 'STRING' }] },
+];
+
+test('the FROM of EXTRACT, TRIM, SUBSTRING, OVERLAY and IS DISTINCT FROM is not a FROM clause', async () => {
+  const { referencedTables, columnCandidates, expectsTableName } = await load();
+  assert.deepEqual(referencedTables("SELECT EXTRACT(HOUR FROM ts), TRIM(BOTH ' ' FROM name), SUBSTRING(s FROM 1 FOR 2), "
+    + 'OVERLAY(s PLACING x FROM 2) FROM orders WHERE a IS DISTINCT FROM b AND c IS NOT DISTINCT FROM d'), ['orders']);
+  // Typed before the real FROM: no unknown table hides the columns.
+  assert.deepEqual(columnCandidates('SELECT EXTRACT(HOUR FROM ts), re', SHOP).map((c) => c.label),
+    ['user_id', 'region', 'id', 'email']);
+  assert.deepEqual(columnCandidates('SELECT * FROM orders WHERE a IS DISTINCT FROM re', SHOP).map((c) => c.label),
+    ['user_id', 'region']);
+  assert.equal(expectsTableName('SELECT EXTRACT(HOUR FROM '), false);
+  assert.equal(expectsTableName('SELECT TRIM(LEADING \'x\' FROM na'), false);
+  assert.equal(expectsTableName('SELECT * FROM t WHERE a IS NOT DISTINCT FROM '), false);
+  assert.equal(expectsTableName('SELECT EXTRACT(HOUR FROM ts) FROM '), true);
+});
+
+test('optionCandidates leaves out the keys the WITH clause already sets', async () => {
+  const { optionContext, optionCandidates } = await load();
+  const keys = optionCandidates(optionContext(
+    "CREATE TABLE t (id INT) WITH ('connector' = 'datagen', 'number-of-rows' = '5', 'fields.id.kind' = 'sequence', '"));
+  assert.ok(!keys.includes('connector'));
+  assert.ok(!keys.includes('number-of-rows'));
+  assert.ok(!keys.includes('fields.id.kind'));
+  assert.ok(keys.includes('rows-per-second'));
+  assert.ok(keys.includes('fields.id.start'));
+});
+
+test('qualifierBefore keeps a dot or a doubled backtick inside a backticked qualifier', async () => {
+  const { qualifierBefore } = await load();
+  assert.deepEqual(qualifierBefore('SELECT `my.tbl`.co'), { qualifier: 'my.tbl', typed: 'co' });
+  assert.deepEqual(qualifierBefore('SELECT `a``b`.'), { qualifier: 'a`b', typed: '' });
+  assert.deepEqual(qualifierBefore('SELECT o.'), { qualifier: 'o', typed: '' });
+  assert.deepEqual(qualifierBefore('SELECT * FROM cat.db.t WHERE t.re'), { qualifier: 't', typed: 're' });
+  assert.equal(qualifierBefore('SELECT re'), null);
+});
+
+test('a CTE inside CREATE VIEW or CTAS is a query', async () => {
+  const { isDdlWithoutQuery } = await load();
+  assert.equal(isDdlWithoutQuery('CREATE VIEW v AS WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE re'), false);
+  assert.equal(isDdlWithoutQuery('CREATE TABLE t WITH (\'connector\' = \'print\') AS WITH x AS (SELECT 1) SELECT re'), false);
+  assert.equal(isDdlWithoutQuery('CREATE TEMPORARY VIEW v AS (SELECT re'), false);
+  assert.equal(isDdlWithoutQuery('CREATE VIEW v AS VALUES (1)'), false);
+  // AS ( inside the column list is a computed column.
+  assert.equal(isDdlWithoutQuery('CREATE TABLE t (id INT, x AS (id + 1), na'), true);
+});
+
+test('a -- inside a backticked nested field name stays in the column type', async () => {
+  const { parseCreateTables } = await load();
+  assert.deepEqual(parseCreateTables('CREATE TABLE t (r ROW<`a--b` INT>, s STRING /* note */ NOT NULL)')[0].columns, [
+    { name: 'r', type: 'ROW<`a--b` INT>', kind: 'physical' },
+    { name: 's', type: 'STRING', kind: 'physical' },
+  ]);
+});
+
+test('OFFSET, FETCH and QUALIFY are not aliases', async () => {
+  const { tableAliases } = await load();
+  assert.deepEqual({ ...tableAliases('SELECT * FROM orders OFFSET 1') }, { orders: 'orders' });
+  assert.deepEqual({ ...tableAliases('SELECT * FROM orders FETCH FIRST 1 ROWS ONLY') }, { orders: 'orders' });
+  assert.deepEqual({ ...tableAliases('SELECT * FROM orders QUALIFY ROW_NUMBER() OVER w = 1') }, { orders: 'orders' });
+});
+
+test('a block comment inside a qualified table name is not part of the name', async () => {
+  const { statementRelations } = await load();
+  assert.deepEqual(statementRelations('SELECT * FROM cat./*x*/db.orders o'), [{ table: 'orders', alias: 'o' }]);
+  assert.deepEqual(statementRelations('SELECT * FROM cat.db./* t */`page views` p'), [{ table: 'page views', alias: 'p' }]);
+});
+
+test('a nested NOT NULL stays inside the column type', async () => {
+  const { parseCreateTables, optionContext, optionCandidates } = await load();
+  const ddl = 'CREATE TABLE t (addr ROW<city STRING NOT NULL, zip INT> NOT NULL, tags ARRAY<INT NOT NULL>, '
+    + 'm ROW<metadata INT>)';
+  assert.deepEqual(parseCreateTables(ddl)[0].columns, [
+    { name: 'addr', type: 'ROW<city STRING NOT NULL, zip INT>', kind: 'physical' },
+    { name: 'tags', type: 'ARRAY<INT NOT NULL>', kind: 'physical' },
+    { name: 'm', type: 'ROW<metadata INT>', kind: 'physical' },
+  ]);
+  const keys = optionCandidates(optionContext(`${ddl} WITH ('connector' = 'faker', 'fields.addr`));
+  assert.ok(keys.includes('fields.addr.zip.expression'));
+});
+
+test('a backticked table name may be a reserved word', async () => {
+  const { tableAliases, referencedTables } = await load();
+  assert.deepEqual({ ...tableAliases('SELECT * FROM `table` t JOIN `select` ON 1 = 1') },
+    { table: 'table', t: 'table', select: 'select' });
+  assert.deepEqual(referencedTables('SELECT * FROM table'), []);
+});
+
+test('tableAliases at a position resolves aliases in the query blocks around it', async () => {
+  const { tableAliases } = await load();
+  const sql = 'SELECT o.region FROM orders o WHERE EXISTS (SELECT 1 FROM users o WHERE o.id = 1) AND o.user_id > 0';
+  assert.equal(tableAliases(sql, sql.indexOf('o.region') + 2).o, 'orders');
+  assert.equal(tableAliases(sql, sql.indexOf('o.id') + 2).o, 'users');
+  assert.equal(tableAliases(sql, sql.indexOf('o.user_id') + 2).o, 'orders');
+  // A correlated subquery still sees the outer aliases.
+  const correlated = 'SELECT * FROM orders x WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = x.';
+  assert.equal(tableAliases(correlated, correlated.length).x, 'orders');
+  assert.equal(tableAliases(correlated, correlated.length).u, 'users');
+});
+
+test('an alias wins over a table of the same name in the same query', async () => {
+  const { tableAliases } = await load();
+  assert.deepEqual({ ...tableAliases('SELECT users. FROM orders users JOIN users u ON 1 = 1') },
+    { orders: 'orders', users: 'orders', u: 'users' });
+});
+
+test('columnCandidates offers the read tables, not the INSERT target, outside its column list', async () => {
+  const { columnCandidates, referencedTables } = await load();
+  const tables = [
+    { name: 'sink', columns: [{ name: 'a', type: 'INT' }, { name: 'b', type: 'INT' }] },
+    { name: 'src', columns: [{ name: 'x', type: 'INT' }] },
+  ];
+  const insert = 'INSERT INTO sink (a, b) SELECT  FROM src';
+  assert.deepEqual(columnCandidates(insert, tables, insert.indexOf('SELECT ') + 7).map((c) => c.label), ['x']);
+  assert.deepEqual(columnCandidates(insert, tables, insert.indexOf('a, ') + 3).map((c) => c.label), ['a', 'b']);
+  const ctas = 'CREATE TABLE sink AS SELECT  FROM src';
+  assert.deepEqual(columnCandidates(ctas, tables, ctas.indexOf('SELECT ') + 7).map((c) => c.label), ['x']);
+  assert.deepEqual(referencedTables(insert), ['sink', 'src']);
+});
+
+test('INSERT INTO t( with no space and no ) yet reads its target', async () => {
+  const { columnCandidates, referencedTables } = await load();
+  const tables = [{ name: 'sink', columns: [{ name: 'a', type: 'INT' }, { name: 'b', type: 'INT' }] }, ...SHOP];
+  assert.deepEqual(referencedTables('INSERT INTO sink(a, '), ['sink']);
+  assert.deepEqual(columnCandidates('INSERT INTO sink(a, ', tables).map((c) => c.label), ['a', 'b']);
+});
+
+test('a temporal join alias without AS is read, and the FROM list goes on after a temporal item', async () => {
+  const { tableAliases, statementRelations } = await load();
+  assert.deepEqual({ ...tableAliases('SELECT * FROM o JOIN fx FOR SYSTEM_TIME AS OF o.ts r ON o.k = r.k') },
+    { o: 'o', fx: 'fx', r: 'fx' });
+  assert.deepEqual({ ...tableAliases("SELECT * FROM o JOIN fx FOR SYSTEM_TIME AS OF o.ts - INTERVAL '1' SECOND r ON 1 = 1") },
+    { o: 'o', fx: 'fx', r: 'fx' });
+  assert.deepEqual({ ...tableAliases('SELECT * FROM o JOIN fx FOR SYSTEM_TIME AS OF PROCTIME() r ON 1 = 1') },
+    { o: 'o', fx: 'fx', r: 'fx' });
+  assert.deepEqual(statementRelations('SELECT * FROM a FOR SYSTEM_TIME AS OF PROCTIME(), b y WHERE 1 = 1'),
+    [{ table: 'a', alias: null }, { table: 'b', alias: 'y' }]);
+});
+
+test('a named-argument window TVF maps its alias to the table it reads', async () => {
+  const { tableAliases } = await load();
+  assert.deepEqual({ ...tableAliases("SELECT s. FROM TABLE(TUMBLE(DATA => TABLE sensors, TIMECOL => DESCRIPTOR(ts), "
+    + "SIZE => INTERVAL '1' MINUTE)) s") }, { sensors: 'sensors', s: 'sensors' });
+  assert.deepEqual({ ...tableAliases('SELECT * FROM TABLE(HOP(TIMECOL => DESCRIPTOR(ts), DATA => TABLE `cat`.`db`.sensors, '
+    + "SLIDE => INTERVAL '1' MINUTE, SIZE => INTERVAL '5' MINUTE)) AS h") }, { sensors: 'sensors', h: 'sensors' });
+});
+
+test('option values are offered only for keys the declared connector accepts', async () => {
+  const { optionContext, optionCandidates } = await load();
+  const values = (connector, key) => optionCandidates(optionContext(
+    `CREATE TABLE t (id INT) WITH ('connector' = '${connector}', '${key}' = '`));
+  assert.deepEqual(values('datagen', 'fields.id.kind'), ['random', 'sequence']);
+  assert.deepEqual(values('faker', 'fields.id.kind'), []);
+  assert.deepEqual(values('print', 'standard-error'), ['true', 'false']);
+  assert.deepEqual(values('datagen', 'standard-error'), []);
+  assert.deepEqual(values('datagen', 'fields.nope.kind'), []);
+});
+
+test('an apostrophe in a column name is doubled in the option text', async () => {
+  const { optionContext, optionCandidates, sqlStringText } = await load();
+  const ddl = "CREATE TABLE t (`a'b` INT) WITH ('connector' = 'datagen', ";
+  assert.ok(optionCandidates(optionContext(`${ddl}'f`)).includes("fields.a'b.kind"));
+  assert.equal(sqlStringText("fields.a'b.kind"), "fields.a''b.kind");
+  // A key written with the doubled apostrophe reads back as the column's option.
+  const ctx = optionContext(`${ddl}'fields.a''b.kind' = '`);
+  assert.equal(ctx.key, "fields.a'b.kind");
+  assert.deepEqual(optionCandidates(ctx), ['random', 'sequence']);
+  assert.ok(!optionCandidates(optionContext(`${ddl}'fields.a''b.kind' = 'random', '`)).includes("fields.a'b.kind"));
+});
+
+test('a table named __proto__ completes like any other table (#57)', async () => {
+  const { columnCandidates, mergeTables, tableAliases } = await load();
+  const proto = { name: '__proto__', columns: [{ name: 'x', type: 'INT' }] };
+  const merged = mergeTables([proto], SHOP);
+  assert.deepEqual(merged.map((t) => t.name), ['__proto__', 'orders', 'users']);
+  assert.deepEqual(columnCandidates('SELECT  FROM __proto__', merged).map((c) => c.label), ['x']);
+  assert.equal(tableAliases('SELECT p. FROM __proto__ p', 9).p, '__proto__');
 });

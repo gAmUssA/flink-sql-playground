@@ -92,8 +92,11 @@ const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key
 
 const NOT_COLUMNS = /^(watermark|primary|constraint|period|like|unique|foreign|check|index)$/i;
 
-/** Blanks comments and string contents with spaces, keeping offsets and the quotes themselves. */
-export function maskSql(text) {
+/**
+ * Rewrites `text` token by token: each comment becomes comment(commentText), each quoted string
+ * or name becomes quoted(quote, contents, closed), and everything else is copied.
+ */
+function rewriteSql(text, comment, quoted) {
   let out = '';
   let i = 0;
   while (i < text.length) {
@@ -102,12 +105,12 @@ export function maskSql(text) {
     if (c === '-' && next === '-') {
       const end = text.indexOf('\n', i);
       const stop = end === -1 ? text.length : end;
-      out += ' '.repeat(stop - i);
+      out += comment(text.slice(i, stop));
       i = stop;
     } else if (c === '/' && next === '*') {
       const end = text.indexOf('*/', i + 2);
       const stop = end === -1 ? text.length : end + 2;
-      out += text.slice(i, stop).replace(/[^\n]/g, ' ');
+      out += comment(text.slice(i, stop));
       i = stop;
     } else if (c === "'" || c === '`' || c === '"') {
       let j = i + 1;
@@ -116,7 +119,7 @@ export function maskSql(text) {
         if (text[j] === c) break;
         j++;
       }
-      out += c + text.slice(i + 1, j).replace(/[^\n]/g, ' ') + (j < text.length ? c : '');
+      out += quoted(c, text.slice(i + 1, j), j < text.length);
       i = Math.min(j + 1, text.length);
     } else {
       out += c;
@@ -126,9 +129,21 @@ export function maskSql(text) {
   return out;
 }
 
-/** Unquotes a possibly qualified identifier (`cat`.`db`.`t` → t). */
+const blank = (s) => s.replace(/[^\n]/g, ' ');
+
+/** Blanks comments and string contents with spaces, keeping offsets and the quotes themselves. */
+export function maskSql(text) {
+  return rewriteSql(text, blank, (quote, contents, closed) => quote + blank(contents) + (closed ? quote : ''));
+}
+
+/** `text` with each comment replaced by `replacement`; strings and quoted names stay as they are. */
+export function stripComments(text, replacement = '') {
+  return rewriteSql(text, () => replacement, (quote, contents, closed) => quote + contents + (closed ? quote : ''));
+}
+
+/** Unquotes a possibly qualified identifier (`cat`.`db`.`t` → t), ignoring comments in it. */
 function lastIdentifier(raw) {
-  const parts = raw.match(/`(?:[^`]|``)*`|[^.\s]+/g) || [];
+  const parts = stripComments(raw, ' ').match(/`(?:[^`]|``)*`|[^.\s]+/g) || [];
   const last = parts[parts.length - 1] || '';
   return last.startsWith('`') ? last.slice(1, -1).replace(/``/g, '`') : last;
 }
@@ -170,6 +185,37 @@ function closingParen(masked, open) {
   return -1;
 }
 
+/** Offset of the innermost parenthesis still open at offset `i` (masked text), or -1. */
+function enclosingParen(masked, i) {
+  let depth = 0;
+  for (let k = i - 1; k >= 0; k--) {
+    if (masked[k] === ')') depth++;
+    else if (masked[k] === '(') {
+      if (depth === 0) return k;
+      depth--;
+    }
+  }
+  return -1;
+}
+
+const COLUMN_MODIFIER = /\s+(?:not\s+null|null|metadata|primary|comment)\b/iy;
+
+/**
+ * Length of the type at the start of `rest` (masked column definition after the name): it ends
+ * at the first column modifier outside parentheses and angle brackets, so the NOT NULL of a
+ * nested field (ROW<a INT NOT NULL, b INT>) stays part of the type.
+ */
+function typeLength(rest) {
+  let depth = 0;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest[i];
+    if (c === '(' || c === '<') depth++;
+    else if ((c === ')' || c === '>') && depth > 0) depth--;
+    else if (depth === 0 && matchAt(COLUMN_MODIFIER, rest, i)) return i;
+  }
+  return rest.length;
+}
+
 const CREATE_TABLE = /\bcreate\s+(?:temporary\s+)?table\s+(?:if\s+not\s+exists\s+)?((?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*)\s*\(/gi;
 
 /**
@@ -196,10 +242,10 @@ export function parseCreateTables(text) {
       const rest = col[2];
       const restStart = def.masked.length - rest.length;
       const computed = /^as\b/i.test(rest);
-      const typeEnd = rest.split(/\s+(?:not\s+null|null|metadata|primary|comment)\b/i)[0].trimEnd().length;
-      const type = computed ? 'computed'
-        : def.raw.slice(restStart, restStart + typeEnd).replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, '').trim();
-      const kind = computed ? 'computed' : /\bmetadata\b/i.test(rest) ? 'metadata' : 'physical';
+      const typeEnd = typeLength(rest);
+      // Comments are found by the scanner, so a -- inside a backticked field name is kept.
+      const type = computed ? 'computed' : stripComments(def.raw.slice(restStart, restStart + typeEnd)).trim();
+      const kind = computed ? 'computed' : /\bmetadata\b/i.test(rest.slice(typeEnd)) ? 'metadata' : 'physical';
       return { name: lastIdentifier(rawName), type, kind };
     }).filter(Boolean);
     if (name) tables.push({ name, columns });
@@ -210,7 +256,7 @@ export function parseCreateTables(text) {
 const NAME = /(?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*/y;
 const WORD = /`(?:[^`]|``)*`|[\w$]+/y;
 const NOT_TABLES = /^(select|table|lateral|unnest|tumble|hop|cumulate|session)$/i;
-const NOT_ALIASES = /^(on|using|where|join|inner|left|right|full|cross|outer|natural|lateral|group|order|limit|having|window|union|except|intersect|for|match_recognize|tablesample|as|table)$/i;
+const NOT_ALIASES = /^(on|using|where|join|inner|left|right|full|cross|outer|natural|lateral|group|order|limit|offset|fetch|qualify|having|window|union|except|intersect|for|match_recognize|tablesample|as|table)$/i;
 
 /** The text `re` (sticky) matches at offset `i` of `masked`, or null. */
 function matchAt(re, masked, i) {
@@ -225,52 +271,86 @@ function skipSpace(masked, i) {
   return i;
 }
 
-const WINDOW_SOURCE = /\(\s*(?:tumble|hop|cumulate|session)\s*\(\s*table\s+/iy;
-
-/** The table a window TVF reads, for TABLE(TUMBLE(TABLE t, ...)) with `open` at its (; else null. */
-function windowSource(masked, text, open) {
-  const head = matchAt(WINDOW_SOURCE, masked, open);
-  if (!head) return null;
-  const name = matchAt(NAME, masked, open + head.length);
-  return name ? lastIdentifier(text.slice(open + head.length, open + head.length + name.length)) : null;
-}
+// FROM inside these calls belongs to the call: EXTRACT(HOUR FROM ts), TRIM(BOTH ' ' FROM s).
+const FROM_TAKING_CALL = /\b(?:extract|trim|substring|overlay)\s*$/i;
 
 /**
- * Offset of the AS that ends `FOR SYSTEM_TIME AS OF <expr>` when the expression starts at `i`,
- * read at parenthesis depth 0; otherwise the offset where the expression stops (ON, USING, a
- * clause keyword, a comma, a closing parenthesis or the end).
+ * True when the FROM at offset `i` (masked text) is part of an expression, not a FROM clause:
+ * inside EXTRACT / TRIM / SUBSTRING / OVERLAY (...), or in IS [NOT] DISTINCT FROM.
+ */
+function isExpressionFrom(masked, i) {
+  if (/\bis\s+(?:not\s+)?distinct\s+$/i.test(masked.slice(Math.max(0, i - 40), i))) return true;
+  const open = enclosingParen(masked, i);
+  return open !== -1 && FROM_TAKING_CALL.test(masked.slice(Math.max(0, open - 40), open));
+}
+
+const WINDOW_CALL = /\(\s*(?:tumble|hop|cumulate|session)\s*\(/iy;
+
+/**
+ * The table a window TVF reads, for TABLE(TUMBLE(TABLE t, ...)) or the named-argument form
+ * TABLE(TUMBLE(DATA => TABLE t, ...)) with `open` at the first (; else null.
+ */
+function windowSource(masked, text, open) {
+  const head = matchAt(WINDOW_CALL, masked, open);
+  if (!head) return null;
+  const inner = open + head.length - 1;
+  const close = closingParen(masked, inner);
+  const source = /\btable\s+/i.exec(masked.slice(inner + 1, close === -1 ? masked.length : close));
+  if (!source) return null;
+  const at = inner + 1 + source.index + source[0].length;
+  const name = matchAt(NAME, masked, at);
+  return name ? lastIdentifier(text.slice(at, at + name.length)) : null;
+}
+
+// Words that join two operands, after which the expression goes on.
+const OPERATOR_WORDS = /^(and|or|not|is|between|like|similar|in|escape|interval|to|collate|distinct|from)$/i;
+// Words that can end an operand: interval units and literals.
+const OPERAND_END_WORDS = /^(year|month|day|hour|minute|second|null|true|false|unknown)$/i;
+
+/**
+ * Where the expression of `FOR SYSTEM_TIME AS OF <expr>` that starts at `i` stops, read at
+ * parenthesis depth 0: at its AS, at a clause keyword, at a word right after a complete operand
+ * (an alias without AS: `AS OF o.ts r`), or at a comma, a closing parenthesis or the end.
  */
 function afterTimeTravel(masked, i) {
+  let operand = false; // whether the tokens so far end with a complete operand
   for (;;) {
     i = skipSpace(masked, i);
     if (i >= masked.length || masked[i] === ',' || masked[i] === ')') return i;
-    if (masked[i] === '(') {
-      const close = closingParen(masked, i);
+    if (masked[i] === '(' || masked[i] === "'") {
+      const close = masked[i] === '(' ? closingParen(masked, i) : masked.indexOf("'", i + 1);
       if (close === -1) return masked.length;
       i = close + 1;
+      operand = true;
       continue;
     }
     const word = matchAt(WORD, masked, i);
-    if (!word) { i++; continue; }
-    if (/^as$/i.test(word) || NOT_ALIASES.test(word)) return i;
+    if (!word) { i++; operand = false; continue; } // an operator, or the . of a qualified name
+    if (NOT_ALIASES.test(word)) return i;
+    const joins = OPERATOR_WORDS.test(word);
+    if (operand && !joins && !OPERAND_END_WORDS.test(word)) return i;
     i += word.length;
+    operand = !joins;
   }
 }
 
 /**
- * Relations a statement reads or writes, [{table, alias}] in keyword order: every item of a
- * comma-separated FROM list, each JOIN target, and TABLE / INTO targets. An alias is recorded
- * for FROM and JOIN items (null when absent), including after FOR SYSTEM_TIME AS OF <expr>; a
- * clause keyword is never taken as one. A window TVF item, TABLE(TUMBLE(TABLE t, ...)) w, reads
- * t under alias w; other subqueries and table functions are skipped as items.
+ * Relations a statement reads or writes in keyword order, with what completion needs to scope
+ * them: [{table, alias, write, open, close, list}]. `write` marks INTO and CREATE TABLE targets;
+ * [open, close] is the parenthesised query block the relation belongs to (-1 and the text length
+ * at the top level); `list` is the {open, close} of an INTO target's column list, or null.
  */
-export function statementRelations(text) {
+function readRelations(text) {
   const masked = maskSql(text);
   const relations = [];
   const keyword = /\b(from|join|table|into)\b/gi;
   let m;
   while ((m = keyword.exec(masked)) !== null) {
     const kind = m[1].toLowerCase();
+    if (kind === 'from' && isExpressionFrom(masked, m.index)) continue;
+    const open = enclosingParen(masked, m.index);
+    const closing = open === -1 ? -1 : closingParen(masked, open);
+    const scope = { open, close: closing === -1 ? masked.length : closing };
     let i = m.index + m[0].length;
     for (;;) {
       i = skipSpace(masked, i);
@@ -283,27 +363,39 @@ export function statementRelations(text) {
         // After INTO a ( opens the target's column list; elsewhere it calls a table function.
         if (kind === 'into' || masked[skipSpace(masked, i)] !== '(') {
           const t = lastIdentifier(text.slice(start, i));
-          if (!NOT_TABLES.test(t)) table = t;
+          // A backticked name may be any word: FROM `table` t.
+          if (name.endsWith('`') || !NOT_TABLES.test(t)) table = t;
         } else {
           i = skipSpace(masked, i); // a table function: TABLE(...), UNNEST(...)
           if (/^table$/i.test(name)) table = windowSource(masked, text, i);
         }
+      }
+      if (kind === 'table' || kind === 'into') {
+        // Recorded before any parenthesis is read, so INSERT INTO t(a, with no ) yet has its target.
+        if (table) {
+          const write = kind === 'into'
+            || /\bcreate\s+(?:temporary\s+)?$/i.test(masked.slice(Math.max(0, m.index - 30), m.index));
+          const paren = skipSpace(masked, i);
+          let list = null;
+          if (kind === 'into' && masked[paren] === '(') {
+            const close = closingParen(masked, paren);
+            list = { open: paren, close: close === -1 ? masked.length : close };
+          }
+          relations.push({ table, alias: null, write, ...scope, list });
+        }
+        break;
       }
       if (masked[i] === '(') {
         const close = closingParen(masked, i);
         if (close === -1) break;
         i = close + 1;
       } else if (!name) break;
-      if (kind === 'table' || kind === 'into') {
-        if (table) relations.push({ table, alias: null });
-        break;
-      }
       let alias = null;
       let j = skipSpace(masked, i);
       const temporal = matchAt(/for\s+system_time\s+as\s+of\b/iy, masked, j);
-      if (temporal) j = afterTimeTravel(masked, j + temporal.length);
+      // The item ends with its time expression, so a comma after it continues the FROM list.
+      if (temporal) i = j = afterTimeTravel(masked, j + temporal.length);
       if (matchAt(/as\b/iy, masked, j)) j = skipSpace(masked, j + 2);
-      else if (temporal) j = masked.length; // no AS after the time expression: no alias
       const word = matchAt(WORD, masked, j);
       if (word) {
         const raw = text.slice(j, j + word.length);
@@ -312,7 +404,7 @@ export function statementRelations(text) {
         else if (!NOT_ALIASES.test(raw)) alias = raw;
         if (alias !== null) i = j + word.length;
       }
-      if (table) relations.push({ table, alias });
+      if (table) relations.push({ table, alias, write: false, ...scope, list: null });
       if (kind !== 'from') break;
       i = skipSpace(masked, i);
       if (alias !== null && masked[i] === '(') { // AS t(a, b): a column list after the alias
@@ -325,6 +417,18 @@ export function statementRelations(text) {
     }
   }
   return relations;
+}
+
+/**
+ * Relations a statement reads or writes, [{table, alias}] in keyword order: every item of a
+ * comma-separated FROM list, each JOIN target, and TABLE / INTO targets. An alias is recorded
+ * for FROM and JOIN items (null when absent), including after FOR SYSTEM_TIME AS OF <expr>; a
+ * clause keyword is never taken as one. A window TVF item, TABLE(TUMBLE(TABLE t, ...)) w, reads
+ * t under alias w; other subqueries and table functions are skipped as items. The FROM of
+ * EXTRACT(... FROM ...) or IS DISTINCT FROM starts no relation.
+ */
+export function statementRelations(text) {
+  return readRelations(text).map(({ table, alias }) => ({ table, alias }));
 }
 
 /** Lower-cased names of the tables a statement reads or writes (FROM, JOIN, TABLE, INTO). */
@@ -340,12 +444,16 @@ export function mergeTables(...lists) {
 }
 
 /**
- * Column completions for an unqualified name: columns of the known tables the statement
- * references, or of every known table when it references no table at all. A reference to an
- * unknown table offers nothing rather than another table's columns.
+ * Column completions for an unqualified name at offset `pos` of `statement` (default: its end).
+ * Inside the column list of INSERT INTO t (...), the columns of t; elsewhere the columns of the
+ * known tables the statement reads, or of every known table when it reads none. A write target
+ * (INSERT INTO, CREATE TABLE ... AS) is not read, and a reference to an unknown table offers
+ * nothing rather than another table's columns.
  */
-export function columnCandidates(statement, tables) {
-  const refs = referencedTables(statement);
+export function columnCandidates(statement, tables, pos = statement.length) {
+  const relations = readRelations(statement);
+  const target = relations.find((r) => r.list && r.list.open < pos && pos <= r.list.close);
+  const refs = (target ? [target] : relations.filter((r) => !r.write)).map((r) => r.table.toLowerCase());
   const pool = refs.length ? tables.filter((t) => refs.includes(t.name.toLowerCase())) : tables;
   const out = [];
   const seen = new Set();
@@ -436,9 +544,25 @@ function connectorOf(masked, text, from, to) {
 }
 
 /**
+ * The quoted strings between `from` and `to` that are followed by `=`, that is the option keys
+ * written so far, with '' read as '. Quotes are paired in the masked text.
+ */
+function writtenKeys(masked, text, from, to) {
+  const quotes = [];
+  for (let i = masked.indexOf("'", from); i !== -1 && i < to; i = masked.indexOf("'", i + 1)) quotes.push(i);
+  const keys = [];
+  for (let k = 0; k + 1 < quotes.length; k += 2) {
+    const after = masked.slice(quotes[k + 1] + 1, k + 2 < quotes.length ? quotes[k + 2] : to);
+    if (/^\s*=/.test(after)) keys.push(text.slice(quotes[k] + 1, quotes[k + 1]).replace(/''/g, "'"));
+  }
+  return keys;
+}
+
+/**
  * When `before` (the statement text up to the cursor) ends inside an open quote in a CREATE
  * TABLE ... WITH (...) clause, returns what that quote is: an option key, or the value of `key`.
- * {kind: 'key'|'value', key, typed, connector, columns: [{name, type}]} or null.
+ * {kind: 'key'|'value', key, typed, connector, columns: [{name, type}], used} or null, `used`
+ * being the option keys the clause already sets.
  */
 export function optionContext(before) {
   const masked = maskSql(before);
@@ -457,51 +581,90 @@ export function optionContext(before) {
   const columns = tables.length ? tables[tables.length - 1].columns.filter((c) => c.kind === 'physical')
     .map(({ name, type }) => ({ name, type })) : [];
   const connector = connectorOf(masked, before, open + 1, quote);
+  const used = writtenKeys(masked, before, open + 1, quote);
   const typed = before.slice(quote + 1);
   const valueOf = masked.slice(open + 1, quote).match(/'\s*=\s*$/);
   if (valueOf) {
     const keyEnd = open + 1 + valueOf.index;
     const keyStart = masked.lastIndexOf("'", keyEnd - 1);
-    return { kind: 'value', key: before.slice(keyStart + 1, keyEnd), typed, connector, columns };
+    const key = before.slice(keyStart + 1, keyEnd).replace(/''/g, "'");
+    return { kind: 'value', key, typed, connector, columns, used };
   }
-  return { kind: 'key', key: null, typed, connector, columns };
+  return { kind: 'key', key: null, typed, connector, columns, used };
 }
 
-/** Option keys (or values) to offer for an optionContext() result. */
+/**
+ * Option keys (or values) to offer for an optionContext() result. Keys the clause already sets
+ * are left out, and values are offered only for a key the declared connector accepts.
+ */
 export function optionCandidates(ctx) {
   if (!ctx) return [];
   if (ctx.kind === 'value') {
     if (ctx.key === 'connector') return Object.keys(CONNECTOR_OPTIONS);
+    if (!optionCandidates({ ...ctx, kind: 'key', used: [] }).includes(ctx.key)) return [];
     const last = ctx.key.split('.').pop();
     return hasOwn(OPTION_VALUES, last) ? OPTION_VALUES[last] : [];
   }
   // Own properties only: a connector named constructor or __proto__ must not reach Object.prototype.
   const known = ctx.connector && hasOwn(CONNECTOR_OPTIONS, ctx.connector);
   const keys = ['connector', ...(known ? CONNECTOR_OPTIONS[ctx.connector] : [])];
-  if (known) ctx.columns.forEach((c) => keys.push(...columnOptions(ctx.connector, c)));
-  return keys;
+  if (known) (ctx.columns || []).forEach((c) => keys.push(...columnOptions(ctx.connector, c)));
+  const used = new Set(ctx.used || []);
+  return keys.filter((k) => !used.has(k));
+}
+
+/** `value` as the inside of a SQL string literal: each ' doubled. */
+export function sqlStringText(value) {
+  return value.replace(/'/g, "''");
+}
+
+/**
+ * The table qualifier `before` (text up to the cursor) ends with, as in `o.na` or
+ * `` `my.tbl`.na ``: {qualifier, typed} with the qualifier unquoted, or null. Backticks are
+ * paired in the masked text, so a dot or a doubled backtick inside one stays in the name.
+ */
+export function qualifierBefore(before) {
+  const m = /(`[^`]*`|[\w$]+)\.([\w$]*)$/.exec(maskSql(before));
+  if (!m) return null;
+  return { qualifier: lastIdentifier(before.slice(m.index, m.index + m[1].length)), typed: m[2] };
 }
 
 /**
  * Lower-cased alias → table name map for `FROM t a`, `JOIN t AS a`, comma-separated FROM items
- * and backticked aliases such as FROM t AS `order`; each table also maps to itself.
+ * and backticked aliases such as FROM t AS `order`; each table also maps to itself. With `pos`
+ * (an offset in `text`), only the query blocks around it count and an inner block's names shadow
+ * an outer one's. In each block an explicit alias wins over a table of the same name.
  */
-export function tableAliases(text) {
-  const aliases = Object.create(null); // a table may be named __proto__
-  statementRelations(text).forEach(({ table, alias }) => {
-    aliases[table.toLowerCase()] = table;
-    if (alias !== null) aliases[alias.toLowerCase()] = table;
+export function tableAliases(text, pos) {
+  const entries = [];
+  readRelations(text).forEach(({ table, alias, open, close }) => {
+    if (pos !== undefined && !(open < pos && pos <= close)) return;
+    entries.push({ open, rank: 0, key: table.toLowerCase(), table });
+    if (alias !== null) entries.push({ open, rank: 1, key: alias.toLowerCase(), table });
   });
+  const aliases = Object.create(null); // a table may be named __proto__
+  // Outer blocks first, and table names before aliases, so later assignments win.
+  entries.sort((a, b) => a.open - b.open || a.rank - b.rank).forEach(({ key, table }) => { aliases[key] = table; });
   return aliases;
 }
 
 /** True when `before` (statement text up to the cursor) ends right after FROM, JOIN, TABLE or INTO. */
 export function expectsTableName(before) {
-  return /\b(?:from|join|table|into)\s+[\w$]*$/i.test(maskSql(before));
+  const masked = maskSql(before);
+  const m = /\b(from|join|table|into)\s+[\w$]*$/i.exec(masked);
+  return Boolean(m) && !(m[1].toLowerCase() === 'from' && isExpressionFrom(masked, m.index));
 }
 
-/** True for a CREATE statement with no AS SELECT query, whose column list takes new names. */
+/**
+ * True for a CREATE statement with no query, whose column list takes new names. AS followed by
+ * SELECT, WITH, VALUES or ( outside any parenthesis starts the query of a view or CTAS; inside
+ * the column list it defines a computed column.
+ */
 export function isDdlWithoutQuery(statement) {
   const masked = maskSql(statement);
-  return /^\s*create\b/i.test(masked) && !/\bas\s+select\b/i.test(masked);
+  if (!/^\s*create\b/i.test(masked)) return false;
+  const query = /\bas\s+(?:select|with|values|\()/gi;
+  let m;
+  while ((m = query.exec(masked)) !== null) if (enclosingParen(masked, m.index) === -1) return false;
+  return true;
 }

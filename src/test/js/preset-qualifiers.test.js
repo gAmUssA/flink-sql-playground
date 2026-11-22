@@ -1,6 +1,7 @@
 'use strict';
 // Every table qualifier (`alias.` or `table.`) in a shipped preset query must resolve through
-// tableAliases, so `alias.` completion works in each preset. Loads js/examples.js as the page does.
+// tableAliases at its own position (the aliases of the query blocks around it), so `alias.`
+// completion works in each preset. Loads js/examples.js as the page does.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -34,7 +35,7 @@ test('every qualifier in every preset query resolves to a table', async () => {
       if (allowed.includes(qualifier)) continue;
       checked++;
       const stmt = statementAt(query, m.index);
-      if (!(qualifier in tableAliases(stmt.text))) unresolved.push(`${title}: ${qualifier}.`);
+      if (!(qualifier in tableAliases(stmt.text, m.index - stmt.offset))) unresolved.push(`${title}: ${qualifier}.`);
     }
   }
   assert.ok(checked > 0, 'no qualifier found in any preset query');

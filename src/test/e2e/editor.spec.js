@@ -3,7 +3,7 @@
 // the getValue/setValue paths (presets, share links) and same-origin loading.
 const { test, expect } = require('@playwright/test');
 const { stubApi } = require('./stub-api');
-const { setEditorText, settledLabels, suggestions } = require('./completion');
+const { setEditorText, settledLabels, suggestions, explicitSuggestions } = require('./completion');
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -76,6 +76,59 @@ test('the Schema editor suggests connectors and their per-column options', async
   expect(keys).not.toContain('fields.name.min'); // a datagen option
   await expect.poll(() => suggestions(page, 'schema', "CREATE TABLE t (id INT) WITH ('connector' = 'datagen', 'fields.id.kind' = '"))
     .toEqual(['random', 'sequence']);
+});
+
+test('a second typed transaction narrows an open option dialog', async ({ page }) => {
+  await openApp(page);
+  await expect.poll(() => suggestions(page, 'schema', "CREATE TABLE t (id INT, name STRING) WITH ('connector' = 'datagen', 'fields."))
+    .toContain('fields.id.kind');
+  // Appended as typing, so the open dialog continues through validFor instead of a new query.
+  await page.evaluate(() => {
+    const { view } = schemaEditor;
+    const end = view.state.doc.length;
+    view.dispatch({ changes: { from: end, insert: 'id.k' }, selection: { anchor: end + 4 }, userEvent: 'input.type' });
+  });
+  await expect.poll(() => settledLabels(page, 'schema')).toEqual(['fields.id.kind']);
+});
+
+test('an unresolved qualifier offers no keywords, a resolved one only its columns', async ({ page }) => {
+  await openApp(page);
+  await expect.poll(() => suggestions(page, 'query', 'SELECT VER')).toContain('VERSIONING');
+  expect(await suggestions(page, 'query', 'SELECT nope.VER')).toEqual([]);
+  await expect.poll(() => suggestions(page, 'query', 'SELECT * FROM orders o WHERE o.reg')).toEqual(['region']);
+});
+
+test('a backticked qualifier with a dot and an alias shadowed in a subquery resolve', async ({ page }) => {
+  await openApp(page);
+  await setEditorText(page, 'schema', 'CREATE TABLE `my.tbl` (col_a INT, col_b STRING);');
+  await expect.poll(() => suggestions(page, 'query', 'SELECT `my.tbl`.co')).toEqual(['col_a', 'col_b']);
+  // The outer o is orders; the subquery's o (users) is not visible out here.
+  await expect.poll(() => explicitSuggestions(page, 'query',
+    'SELECT o.reg| FROM orders o WHERE EXISTS (SELECT 1 FROM users o WHERE o.id = 1)')).toEqual(['region']);
+});
+
+test('accepting an option of a column named with an apostrophe doubles it', async ({ page }) => {
+  await openApp(page);
+  // A fuzzy filter that leaves one option, accepted with Enter (the dialog may open past the viewport).
+  await expect.poll(() => suggestions(page, 'schema', "CREATE TABLE t (`a'b` INT) WITH ('connector' = 'datagen', 'fields.akind"))
+    .toEqual(["fields.a'b.kind"]);
+  // CodeMirror ignores Enter for 75 ms after a dialog opens (interactionDelay), so it would add a line.
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => schemaEditor.getValue()))
+    .toBe("CREATE TABLE t (`a'b` INT) WITH ('connector' = 'datagen', 'fields.a''b.kind");
+});
+
+test('a failed schema browser refresh is logged', async ({ page }) => {
+  const warnings = [];
+  page.on('console', (msg) => { if (msg.type() === 'warning') warnings.push(msg.text()); });
+  await stubApi(page);
+  await page.route('**/api/sessions/*/tables', (route) => route.fulfill({ status: 500, body: '{}' }));
+  await page.goto('/');
+  await page.waitForFunction(() => window.FlinkEditor && document.querySelectorAll('.cm-editor').length === 2);
+  await expect(page.locator('#status-session')).toContainText('session');
+  await page.locator('#build-schema-btn').click();
+  await expect.poll(() => warnings.join('\n')).toContain('Schema browser refresh failed');
 });
 
 /** Loads the preset titled `title`, puts the cursor right after the first `qualified` reference
