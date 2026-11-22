@@ -842,12 +842,14 @@ function openFilterPopover(colIdx, anchorRect) {
   const pw = 268;
   function place() {
     const margin = 10;
-    pop.style.left = Math.max(margin, Math.min(anchorRect.left, window.innerWidth - pw - margin)) + 'px';
-    pop.style.maxHeight = (window.innerHeight - 2 * margin) + 'px';
+    const vw = Math.min(window.innerWidth, window.visualViewport ? window.visualViewport.width : Infinity);
+    const vh = Math.min(window.innerHeight, window.visualViewport ? window.visualViewport.height : Infinity);
+    pop.style.left = Math.max(margin, Math.min(anchorRect.left, vw - pw - margin)) + 'px';
+    pop.style.maxHeight = (vh - 2 * margin) + 'px';
     const h = pop.offsetHeight;
     const below = anchorRect.bottom + 7;
-    const fits = below >= 0 && below + h <= window.innerHeight;
-    pop.style.top = (fits ? below : Math.max(margin, window.innerHeight - margin - h)) + 'px';
+    const fits = below >= 0 && below + h <= vh;
+    pop.style.top = (fits ? below : Math.max(margin, vh - margin - h)) + 'px';
   }
   draw();
 
@@ -862,10 +864,14 @@ function openFilterPopover(colIdx, anchorRect) {
   const onKey = (e) => { if (e.key === 'Escape') closeFilterPopover(); else if (e.key === 'Enter') apply(); };
   document.addEventListener('mousedown', onDocDown);
   document.addEventListener('keydown', onKey);
+  // The visual viewport resizes on rotation and when the on-screen keyboard opens; some engines
+  // report the new size there before (or instead of) firing window resize.
   window.addEventListener('resize', place);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', place);
   pop._cleanup = () => {
     document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey);
     window.removeEventListener('resize', place);
+    if (window.visualViewport) window.visualViewport.removeEventListener('resize', place);
   };
 }
 

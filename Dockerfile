@@ -1,6 +1,6 @@
 # Bundles the CodeMirror SQL editor (scripts/build-editor.js). The Node tag is renewed with
 # the other image pins; keep it on the Node 22 LTS line the workflows use.
-FROM node:22.23.3-bookworm-slim AS editor
+FROM node:22.23.5-bookworm-slim AS editor
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
@@ -8,7 +8,7 @@ COPY src/main/frontend/ src/main/frontend/
 COPY scripts/build-editor.js scripts/
 RUN node scripts/build-editor.js /app/editor.bundle.js
 
-FROM eclipse-temurin:25.0.4.1_1-jdk AS build
+FROM eclipse-temurin:25.0.5.1_2-jdk AS build
 WORKDIR /app
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY gradle/ gradle/
@@ -35,7 +35,7 @@ RUN QUARKUS_PROFILE=$QUARKUS_PROFILE ./gradlew clean quarkusBuild --no-daemon -x
     -Dquarkus.profile=$QUARKUS_PROFILE \
     -PbuildCommit=$GIT_COMMIT -PbuildBranch=$GIT_BRANCH
 
-FROM eclipse-temurin:25.0.4.1_1-jre
+FROM eclipse-temurin:25.0.5.1_2-jre
 WORKDIR /app
 # Run as a non-root user. This process compiles and executes untrusted user SQL in an
 # embedded Flink MiniCluster in-JVM, so dropping root limits the blast radius of any

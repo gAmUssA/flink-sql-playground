@@ -4,7 +4,7 @@
 [![Docker Build](https://github.com/gAmUssA/flink-sql-playground/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/gAmUssA/flink-sql-playground/actions/workflows/docker-publish.yml)
 [![Java 25](https://img.shields.io/badge/Java-25-orange?logo=openjdk)](https://adoptium.net/)
 [![Quarkus](https://img.shields.io/badge/Quarkus-3.40-blue?logo=quarkus)](https://quarkus.io/)
-[![Apache Flink](https://img.shields.io/badge/Apache%20Flink-2.2.1-blue?logo=apacheflink)](https://flink.apache.org/)
+[![Apache Flink](https://img.shields.io/badge/Apache%20Flink-2.3.0-blue?logo=apacheflink)](https://flink.apache.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQL queries in your browser against an embedded Flink runtime — no external cluster or infrastructure required.
