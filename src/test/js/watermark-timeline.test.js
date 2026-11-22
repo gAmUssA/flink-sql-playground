@@ -44,6 +44,19 @@ test('a hopping record that misses only some of its windows is partial, not drop
   assert.equal(a.stats.dropped, 0);
 });
 
+test('a spec with thousands of windows per record is treated as windowless, quickly', () => {
+  const hop = { kind: 'HOP', sizeMs: 3600000, slideMs: 1, stepMs: 0, offsetMs: 0 };
+  const ticks = Array.from({ length: 2000 }, (_, i) => ({ t: 1000 + i, wm: i ? 900 + i : null }));
+  const started = Date.now();
+  const a = W.analyze(meta(hop), ticks);
+  assert.ok(Date.now() - started < 500, 'analyze stays fast');
+  assert.equal(a.windowsSkipped, true);
+  assert.equal(a.windows.length, 0);
+  const html = W.render(meta(hop), ticks.slice(0, 5), { width: 400, height: 200 });
+  assert.match(html, /too many windows to draw/);
+  assert.doesNotMatch(html, /dropped \(/);
+});
+
 test('without windows, records behind the watermark are late and nothing is dropped', () => {
   const a = W.analyze(meta(null), [{ t: 1000, wm: null }, { t: 500, wm: 900 }, { t: 2000, wm: 900 }]);
   assert.deepEqual(a.points.map((p) => p.status), ['ok', 'late', 'ok']);

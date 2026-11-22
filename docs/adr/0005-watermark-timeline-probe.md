@@ -42,6 +42,9 @@ considered:
 - The windows come from the plan: the `window` attribute of a window aggregate, join, rank,
   dedup or TVF node (`TUMBLE(... size=[10 s])`, `HOP`, `CUMULATE`, and legacy
   `TumblingGroupWindow`). SESSION windows have no fixed bounds and are drawn without bands.
+  Offsets may be negative. A spec that puts one record in more than 64 windows (a 1 h HOP
+  sliding every second is 3,600) is drawn as windowless with a note, since classifying it
+  would cost millions of steps per redraw in the browser.
 - The probe identifiers are quoted from the catalog path, never taken from user text. The
   probe runs under the same limits as a query stream (row cap, wall-clock cap, cancel on
   disconnect) through `SqlExecutionService#streamRows`.
@@ -59,8 +62,11 @@ considered:
   UI says "a sample of the stream" in its first line and explains why the numbers differ.
 - **The probe runs only when someone is looking.** It starts when a streaming run starts with
   the Timeline tab open, when the tab is opened during a run, or with the tab's "Record
-  timeline" button. Stop and a new Run stop it. A run on any other tab starts no probe, so the
-  extra job, and its MiniCluster slot, are spent only for viewers of the timeline.
+  timeline" button. Stop, a new Run, leaving the tab, switching to batch mode and loading a
+  preset all stop it. A run on any other tab starts no probe, so the extra job, and its
+  MiniCluster slot, are spent only while someone views the timeline. On the server, a client
+  that leaves after the probe was submitted but before the first frame gets the job cancelled
+  as well; after that, `streamRows` cancels it on disconnect, row cap or deadline.
 - The tab is always visible. Without event time it explains why there is no timeline (400
   `NO_EVENT_TIME`); in batch mode it says watermarks belong to streaming mode.
 - A canonical preset, "Watermark Timeline: who misses the window", ships with it: datagen

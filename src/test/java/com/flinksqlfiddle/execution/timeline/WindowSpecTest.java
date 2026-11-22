@@ -21,6 +21,8 @@ class WindowSpecTest {
                 WindowSpec.parse("CUMULATE(time_col=[view_time], max_size=[10 s], step=[2 s])"));
         assertEquals(Optional.of(new WindowSpec("TUMBLE", 3_600_000, 3_600_000, 0, 60_000)),
                 WindowSpec.parse("TUMBLE(time_col=[ts], size=[1 h], offset=[1 min])"));
+        assertEquals(Optional.of(new WindowSpec("TUMBLE", 86_400_000, 86_400_000, 0, -3_600_000)),
+                WindowSpec.parse("TUMBLE(time_col=[ts], size=[1 d], offset=[-1 h])"));
     }
 
     @Test
@@ -44,6 +46,7 @@ class WindowSpecTest {
         assertEquals(2_000L, WindowSpec.millis("2 s"));
         assertEquals(120_000L, WindowSpec.millis("2 min"));
         assertEquals(86_400_000L, WindowSpec.millis("1 d"));
+        assertEquals(-3_600_000L, WindowSpec.millis("-1 h"));
         assertNull(WindowSpec.millis("soon"));
     }
 }

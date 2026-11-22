@@ -653,6 +653,8 @@ function setActiveTab(tab) {
   activeTab = tab;
   if (tab !== 'table') closeFilterPopover();
   if (tab === 'graph') ensurePlan();
+  // The probe is a second job: it records only while someone looks at the timeline.
+  if (tab !== 'timeline') stopTimeline();
   // Opening the timeline during a streaming run records alongside it.
   if (tab === 'timeline' && R.running && getMode() === 'STREAMING' && TL.key !== R.ranKey && TL.status !== 'recording') startTimeline(R.ranQuery);
   document.querySelectorAll('#results-tabs .rtab').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
@@ -1111,7 +1113,8 @@ function resetTimeline() {
 function stopTimeline() {
   if (TL.controller) TL.controller.abort();
   TL.controller = null;
-  if (TL.status === 'recording') TL.status = 'done';
+  // Stopped before the meta frame: nothing to show, so back to idle (offers Record again).
+  if (TL.status === 'recording') TL.status = TL.meta ? 'done' : 'idle';
 }
 
 // Streams the probe's NDJSON: meta, then one tick per record, then end.
@@ -1166,7 +1169,7 @@ function renderTimeline(body) {
     const known = TL.code === 'NO_EVENT_TIME' || TL.code === 'NOT_STREAMING' || TL.code === 'NOT_EXPLAINABLE';
     return emptyState('clock', known ? 'No event-time timeline for this query' : 'Could not record the timeline', TL.error, !known, timelineButton());
   }
-  if (TL.status === 'idle' || (TL.status === 'recording' && !TL.meta)) {
+  if (TL.status === 'idle' || !TL.meta) {
     if (TL.status === 'recording') return emptyState('clock', 'Recording…', 'Planning the query and starting the probe.');
     return emptyState('clock', 'No timeline yet', 'Run the query with this tab open, or record a sample of its source now.', false, timelineButton());
   }
@@ -1593,6 +1596,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('#mode-segmented button').forEach((b) => {
     b.addEventListener('click', () => {
       setMode(b.dataset.mode);
+      if (getMode() !== 'STREAMING') stopTimeline();
       // The plan depends on the mode (batch and streaming planners differ): re-plan if shown.
       if (activeTab === 'graph') ensurePlan();
     });

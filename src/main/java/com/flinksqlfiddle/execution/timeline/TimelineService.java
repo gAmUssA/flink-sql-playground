@@ -123,6 +123,23 @@ public class TimelineService {
         });
     }
 
+    /**
+     * Cancels the probe job. For exits before {@link #stream} starts (the client left after the
+     * job was submitted): only stream() cancels on its own.
+     */
+    public void cancel(TimelineQuery query) {
+        if (query.probe() == null || query.probe().tableResult() == null) {
+            return;
+        }
+        query.probe().tableResult().getJobClient().ifPresent(job -> {
+            try {
+                job.cancel();
+            } catch (Exception e) {
+                log.debug("Probe cancel skipped: {}", e.getMessage());
+            }
+        });
+    }
+
     static Long wallClockMillis(Object value, ZoneId zone) {
         if (value instanceof LocalDateTime ldt) {
             return ldt.toInstant(ZoneOffset.UTC).toEpochMilli();

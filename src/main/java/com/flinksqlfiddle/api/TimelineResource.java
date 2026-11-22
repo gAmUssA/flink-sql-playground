@@ -73,8 +73,10 @@ public class TimelineResource {
             Listener listener = new Listener(emitter);
             emitter.onTermination(listener::clientGone);
             streamExecutor.execute(() -> {
+                boolean streaming = false;
                 try {
                     listener.send(TimelineEvent.meta(query.meta()));
+                    streaming = true; // from here stream() owns the job and cancels it on every exit
                     timelineService.stream(query, listener);
                     emitter.complete();
                 } catch (IOException e) {
@@ -84,6 +86,10 @@ public class TimelineResource {
                     log.warn("Timeline probe failed: {}", e.getMessage());
                     listener.trySend(TimelineEvent.error(e.getMessage()));
                     emitter.complete();
+                } finally {
+                    if (!streaming) {
+                        timelineService.cancel(query); // the client left before the first frame
+                    }
                 }
             });
         });

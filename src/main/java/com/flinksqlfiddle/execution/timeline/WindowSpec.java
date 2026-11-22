@@ -25,7 +25,7 @@ public record WindowSpec(String kind, long sizeMs, long slideMs, long stepMs, lo
     // Legacy GROUP BY TUMBLE(...) prints TumblingGroupWindow('w$, ts, 10000) (sizes in ms).
     private static final Pattern LEGACY = Pattern.compile(
             "^(TumblingGroupWindow|SlidingGroupWindow)\\('?w\\d*\\$, [^,]+, (\\d+)(?:, (\\d+))?\\)$");
-    private static final Pattern DURATION = Pattern.compile("^(\\d+)\\s*(ms|s|min|h|d)$");
+    private static final Pattern DURATION = Pattern.compile("^(-?\\d+)\\s*(ms|s|min|h|d)$");
 
     /** The first window spec in the plan (window aggregate, join, rank, dedup or TVF), if any. */
     public static Optional<WindowSpec> fromPlan(ExplainResult plan) {
@@ -80,7 +80,7 @@ public record WindowSpec(String kind, long sizeMs, long slideMs, long stepMs, lo
         };
     }
 
-    /** {@code "10 s"}, {@code "1 min"}, {@code "500 ms"} → milliseconds; null if unreadable. */
+    /** {@code "10 s"}, {@code "1 min"}, {@code "-1 h"} (offsets can be negative) → ms; null if unreadable. */
     static Long millis(String text) {
         if (text == null) {
             return null;

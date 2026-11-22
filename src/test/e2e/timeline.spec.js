@@ -42,7 +42,7 @@ test('running with the tab open records the timeline alongside the query', async
   await expect(page.locator('#timeline-record-btn')).toHaveText(/Record again/);
 });
 
-test('a run on another tab starts no probe; opening the tab mid-run would', async ({ page }) => {
+test('a run on another tab starts no probe', async ({ page }) => {
   await open(page);
   const probes = probeRequests(page);
   await page.click('#run-query-btn');
@@ -50,6 +50,34 @@ test('a run on another tab starts no probe; opening the tab mid-run would', asyn
   await page.click('.rtab[data-tab="timeline"]');
   await expect(page.locator('.rv-empty-label')).toHaveText('No timeline yet');
   expect(probes).toEqual([]);
+});
+
+test('opening the tab while a run is live starts the probe for that run', async ({ page }) => {
+  await open(page);
+  const probes = probeRequests(page);
+  await page.evaluate(() => queryEditor.setValue('-- stub: slow\nSELECT * FROM clicks'));
+  await page.click('#run-query-btn');
+  await expect(page.locator('#run-query-btn .run-label')).toHaveText('Stop');
+  await page.click('.rtab[data-tab="timeline"]');
+  await expect(page.locator('.wt-dot')).toHaveCount(TIMELINE_TICKS.length);
+  expect(probes.map((p) => p.sql)).toEqual(['-- stub: slow\nSELECT * FROM clicks']);
+  await expect(page.locator('#run-query-btn .run-label')).toHaveText('Run Query');
+});
+
+test('leaving the tab or switching to batch stops a live probe', async ({ page }) => {
+  await open(page);
+  let aborted = 0;
+  await page.route('**/timeline/stream', () => {}); // never answers: the probe stays live until aborted
+  page.on('requestfailed', (r) => { if (r.url().endsWith('/timeline/stream')) aborted++; });
+  await page.click('.rtab[data-tab="timeline"]');
+  await page.click('#timeline-record-btn');
+  await expect(page.locator('.rv-empty-label')).toHaveText('Recording…');
+  await page.click('.rtab[data-tab="table"]');
+  await expect.poll(() => aborted).toBe(1);
+  await page.click('.rtab[data-tab="timeline"]');
+  await page.click('#timeline-record-btn');
+  await page.click('#mode-segmented [data-mode="BATCH"]');
+  await expect.poll(() => aborted).toBe(2);
 });
 
 test('Record timeline records a sample without running the query', async ({ page }) => {

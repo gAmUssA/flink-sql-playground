@@ -97,6 +97,8 @@ async function stubApi(page) {
       // A query containing "-- stub: retractions" also updates row 1 and deletes row 3, so the
       // changelog shows all four ops (+I, -U, +U, -D).
       // One containing "-- stub: long tail" streams the 60 LONG_TAIL inserts instead.
+      // "-- stub: slow" holds the response for 1.5 s, so a test can act while the run is live.
+      if (/-- stub: slow/.test(route.request().postData() || '')) await new Promise((r) => setTimeout(r, 1500));
       const retractions = /-- stub: retractions/.test(route.request().postData() || '');
       const inserts = /-- stub: long tail/.test(route.request().postData() || '') ? LONG_TAIL : ROWS;
       const changes = retractions ? [{ kind: '-U', values: ROWS[0] }, { kind: '+U', values: [1, ...ROWS[0].slice(1, 2), 11, ...ROWS[0].slice(3)] },

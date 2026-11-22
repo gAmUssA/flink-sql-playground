@@ -16,6 +16,17 @@
   'use strict';
 
   const MAX_BANDS = 120; // more windows than this would be unreadable stripes; draw none
+  // A record belongs to size/slide HOP windows (size/step CUMULATE ones). Past this many per
+  // record (a 1 h window sliding every second is 3600) the model would cost millions of steps
+  // per redraw, so such specs are treated as windowless and the view says why.
+  const MAX_WINDOWS_PER_RECORD = 64;
+
+  function windowsPerRecord(spec) {
+    if (!spec) return 0;
+    if (spec.kind === 'HOP') return spec.slideMs > 0 ? Math.ceil(spec.sizeMs / spec.slideMs) : Infinity;
+    if (spec.kind === 'CUMULATE') return spec.stepMs > 0 ? Math.ceil(spec.sizeMs / spec.stepMs) : Infinity;
+    return spec.sizeMs > 0 ? 1 : Infinity;
+  }
 
   /** The windows a record at event time t belongs to: [{ start, end }]. */
   function windowsFor(spec, t) {
@@ -44,7 +55,9 @@
    * Returns { points, windows, stats, range }.
    */
   function analyze(meta, ticks) {
-    const spec = meta && meta.window;
+    const requested = meta && meta.window;
+    const tooMany = windowsPerRecord(requested) > MAX_WINDOWS_PER_RECORD;
+    const spec = tooMany ? null : requested;
     const windows = new Map(); // "start:end" → { start, end, kept, dropped, firedAt }
     const points = ticks.map((k, i) => {
       const own = windowsFor(spec, k.t);
@@ -84,7 +97,8 @@
         firstWatermarkAt: lags.length ? ticks.indexOf(lags[0]) : null,
         lagMs: delays.length ? Math.round(delays.reduce((a, b) => a + b, 0) / delays.length) : null,
       },
-      range: ts.length ? { min: Math.min(...ts), max: Math.max(...ts) } : null,
+      range: ts.length ? { min: ts.reduce((a, b) => Math.min(a, b)), max: ts.reduce((a, b) => Math.max(a, b)) } : null,
+      windowsSkipped: tooMany,
     };
   }
 
@@ -175,7 +189,7 @@
     const model = analyze(meta, ticks);
     const s = model.stats;
     const pct = (v) => (s.total ? Math.round((v / s.total) * 100) : 0);
-    const spec = meta.window;
+    const spec = model.windowsSkipped ? null : meta.window;
     const stats = [
       `<span class="wt-stat"><b>${s.total.toLocaleString('en-US')}</b> records${opts.recording ? ' so far' : ''}</span>`,
       spec ? `<span class="wt-stat is-dropped"><b>${s.dropped}</b> dropped (${pct(s.dropped)}%)</span>` : '',
@@ -183,7 +197,8 @@
       `<span class="wt-stat is-late"><b>${s.late}</b> ${spec ? 'late but counted' : 'behind the watermark'}</span>`,
       s.lagMs != null ? `<span class="wt-stat">watermark trails by <b>${(s.lagMs / 1000).toFixed(1)} s</b></span>` : '',
     ].join('');
-    const lead = `A sample of the <b>${esc(meta.table)}</b> stream by event time <code>${esc(meta.rowtime)}</code>, watermark <code>${esc(meta.watermark)}</code>, ${esc(describeWindow(spec))}.`;
+    const lead = `A sample of the <b>${esc(meta.table)}</b> stream by event time <code>${esc(meta.rowtime)}</code>, watermark <code>${esc(meta.watermark)}</code>, ${esc(describeWindow(meta.window))}${
+      model.windowsSkipped ? ' (each record falls in too many windows to draw them)' : ''}.`;
     const body = model.range
       ? `<div class="wt-chart">${chart(model, opts.width || 640, opts.height || 280)}</div>`
       : `<p class="wt-wait">${opts.recording ? 'Waiting for the first records…' : 'The probe returned no records.'}</p>`;
