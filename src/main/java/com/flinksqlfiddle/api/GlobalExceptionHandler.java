@@ -82,7 +82,7 @@ public class GlobalExceptionHandler {
     public RestResponse<ErrorResponse> handleTableNotFound(TableNotFoundException e) {
         log.debug("Table not found: {}", e.table());
         return RestResponse.status(RestResponse.Status.BAD_REQUEST,
-                new ErrorResponse(e.getMessage(), "TABLE_NOT_FOUND", e.table(), e.suggestion()));
+                new ErrorResponse(e.getMessage(), "TABLE_NOT_FOUND", e.table(), e.path(), e.suggestion()));
     }
 
     @ServerExceptionMapper

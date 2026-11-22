@@ -27,27 +27,38 @@ upgrades, and only the backend sees the exception chain and the statement togeth
 
 - `TableNotFoundException.detect` reads the planner's exception chain, trusting only
   `ValidationException`, `CalciteContextException` and `SqlValidatorException` (a job that fails
-  at runtime with similar words is not a missing table). For an unqualified `Object 'x' not
-  found` it reads the identifier at Calcite's reported span in the statement: when the statement
-  wrote a qualified name there and `x` is its first part, `x` is a catalog or database, not a
-  table. When the span points outside the statement (a view's expanded text), the reported name
-  stands.
+  at runtime with similar words is not a missing table). For `Object 'x' not found [within 'p']`
+  it reads the identifier at Calcite's reported span in the statement, skipping whitespace and
+  comments between its parts: `x` is a table only when it is the last part, following the
+  written prefix that `p` ends with (`FROM nodb.orders` reports `nodb`, a database). The written
+  parts keep their boundaries, which `p` loses: Calcite joins it with unquoted dots, so a database
+  named `` `sales.eu` `` renders as `default_catalog.sales.eu`. A span inside the statement that
+  holds anything but one dotted name fails closed (no `TABLE_NOT_FOUND`). When the span points
+  outside the statement (a view's expanded text), the message alone decides, and only an
+  unambiguous `catalog.database` prefix counts.
 - `SqlExecutionService` applies it to every planning step: execute (both modes, DDL included),
   the streaming path before the first byte, explain, and the timeline probe's preparation.
 - The API answers HTTP 400 with
 
   ```json
   { "error": "<Flink's message, unchanged>", "code": "TABLE_NOT_FOUND",
-    "table": "orders", "suggestion": "users" }
+    "table": "orders", "path": ["other_db", "orders"], "suggestion": "users" }
   ```
 
-  `table` is the missing table's last name part, unquoted, as the statement spelled it.
+  `table` is the missing table's last name part, unquoted, as the statement spelled it. `path`
+  is every part, ending with `table`: as the statement wrote it, or as Flink resolved it
+  (`["default_catalog", "other_db", "sink"]` for an INSERT target).
   `suggestion` is present only when Flink offers a "did you mean" (a name that differs in case).
   `error` stays Flink's text, as for every other code, so a client that reads only `error` loses
   nothing; there is no separate `detail` field.
-- The frontend never parses the message. It picks the wording from `table` and the schema
-  editor (`FlinkEditor.parseCreateTables`): declared but not built offers **Build Schema and
-  run**; not declared says no table has that name. Flink's message is shown underneath.
+- The frontend never parses the message. It picks the wording from `path` and the schema
+  editor (`FlinkEditor.declaredTablePaths`): declared but not built offers **Build Schema and
+  run**; not declared says no table has that name. Both sides are compared as qualified names,
+  with `default_catalog` and `default_database` prefixes dropped, so `other_db.orders` does not
+  match a declared `orders` (building would not create it). Flink's message is shown underneath.
+- **Build Schema and run** runs the query it was clicked for. If the query or the mode changed
+  while the schema built, or another query is running by then, it builds and does not run, and
+  says so in the status bar.
 
 ## Consequences
 

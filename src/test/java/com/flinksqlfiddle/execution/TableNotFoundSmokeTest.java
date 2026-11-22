@@ -115,6 +115,39 @@ class TableNotFoundSmokeTest {
     }
 
     @Test
+    void databasesNamedOddlyAndCommentsInsideNames() {
+        service.execute(session, ExecutionMode.BATCH, "CREATE DATABASE other_db");
+        service.execute(session, ExecutionMode.BATCH, "CREATE DATABASE `sales.eu`");
+        // A table missing in an existing database carries the qualification the statement wrote.
+        TableNotFoundException other = missing(() -> service.execute(session, ExecutionMode.BATCH,
+                "SELECT * FROM other_db.orders"));
+        assertEquals("orders", other.table());
+        assertEquals(java.util.List.of("other_db", "orders"), other.path());
+        // A dot inside a database name is not a part boundary.
+        assertEquals(java.util.List.of("sales.eu", "orders"), missing(() -> service.execute(session, ExecutionMode.BATCH,
+                "SELECT * FROM `sales.eu`.orders")).path());
+        assertEquals(java.util.List.of("default_catalog", "sales.eu", "sink"), missing(() -> service.explain(session,
+                ExecutionMode.STREAMING, "INSERT INTO `sales.eu`.sink SELECT user_id, name FROM users")).path());
+        assertEquals(java.util.List.of("default_database", "orders"), missing(() -> service.execute(session,
+                ExecutionMode.BATCH, "SELECT * FROM default_database /* c */ . orders")).path());
+        // A comment inside the name of a missing database: still a missing database.
+        for (String sql : new String[]{"SELECT * FROM nodb /* c */ . orders", "SELECT * FROM nodb\n-- x\n.orders"}) {
+            RuntimeException e = assertThrows(RuntimeException.class, () -> service.execute(session, ExecutionMode.BATCH, sql));
+            assertFalse(e instanceof TableNotFoundException, sql);
+        }
+    }
+
+    @Test
+    void rebuildingRecreatesViews() {
+        // A schema built twice (a retry after a partial build) must get past its views.
+        for (int i = 0; i < 2; i++) {
+            service.execute(session, ExecutionMode.STREAMING, "CREATE TEMPORARY VIEW uv AS SELECT user_id FROM users");
+            service.execute(session, ExecutionMode.STREAMING, "CREATE VIEW pv AS SELECT user_id FROM users");
+        }
+        assertEquals(3, service.execute(session, ExecutionMode.BATCH, "SELECT * FROM uv").rows().size());
+    }
+
+    @Test
     void otherErrorsStayWhatTheyWere() {
         // A missing database, a missing column and an unknown alias are not missing tables.
         for (String sql : new String[]{"SELECT * FROM nodb.orders", "SELECT * FROM default_catalog.nodb.orders",

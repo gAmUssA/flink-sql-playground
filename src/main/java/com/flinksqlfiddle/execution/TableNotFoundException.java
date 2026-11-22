@@ -37,17 +37,33 @@ public class TableNotFoundException extends RuntimeException {
             Set.of("ValidationException", "SqlValidatorException", "CalciteContextException");
 
     private final String table;
+    private final List<String> path;
     private final String suggestion;
 
     public TableNotFoundException(String table, String suggestion, String flinkMessage, Throwable cause) {
+        this(table, List.of(table), suggestion, flinkMessage, cause);
+    }
+
+    public TableNotFoundException(String table, List<String> path, String suggestion, String flinkMessage,
+                                  Throwable cause) {
         super(flinkMessage, cause);
         this.table = table;
+        this.path = List.copyOf(path);
         this.suggestion = suggestion;
     }
 
     /** The missing table or view, unquoted, as the statement spelled it. */
     public String table() {
         return table;
+    }
+
+    /**
+     * The missing table's name parts, unquoted, ending with {@link #table()}: as the statement wrote
+     * them ({@code [orders]}, {@code [other_db, orders]}), or as Flink resolved them
+     * ({@code [default_catalog, other_db, orders]}) when the statement's text is not available.
+     */
+    public List<String> path() {
+        return path;
     }
 
     /** Flink's "did you mean" candidate (an existing name differing in case), or null. */
@@ -78,48 +94,84 @@ public class TableNotFoundException extends RuntimeException {
             if (position == null && pos.find()) {
                 position = pos.group();
             }
-            Optional<String> table = missingTable(message, position, sql);
-            if (table.isPresent()) {
+            Optional<List<String>> path = missingTable(message, position, sql);
+            if (path.isPresent()) {
                 Matcher m = OBJECT_NOT_FOUND.matcher(message);
                 String suggestion = m.matches() ? m.group(3) : null;
-                return Optional.of(new TableNotFoundException(table.get(), suggestion, failure.getMessage(), failure));
+                return Optional.of(new TableNotFoundException(path.get().getLast(), path.get(), suggestion,
+                        failure.getMessage(), failure));
             }
         }
         return Optional.empty();
     }
 
-    private static Optional<String> missingTable(String message, String position, String sql) {
+    /** The missing table's path, if {@code message} reports one. */
+    private static Optional<List<String>> missingTable(String message, String position, String sql) {
         Matcher object = OBJECT_NOT_FOUND.matcher(message);
         if (object.matches()) {
-            String name = object.group(1);
-            String within = object.group(2);
-            if (within != null) {
-                // Within a database ("cat.db") the object is a table; within a catalog, a database.
-                return within.split("\\.", -1).length == 2 ? Optional.of(name) : Optional.empty();
-            }
-            // Unqualified: the first part of the identifier failed to resolve. If the statement
-            // wrote a qualified name there (nodb.orders), that part is a catalog or database.
-            List<String> written = identifierAt(sql, position);
-            if (written.size() > 1 && written.getFirst().equals(name)) {
-                return Optional.empty();
-            }
-            return Optional.of(name);
+            return objectNotFound(object.group(1), object.group(2), spanAt(sql, position));
         }
         Matcher cannotFind = CANNOT_FIND_TABLE.matcher(message);
         if (cannotFind.matches()) {
-            return lastPart(cannotFind.group(1));
+            // Flink quotes each part here: `default_catalog`.`sales.eu`.`sink`.
+            return resolvedPath(parseIdentifier(cannotFind.group(1)));
         }
         Matcher identifier = NO_SUCH_IDENTIFIER.matcher(message);
         if (identifier.matches()) {
-            return lastPart(identifier.group(1));
+            // Unquoted here: a dot inside a part makes the path ambiguous, and resolvedPath rejects it.
+            return resolvedPath(parseIdentifier(identifier.group(1)));
         }
         return Optional.empty();
     }
 
-    /** The last part of a dotted, possibly backtick-quoted path. */
-    private static Optional<String> lastPart(String path) {
-        List<String> parts = parseIdentifier(path);
-        return parts.isEmpty() ? Optional.of(path) : Optional.of(parts.getLast());
+    /**
+     * Calcite's {@code Object 'name' not found [within 'within']}: {@code within} is the resolved
+     * prefix of the identifier ({@code cat.db}: the object is a table; {@code cat}: a database;
+     * none: the identifier's first part). Calcite joins {@code within} with dots, unquoted, so a
+     * database named {@code `sales.eu`} cannot be told apart from a catalog and a database there.
+     * The statement's text at Calcite's span keeps the part boundaries; it decides when it holds a
+     * dotted name that contains {@code name}. A span that holds something else, comments aside,
+     * fails closed: no missing table is claimed.
+     */
+    private static Optional<List<String>> objectNotFound(String name, String within, String span) {
+        String prefix = within == null ? "" : within;
+        if (span != null) {
+            List<String> written = parseIdentifier(span);
+            if (written.isEmpty()) {
+                return Optional.empty();
+            }
+            // Which written part failed: the one named `name` whose written prefix ends what
+            // Calcite resolved. Without a written prefix Calcite resolved only defaults (FROM
+            // Users within 'cat.db'), or nothing at all (FROM nodb.orders, no within).
+            int failed = -1;
+            for (int k = 1; within != null && k < written.size(); k++) {
+                String before = String.join(".", written.subList(0, k));
+                if (written.get(k).equals(name) && (prefix.equals(before) || prefix.endsWith("." + before))) {
+                    if (failed >= 0) {
+                        return Optional.empty(); // two candidates: ambiguous
+                    }
+                    failed = k;
+                }
+            }
+            if (failed < 0 && written.getFirst().equals(name)) {
+                failed = 0;
+            }
+            if (failed >= 0) {
+                return failed == written.size() - 1 ? Optional.of(written) : Optional.empty();
+            }
+            // The span holds some other name: it points into a view's expanded text, not here.
+        }
+        if (within == null) {
+            return Optional.of(List.of(name));
+        }
+        List<String> resolved = new ArrayList<>(List.of(within.split("\\.", -1)));
+        resolved.add(name);
+        return resolvedPath(resolved);
+    }
+
+    /** A catalog.database.table path Flink resolved, or empty when it is not exactly three parts. */
+    private static Optional<List<String>> resolvedPath(List<String> parts) {
+        return parts.size() == 3 ? Optional.of(List.copyOf(parts)) : Optional.empty();
     }
 
     /**
@@ -127,19 +179,25 @@ public class TableNotFoundException extends RuntimeException {
      * list when the span does not hold one (it points into a view's text, or is out of range).
      */
     static List<String> identifierAt(String sql, String position) {
+        String span = spanAt(sql, position);
+        return span == null ? List.of() : parseIdentifier(span);
+    }
+
+    /** The text at Calcite's 1-based, inclusive span in {@code sql}, or null when it is out of range. */
+    private static String spanAt(String sql, String position) {
         if (sql == null || position == null) {
-            return List.of();
+            return null;
         }
         Matcher m = POSITION.matcher(position);
         if (!m.find()) {
-            return List.of();
+            return null;
         }
         int start = offset(sql, Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
         int end = offset(sql, Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
         if (start < 0 || end < start || end >= sql.length()) {
-            return List.of();
+            return null;
         }
-        return parseIdentifier(sql.substring(start, end + 1));
+        return sql.substring(start, end + 1);
     }
 
     private static int offset(String sql, int line, int column) {
@@ -156,31 +214,51 @@ public class TableNotFoundException extends RuntimeException {
         return column < 1 || (lineEnd >= 0 && at > lineEnd) ? -1 : at;
     }
 
-    /** {@code a.`b c`.d} as [a, b c, d]; empty if the text is not exactly a dotted identifier. */
+    /**
+     * {@code a.`b c`.d} as [a, b c, d], whitespace and comments between parts skipped; empty if the
+     * text is not exactly a dotted identifier (an unclosed comment included).
+     */
     static List<String> parseIdentifier(String text) {
         List<String> parts = new ArrayList<>();
-        int i = 0;
         int n = text.length();
-        while (true) {
-            while (i < n && Character.isWhitespace(text.charAt(i))) {
-                i++;
-            }
+        int i = skipBlanks(text, 0);
+        while (i >= 0) {
             Matcher part = IDENTIFIER_PART.matcher(text).region(i, n);
             if (!part.lookingAt()) {
                 return List.of();
             }
             parts.add(part.group(1) != null ? part.group(1).replace("``", "`") : part.group(2));
-            i = part.end();
-            while (i < n && Character.isWhitespace(text.charAt(i))) {
-                i++;
-            }
+            i = skipBlanks(text, part.end());
             if (i == n) {
                 return parts;
             }
-            if (text.charAt(i) != '.') {
+            if (i < 0 || text.charAt(i) != '.') {
                 return List.of();
             }
-            i++;
+            i = skipBlanks(text, i + 1);
         }
+        return List.of();
+    }
+
+    /** The index after whitespace and comments from {@code i}, or -1 inside an unclosed block comment. */
+    private static int skipBlanks(String text, int i) {
+        int n = text.length();
+        while (i < n) {
+            if (Character.isWhitespace(text.charAt(i))) {
+                i++;
+            } else if (text.startsWith("--", i)) {
+                int eol = text.indexOf('\n', i);
+                i = eol < 0 ? n : eol + 1;
+            } else if (text.startsWith("/*", i)) {
+                int close = text.indexOf("*/", i + 2);
+                if (close < 0) {
+                    return -1;
+                }
+                i = close + 2;
+            } else {
+                break;
+            }
+        }
+        return i;
     }
 }

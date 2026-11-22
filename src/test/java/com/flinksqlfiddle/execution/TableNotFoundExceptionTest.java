@@ -84,6 +84,73 @@ class TableNotFoundExceptionTest {
     }
 
     @Test
+    void aCommentInsideTheNameDoesNotHideAMissingDatabase() {
+        // Spans recorded from Flink 2.3: the span covers the whole name, comments included.
+        assertTrue(detect(validation("1, column 15 to line 1, column 35", "Object 'nodb' not found"),
+                "SELECT * FROM nodb /* c */ . orders").isEmpty());
+        assertTrue(detect(validation("1, column 15 to line 3, column 7", "Object 'nodb' not found"),
+                "SELECT * FROM nodb\n-- x\n.orders").isEmpty());
+        // A comment inside the name of a missing table: still the table.
+        TableNotFoundException e = detect(validation("1, column 15 to line 1, column 47",
+                "Object 'orders' not found within 'default_catalog.default_database'"),
+                "SELECT * FROM default_database /* c */ . orders").orElseThrow();
+        assertEquals(List.of("default_database", "orders"), e.path());
+    }
+
+    @Test
+    void aSpanThatHoldsMoreThanANameFailsClosed() {
+        // An unclosed comment, or anything that is not a dotted name, is ambiguous: no claim.
+        assertTrue(detect(validation("1, column 15 to line 1, column 24", "Object 'nodb' not found"),
+                "SELECT * FROM nodb /* .orders").isEmpty());
+        assertTrue(detect(validation("1, column 15 to line 1, column 22", "Object 'orders' not found"),
+                "SELECT * FROM orders o").isEmpty());
+    }
+
+    @Test
+    void aDatabaseWithADotInItsNameKeepsItsBoundaries() {
+        // Calcite renders the database `sales.eu` as 'default_catalog.sales.eu': three dot parts.
+        TableNotFoundException e = detect(validation("1, column 15 to line 1, column 31",
+                "Object 'orders' not found within 'default_catalog.sales.eu'"),
+                "SELECT * FROM `sales.eu`.orders").orElseThrow();
+        assertEquals("orders", e.table());
+        assertEquals(List.of("sales.eu", "orders"), e.path());
+        assertEquals(List.of("default_catalog", "sales.eu", "orders"), detect(validation("1, column 15 to line 1, column 47",
+                "Object 'orders' not found within 'default_catalog.sales.eu'"),
+                "SELECT * FROM default_catalog.`sales.eu`.orders").orElseThrow().path());
+        // `sales` (no such database) before orders: the database is missing.
+        assertTrue(detect(validation("1, column 15 to line 1, column 28", "Object 'sales' not found"),
+                "SELECT * FROM `sales`.orders").isEmpty());
+        // Without the statement's text the rendered prefix is ambiguous: no claim.
+        assertTrue(detect(validation("9, column 1 to line 9, column 9",
+                "Object 'orders' not found within 'default_catalog.sales.eu'"), "SELECT * FROM v").isEmpty());
+    }
+
+    @Test
+    void aNameRepeatedInThePathIsReadAtTheRightPart() {
+        // Database x is missing in FROM default_catalog.x.x: Calcite resolved only the catalog.
+        assertTrue(detect(validation("1, column 15 to line 1, column 33", "Object 'x' not found within 'default_catalog'"),
+                "SELECT * FROM default_catalog.x.x").isEmpty());
+        assertTrue(detect(validation("1, column 15 to line 1, column 17", "Object 'x' not found"),
+                "SELECT * FROM x.x").isEmpty());
+        assertEquals(List.of("x", "x"), detect(validation("1, column 15 to line 1, column 17",
+                "Object 'x' not found within 'default_catalog.x'"), "SELECT * FROM x.x").orElseThrow().path());
+    }
+
+    @Test
+    void thePathIsTheQualifiedNameTheStatementWrote() {
+        assertEquals(List.of("orders"), detect(validation("2, column 6 to line 2, column 11", "Object 'orders' not found"),
+                "SELECT *\nFROM orders").orElseThrow().path());
+        assertEquals(List.of("other_db", "orders"), detect(validation("1, column 15 to line 1, column 29",
+                "Object 'orders' not found within 'default_catalog.other_db'"),
+                "SELECT * FROM other_db.orders").orElseThrow().path());
+        RuntimeException insert = new ValidationException("Cannot find table '`default_catalog`.`sales.eu`.`sink`' "
+                + "in any of the catalogs [default_catalog], nor as a temporary table.");
+        TableNotFoundException e = detect(insert, "INSERT INTO `sales.eu`.sink SELECT 1").orElseThrow();
+        assertEquals("sink", e.table());
+        assertEquals(List.of("default_catalog", "sales.eu", "sink"), e.path());
+    }
+
+    @Test
     void spanCountsATabAsOneColumn() {
         // Calcite counts a tab as one column; the identifier at the span is `my orders`, one part.
         assertEquals("my orders", detect(validation("2, column 8 to line 2, column 18", "Object 'my orders' not found"),
@@ -143,6 +210,9 @@ class TableNotFoundExceptionTest {
         assertEquals(List.of(), TableNotFoundException.parseIdentifier("a b"));
         assertEquals(List.of(), TableNotFoundException.parseIdentifier("a."));
         assertEquals(List.of(), TableNotFoundException.parseIdentifier("TABLE(x)"));
+        assertEquals(List.of("a", "b"), TableNotFoundException.parseIdentifier("/* x */ a -- y\n . /* z */ b -- end"));
+        assertEquals(List.of(), TableNotFoundException.parseIdentifier("a /* b"));
+        assertEquals(List.of(), TableNotFoundException.parseIdentifier("a /* x */ b"));
     }
 
     @Test

@@ -217,6 +217,7 @@ class ExecutionResourceTest {
                 .then().statusCode(400)
                 .body("code", is("TABLE_NOT_FOUND"))
                 .body("table", is("orders"))
+                .body("path", is(java.util.List.of("orders")))
                 .body("error", is(NOT_FOUND))
                 .body("$", not(hasKey("suggestion")));
     }
