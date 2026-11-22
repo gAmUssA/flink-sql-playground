@@ -91,6 +91,19 @@ test('a schema that fails to build says why, keeps the button and its focus, and
   await expect(btn).toBeFocused();
   await expect(btn).toHaveText(/Build Schema and run/);
   expect(sql.filter((s) => s.includes('SELECT * FROM orders'))).toHaveLength(1);
+
+  // Fixed and built with the toolbar button: the failure note goes away.
+  await page.evaluate(() => schemaEditor.setValue('CREATE TEMPORARY TABLE orders (id INT) WITH (\'connector\' = \'datagen\')'));
+  await page.click('#build-schema-btn');
+  await expect(page.locator(`${NF} .rv-nf-fail`)).toHaveCount(0);
+});
+
+test('a failed build from the toolbar shows on a missing-table state too', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => schemaEditor.setValue('-- stub: build fails\nCREATE TEMPORARY TABLE orders (id INT) WITH (\'connector\' = \'datagen\')'));
+  await run(page, missingOrders);
+  await page.click('#build-schema-btn');
+  await expect(page.locator(`${NF} .rv-nf-fail`)).toHaveText('The schema didn’t build: Could not execute CreateTable in path `orders`');
 });
 
 test('double clicks build once and run once', async ({ page }) => {

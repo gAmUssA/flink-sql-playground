@@ -396,8 +396,23 @@ function splitSqlStatements(sql) {
 // build runs gets the same promise. Resolves { ok, error }: ok only when every statement ran.
 let schemaBuild = null;
 function buildSchema() {
-  if (!schemaBuild) schemaBuild = runSchemaBuild().finally(() => { schemaBuild = null; });
+  if (!schemaBuild) {
+    schemaBuild = runSchemaBuild().then((result) => {
+      // Whichever button built, a missing-table state on screen tells the outcome (or drops a
+      // stale failure once a build succeeds).
+      schemaBuildFailure = result.ok ? null : buildFailureText(result);
+      if (document.querySelector('#results-container .rv-nf')) renderActiveView();
+      return result;
+    }).finally(() => { schemaBuild = null; });
+  }
   return schemaBuild;
+}
+// A session that is gone (expired after 15 idle minutes, or the server restarted) cannot be
+// built into; the page needs a new one.
+function buildFailureText(result) {
+  return result.code === 'SESSION_NOT_FOUND' || !sessionId
+    ? 'this session has ended. Reload the page to start a new one.'
+    : result.error;
 }
 async function runSchemaBuild() {
   if (!sessionId) { setStatus('No active session', 'error'); return { ok: false, error: 'No active session' }; }
@@ -686,7 +701,7 @@ function showError(msg, info = null) {
 /* ---- a table the session does not have (API code TABLE_NOT_FOUND) ---- */
 // The backend detects the missing table and names it; the wording depends on whether the schema
 // editor declares it (not built yet: offer to build) or not (a typo, or an undeclared table).
-let schemaBuildFailure = null;  // why the last "Build Schema and run" did not build
+let schemaBuildFailure = null;  // why the last schema build failed, until a build succeeds or a run starts
 let buildAndRunBusy = false;
 
 function isTableNotFound(info) { return !!(info && info.code === 'TABLE_NOT_FOUND' && typeof info.table === 'string' && info.table); }
@@ -743,11 +758,6 @@ document.addEventListener('click', async (e) => {
     buildAndRunBusy = false;
   }
   if (!result.ok) {
-    // A session that is gone (expired after 15 idle minutes, or the server restarted) cannot be
-    // built into; the page needs a new one.
-    schemaBuildFailure = result.code === 'SESSION_NOT_FOUND' || !sessionId
-      ? 'this session has ended. Reload the page to start a new one.'
-      : result.error;
     renderActiveView();
     keepFocus();
     return;
