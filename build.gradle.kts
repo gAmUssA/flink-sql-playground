@@ -86,7 +86,7 @@ tasks.named("processResources") {
     dependsOn(generateBuildInfo, bundleEditor)
 }
 
-val flinkVersion = "2.2.1"
+val flinkVersion = "2.3.0"
 
 dependencies {
     implementation(enforcedPlatform("$quarkusPlatformGroupId:$quarkusPlatformArtifactId:$quarkusPlatformVersion"))
@@ -110,7 +110,7 @@ dependencies {
     implementation("io.quarkus:quarkus-flyway")
 
     // Caffeine cache (used directly by SessionManager, not via any cache abstraction)
-    implementation("com.github.ben-manes.caffeine:caffeine:3.2.4")
+    implementation("com.github.ben-manes.caffeine:caffeine:3.3.1")
 
     // Apache Flink
     implementation("org.apache.flink:flink-streaming-java:$flinkVersion")
@@ -122,12 +122,12 @@ dependencies {
     implementation("org.apache.flink:flink-connector-datagen:$flinkVersion")
 
     // DataFaker (used by ported flink-faker connector)
-    implementation("net.datafaker:datafaker:2.5.4")
+    implementation("net.datafaker:datafaker:2.7.0")
 
     // BootUI dev console (github.com/jdubois/boot-ui). Wires itself up only in Quarkus
     // dev/test launch modes and stays dark in production — safe on the classpath. The
     // matching bootui-quarkus-deployment is pulled in automatically. Served at /bootui.
-    implementation("com.julien-dubois.bootui:bootui-quarkus:1.8.0")
+    implementation("com.julien-dubois.bootui:bootui-quarkus:2.5.0")
 
     // Test
     testImplementation("io.quarkus:quarkus-junit5")
