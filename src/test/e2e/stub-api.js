@@ -47,6 +47,21 @@ const BATCH_PLAN = {
   plan: 'Sink(table=[*anonymous_collect$1*], fields=[region, order_count])',
 };
 
+// A timeline for /timeline/stream: 120 clicks arriving every 200 ms, each event time 0-9 s
+// behind its arrival, under a watermark 2 s behind the largest event time seen (from the 6th
+// click on), with tumbling 5 s windows. Deterministic, so some clicks are always dropped.
+const TIMELINE_BASE = Date.UTC(2026, 10, 22, 10, 0, 0);
+const TIMELINE_META = { table: 'clicks', rowtime: 'ts', watermark: "`ts` - INTERVAL '2' SECOND", window: { kind: 'TUMBLE', sizeMs: 5000, slideMs: 5000, stepMs: 0, offsetMs: 0 } };
+const TIMELINE_TICKS = (() => {
+  let max = -Infinity;
+  return Array.from({ length: 120 }, (_, i) => {
+    const t = TIMELINE_BASE + 10000 + i * 200 - ((i * 37) % 10) * 1000;
+    const wm = i >= 5 ? max - 2000 : null;
+    max = Math.max(max, t);
+    return { t, wm };
+  });
+})();
+
 /**
  * Records, as window.__webfontsSettled ('load' or 'error'), when the web fonts stylesheet
  * (#webfonts, preloaded in index.html and turned into a stylesheet by js/app.js) has settled, for
@@ -99,6 +114,14 @@ async function stubApi(page) {
       return json(200, { columns: COLUMNS, columnTypes: TYPES, rows, rowKinds: rows.map(() => '+I'),
         rowCount: rows.length, executionTimeMs: 12, truncated: false });
     }
+    if (/\/timeline\/stream$/.test(path)) {
+      // "-- stub: no event time" reads no watermarked table (400 NO_EVENT_TIME).
+      const body = JSON.parse(route.request().postData() || '{}');
+      if (/-- stub: no event time/.test(body.sql || '')) return json(400, { error: 'No event time: none of the tables this query reads declares a WATERMARK', code: 'NO_EVENT_TIME' });
+      const lines = [{ type: 'meta', meta: TIMELINE_META }, ...TIMELINE_TICKS.map((k) => ({ type: 'tick', t: k.t, ...(k.wm == null ? {} : { wm: k.wm }) })),
+        { type: 'end', count: TIMELINE_TICKS.length, truncated: false }];
+      return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: lines.map((l) => JSON.stringify(l)).join('\n') + '\n' });
+    }
     if (/\/explain$/.test(path)) {
       // A statement containing "-- stub: ddl" has no plan (400 NOT_EXPLAINABLE).
       const body = JSON.parse(route.request().postData() || '{}');
@@ -110,4 +133,4 @@ async function stubApi(page) {
   });
 }
 
-module.exports = { stubApi, COLUMNS, STREAM_PLAN, BATCH_PLAN };
+module.exports = { stubApi, COLUMNS, STREAM_PLAN, BATCH_PLAN, TIMELINE_META, TIMELINE_TICKS };

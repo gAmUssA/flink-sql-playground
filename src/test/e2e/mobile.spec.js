@@ -179,7 +179,7 @@ test('no horizontal page scroll in any view, with or without results', async ({ 
     await expectNoHorizontalScroll(page);
   }
   await runBatchQuery(page);
-  for (const tab of ['table', 'changelog', 'throughput', 'graph']) {
+  for (const tab of ['table', 'changelog', 'throughput', 'graph', 'timeline']) {
     await page.locator(`.rtab[data-tab="${tab}"]`).tap();
     await expectNoHorizontalScroll(page);
   }

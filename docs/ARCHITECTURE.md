@@ -18,7 +18,8 @@ Flink SQL Playground is a Quarkus 3.40 web application that embeds Apache Flink 
           ▼                 ▼                 │
 ┌─────────────────────────────────────────────────────────┐
 │  REST API (Quarkus REST / JAX-RS)                       │
-│  /api/sessions  /api/sessions/{id}/execute|explain      │
+│  /api/sessions  /api/sessions/{id}/execute|explain|     │
+│  timeline/stream                                        │
 │  /api/fiddles                                           │
 ├─────────────────────────────────────────────────────────┤
 │  SessionManager        SqlExecutionService              │
@@ -64,6 +65,10 @@ A query execution follows this path:
 ### Job graph (EXPLAIN)
 
 `POST /api/sessions/{id}/explain` takes the same `{ sql, mode }` body and returns the optimized physical plan without running anything: operator nodes with their inputs, changelog mode (`I`, `UB`, `UA`, `D`), state kind (`unbounded`, `time-bounded`, `pattern`) and plan advice. A SELECT is planned through the same collect sink `executeSql` uses, so its changelog modes match the rows the changelog tab shows. `PlanParser` reads Flink's text plan; `js/job-graph.js` draws it in the Job Graph tab. DDL, SHOW and CTAS return 400. See [ADR 0004](adr/0004-real-job-graph-from-explain.md).
+
+### Watermark timeline
+
+`POST /api/sessions/{id}/timeline/stream` (streaming only, NDJSON) plans the query, takes its first source table with a WATERMARK, and runs a separate probe job, `SELECT rowtime, CURRENT_WATERMARK(rowtime) FROM table`, under the normal stream limits. Frames: `meta` (table, rowtime, watermark expression, window spec read from the plan), one `tick` per record (event time `t`, watermark `wm`), then `end`. `js/watermark-timeline.js` marks each record on time, late or dropped (its window had fired: `wm >= end - 1`). The probe reads its own sample of the stream, so its counts differ from the user's run. It runs only while the Timeline tab is in use. See [ADR 0005](adr/0005-watermark-timeline-probe.md).
 
 ## Session Management
 

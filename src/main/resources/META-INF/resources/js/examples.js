@@ -494,6 +494,36 @@ GROUP BY window_start, window_end;
 --      and the counts add back up to 500. Tight watermark = lower latency, more loss.`
     },
     {
+        title: "Watermark Timeline: who misses the window",
+        mode: "STREAMING",
+        schema: `-- Clicks that reach Flink up to 10 seconds after they happened (slow phones,
+-- retries): each event time trails its arrival by a random 0-10s. The watermark
+-- waits only 2 seconds for stragglers.
+CREATE TEMPORARY TABLE clicks (
+    user_id INT,
+    url     STRING,
+    ts      TIMESTAMP(3),
+    WATERMARK FOR ts AS ts - INTERVAL '2' SECOND
+) WITH (
+    'connector' = 'datagen',
+    'rows-per-second' = '25',
+    'number-of-rows' = '500',
+    'fields.user_id.min' = '1',
+    'fields.user_id.max' = '9',
+    'fields.url.length' = '8',
+    'fields.ts.max-past' = '10s'
+);`,
+        query: `-- Open the Timeline tab, then Run. Each dot is a click: higher = later event
+-- time, further right = arrived later. The rising line is the watermark. Each band
+-- is a 5-second window, and it fires when the watermark crosses its top edge.
+-- RED dots arrived after their window had fired: Flink dropped them, so the counts
+-- below are short. Set the WATERMARK to ts - INTERVAL '10' SECOND, Build Schema and
+-- run again: no red dots, every click counted, and each result 8 seconds later.
+SELECT window_start, window_end, COUNT(*) AS clicks
+FROM TABLE(TUMBLE(TABLE clicks, DESCRIPTOR(ts), INTERVAL '5' SECOND))
+GROUP BY window_start, window_end;`
+    },
+    {
         title: "Temporal Join — enrich at event time (Faker)",
         mode: "STREAMING",
         schema: `-- Fact stream (event-time + watermark).

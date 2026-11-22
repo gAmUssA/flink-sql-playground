@@ -1,10 +1,11 @@
 ---
 # flink-sql-playground-it01
 title: Watermark timeline
-status: todo
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-11-22T18:06:36Z
-updated_at: 2026-11-22T18:06:36Z
+updated_at: 2026-11-22T19:38:07Z
 parent: flink-sql-playground-e6yy
 blocked_by:
     - flink-sql-playground-ip4e
