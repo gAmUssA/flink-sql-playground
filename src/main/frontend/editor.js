@@ -8,13 +8,14 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLi
   highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { EditorState, Prec } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { syntaxHighlighting, syntaxTree, HighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
+import { syntaxHighlighting, syntaxTree, HighlightStyle, indentOnInput, bracketMatching, LanguageSupport } from '@codemirror/language';
 import { autocompletion, completionKeymap, completionStatus, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
-import { sql, SQLDialect } from '@codemirror/lang-sql';
+import { SQLDialect, keywordCompletionSource } from '@codemirror/lang-sql';
 import { tags as t } from '@lezer/highlight';
 import { parseCreateTables, mergeTables, columnCandidates, statementAt, optionContext, optionCandidates,
-  tableAliases, expectsTableName, isDdlWithoutQuery, quoteIdentifier, FLINK_KEYWORDS, FLINK_TYPES } from './sql-schema.mjs';
+  tableAliases, expectsTableName, isDdlWithoutQuery, quoteIdentifier, qualifierBefore, sqlStringText,
+  FLINK_KEYWORDS, FLINK_TYPES } from './sql-schema.mjs';
 
 const FLINK_BUILTINS = [
   'proctime', 'current_watermark', 'source_watermark', 'to_timestamp', 'to_timestamp_ltz',
@@ -89,15 +90,15 @@ function tableColumnSource(tables) {
     if (isDdlWithoutQuery(stmt.text)) return null;
     const known = tables();
 
-    const qualified = ctx.matchBefore(/(?:`[^`]+`|[\w$]+)\.[\w$]*$/);
+    const qualified = qualifierBefore(before);
     if (qualified) {
-      const [qualifier] = qualified.text.split('.');
-      const alias = qualifier.replace(/`/g, '').toLowerCase();
-      const name = (tableAliases(stmt.text)[alias] || alias).toLowerCase();
+      const alias = qualified.qualifier.toLowerCase();
+      // Only the aliases of the query blocks around the cursor: a subquery's o shadows the outer o.
+      const name = (tableAliases(stmt.text, before.length)[alias] || alias).toLowerCase();
       const table = known.find((tb) => tb.name.toLowerCase() === name);
       if (!table) return null;
       return {
-        from: qualified.from + qualifier.length + 1,
+        from: ctx.pos - qualified.typed.length,
         options: (table.columns || []).map((c) => ({
           label: c.name, apply: quoteIdentifier(c.name), detail: c.type, type: 'property', boost: 2,
         })),
@@ -114,7 +115,7 @@ function tableColumnSource(tables) {
     if (expectsTableName(before)) {
       return { from, options: tableOptions.map((o) => ({ ...o, boost: 2 })), validFor: /^[\w$]*$/ };
     }
-    const columns = columnCandidates(stmt.text, known).map((c) => ({ ...c, type: 'property', boost: 1 }));
+    const columns = columnCandidates(stmt.text, known, before.length).map((c) => ({ ...c, type: 'property', boost: 1 }));
     return { from, options: [...columns, ...tableOptions], validFor: /^[\w$]*$/ };
   };
 }
@@ -129,15 +130,26 @@ function connectorOptionSource(ctx) {
   if (!labels.length) return null;
   return {
     from: ctx.pos - option.typed.length,
-    options: labels.map((label) => ({ label, type: option.kind === 'key' ? 'property' : 'enum' })),
+    // The text goes inside a quoted literal, so a column named a'b inserts fields.a''b.expression.
+    options: labels.map((label) => ({ label, apply: sqlStringText(label), type: option.kind === 'key' ? 'property' : 'enum' })),
     validFor: /^[\w.-]*$/,
   };
 }
 
-/** The Flink dialect with keyword completion, plus the table / column and connector sources. */
+const flinkKeywords = keywordCompletionSource(FlinkSQL, true);
+
+/** Keyword completion, except after `qualifier.`, where only that table's columns belong. */
+function keywordSource(ctx) {
+  return ctx.matchBefore(/[\w$`]\.[\w$]*$/) ? null : flinkKeywords(ctx);
+}
+
+/**
+ * The Flink dialect with keyword completion, plus the table / column and connector sources.
+ * Built from the language rather than sql(), whose keyword source would also answer after `t.`.
+ */
 function sqlSupport(tables) {
   return [
-    sql({ dialect: FlinkSQL, upperCaseKeywords: true }),
+    new LanguageSupport(FlinkSQL.language, [FlinkSQL.language.data.of({ autocomplete: keywordSource })]),
     FlinkSQL.language.data.of({ autocomplete: tableColumnSource(tables) }),
     FlinkSQL.language.data.of({ autocomplete: connectorOptionSource }),
   ];

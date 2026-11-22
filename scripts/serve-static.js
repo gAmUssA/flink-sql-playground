@@ -23,6 +23,22 @@ const TYPES = {
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json',
 };
 
+/**
+ * True when an Accept-Encoding header accepts gzip: gzip (or x-gzip) listed with a quality above
+ * 0, or, when it is not listed, * with a quality above 0. `identity, gzip;q=0` refuses gzip.
+ */
+function acceptsGzip(header) {
+  let any = false;
+  for (const entry of String(header || '').split(',')) {
+    const [coding, ...params] = entry.split(';').map((s) => s.trim().toLowerCase());
+    const q = params.map((p) => /^q=([0-9.]+)$/.exec(p)).find(Boolean);
+    const accepted = (q ? Number(q[1]) : 1) > 0;
+    if (coding === 'gzip' || coding === 'x-gzip') return accepted;
+    if (coding === '*') any = accepted;
+  }
+  return any;
+}
+
 function createServer(root) {
   const resolvedRoot = path.resolve(root);
   return http.createServer((req, res) => {
@@ -39,7 +55,7 @@ function createServer(root) {
     if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(resolvedRoot, 'index.html');
     const type = TYPES[path.extname(file)] || 'application/octet-stream';
     const headers = { 'Content-Type': type, 'Cache-Control': 'no-cache', Vary: 'Accept-Encoding' };
-    const gzip = /^(text\/|application\/json|image\/svg)/.test(type) && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    const gzip = /^(text\/|application\/json|image\/svg)/.test(type) && acceptsGzip(req.headers['accept-encoding']);
     if (gzip) {
       res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip' });
       fs.createReadStream(file).pipe(zlib.createGzip()).pipe(res);
@@ -56,4 +72,4 @@ if (require.main === module) {
   createServer(root).listen(port, '127.0.0.1', () => console.log(`serving ${root} on http://127.0.0.1:${port}`));
 }
 
-module.exports = { createServer };
+module.exports = { createServer, acceptsGzip };
