@@ -96,10 +96,11 @@ There is no manual deploy step. **Merging to `main` deploys.**
 
 - **Railway** builds the repo `Dockerfile` on every push to `main`. Service settings (builder,
   health check `/api/build-info`, Flyway pre-deploy, restart policy, resources, domain) are
-  Infrastructure as Code in `.railway/railway.ts`; `railway.json` is gone (Railway stopped
-  reading it on 2026-12-01). A merge deploys code but does not apply that file: after
-  changing it, run `railway config plan`, review, then `railway config apply`. Variables are
-  unmanaged (dashboard only). The repo is not linked by default; the Railway project is
+  Infrastructure as Code in `.railway/railway.ts`; `railway.json` is gone (Railway stops
+  reading it on 2026-12-01; this service moved off it on 2026-11-22). A merge deploys code at
+  once but never applies that file. Run `railway config plan`, review, then `railway config
+  apply` from the PR branch before merging when the settings work with the code on `main`;
+  stage changes tied to new code (see DEPLOY.md). Variables are unmanaged (dashboard only). The repo is not linked by default; the Railway project is
   `insightful-harmony`, environment `production`, service `flink-sql-playground`. It reports back as a GitHub deployment named
   `insightful-harmony / production`. Check it with
   `gh api repos/gAmUssA/flink-sql-playground/deployments` and the deployment's
