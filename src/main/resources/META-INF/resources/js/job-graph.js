@@ -199,7 +199,7 @@
       : '';
     return `<div class="rv-plan">
       <p class="pg-insight">${esc(insight)}</p>
-      <div class="pg-scroll"><div class="pg-forest">${trees}</div></div>
+      <div class="pg-scroll" tabindex="0" role="region" aria-label="Job graph"><div class="pg-forest">${trees}</div></div>
       ${advice}
       <details class="pg-raw"${opts.rawOpen ? ' open' : ''}><summary>Physical plan as text</summary><pre>${esc(plan.plan || '')}</pre></details>
     </div>`;
