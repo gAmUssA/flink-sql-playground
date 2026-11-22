@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("smoke")
@@ -56,6 +57,22 @@ class StreamingExecutionTest {
             this.truncated = truncated;
             this.ended = true;
         }
+    }
+
+    /** A job that fails while rows stream is an error, not a clean end with fewer rows. */
+    @Test
+    void aJobFailingMidStreamIsReportedNotEndedQuietly() throws Exception {
+        FlinkSession session = new FlinkSession("stream-fail", factory);
+        service.execute(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE words (w STRING) WITH (
+                    'connector' = 'datagen', 'number-of-rows' = '5', 'fields.w.length' = '6')
+                """);
+        // Random strings are not numbers: the cast fails at runtime, inside the job.
+        SqlExecutionService.StreamingQuery query = service.prepareStream(session, "SELECT CAST(w AS INT) FROM words");
+        CollectingListener listener = new CollectingListener();
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.streamRows(query, listener));
+        assertTrue(e.getMessage().startsWith("Query failed: "), e.getMessage());
+        assertFalse(listener.ended, "no clean end frame after a failure");
     }
 
     @Test

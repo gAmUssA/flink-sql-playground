@@ -54,7 +54,10 @@ considered:
 - The browser (`js/watermark-timeline.js`) decides each record's fate the way Flink's window
   operators do. A window has fired when `watermark >= window_end - 1 ms`. A record whose
   windows had all fired when it arrived is **dropped**. One whose windows only partly fired
-  (HOP, CUMULATE) **missed some windows**. One behind the watermark whose window was still
+  (HOP, CUMULATE) **missed some windows**: Flink 2.3's slice-based window aggregation drops a
+  record only once its last window has fired, and otherwise keeps it for the windows still
+  open, so the fired ones simply lack it (checked against the packaged
+  `SliceSharedSyncStateWindowAggProcessor` in Copilot's review). One behind the watermark whose window was still
   open is **late but counted**. Without windows, a record behind the watermark is **late**.
 - **The probe reads its own sample of the stream.** Generated sources (datagen, faker) produce
   new rows on every read, so the timeline's records and counts are not the rows of the user's
@@ -67,6 +70,11 @@ considered:
   MiniCluster slot, are spent only while someone views the timeline. On the server, a client
   that leaves after the probe was submitted but before the first frame gets the job cancelled
   as well; after that, `streamRows` cancels it on disconnect, row cap or deadline.
+- The chart zooms on a range of records (drag across it, the zoom buttons, or a trackpad
+  pinch), with event time refitted to what is visible. Every point where the watermark
+  advances is marked; zoomed in to 90 records or fewer, each step is labelled with how far it
+  jumped, and window fire lines with how many rows the window counted. With periodic watermarks
+  the steps are what Flink actually emits: a fast bounded faker table may see only two.
 - The tab is always visible. Without event time it explains why there is no timeline (400
   `NO_EVENT_TIME`); in batch mode it says watermarks belong to streaming mode.
 - A canonical preset, "Watermark Timeline: who misses the window", ships with it: datagen

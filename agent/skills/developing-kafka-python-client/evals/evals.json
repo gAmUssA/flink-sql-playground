@@ -1,0 +1,218 @@
+{
+  "skill_name": "developing-kafka-python-client",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "I need a Python Kafka producer for Confluent Cloud that sends user signup events with fields: user_id, email, plan_type, signed_up_at. I'm using FastAPI so I need async.",
+      "expected_output": "A Python project with an async producer.py using AIOProducer, common.py, schemas/value.schema.json, tests/test_project.py, .env.example, requirements.txt. Producer reuses a single instance, uses Schema Registry with JSON Schema, targets Confluent Cloud with SASL_SSL, has graceful shutdown. Tests pass with pytest.",
+      "files": [],
+      "assertions": [
+        "producer.py is generated",
+        "common.py is generated",
+        "JSON Schema is generated",
+        "Unit tests are generated",
+        "requirements.txt is generated",
+        ".env.example is generated",
+        "requirements.txt includes pytest",
+        "requirements.txt includes pytest-asyncio for async producer",
+        "produce() does not rely on a module-level global producer — the producer is injectable (parameter, fixture, or constructor arg) so tests can substitute a fake one",
+        "Async producer uses AsyncJSONSerializer",
+        "Producer uses AIOProducer for async",
+        "Producer flushes before closing",
+        "JSON Schema includes user_id field",
+        "JSON Schema includes field descriptions",
+        "Timestamp field uses date-time format",
+        "README.md is generated",
+        "All unit tests pass with pytest"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Create a Python consumer that reads order events from my Confluent Cloud topic",
+      "expected_output": "A Python project with consumer.py, common.py, schemas/value.schema.json, tests/test_project.py, .env.example, requirements.txt. Consumer uses Schema Registry with JSON Schema deserialization, targets Confluent Cloud, has graceful shutdown with unsubscribe/close. Tests pass with pytest.",
+      "files": [],
+      "assertions": [
+        "consumer.py is generated",
+        "common.py is generated",
+        "Unit tests are generated",
+        "Consumer uses JSONDeserializer",
+        "Consumer calls unsubscribe for clean shutdown",
+        "requirements.txt includes pytest",
+        "All unit tests pass with pytest"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "hey, can you set me up with a producer and consumer in python for iot sensor data (device_id, temperature, humidity, timestamp)? we're on confluent cloud and using aiohttp so it needs to be async",
+      "expected_output": "A Python project with async producer.py using AIOProducer, consumer.py, common.py, schemas/value.schema.json, tests/test_project.py, .env.example, requirements.txt. Both use Schema Registry, Confluent Cloud config, graceful shutdown. Producer reuses single instance. Tests pass with pytest.",
+      "files": [],
+      "assertions": [
+        "producer.py is generated",
+        "consumer.py is generated",
+        "common.py is generated",
+        "Unit tests are generated",
+        "JSON Schema includes device_id field",
+        "JSON Schema includes temperature field",
+        "JSON Schema includes field descriptions",
+        "Timestamp field uses date-time format",
+        "Producer uses AIOProducer for async",
+        "requirements.txt includes pytest",
+        "requirements.txt includes pytest-asyncio for async producer",
+        "All unit tests pass with pytest"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want to try Kafka locally with Docker. Set up a Python producer and consumer for order events (order_id, customer_id, product, quantity, price). This is a batch script so synchronous producer is fine.",
+      "expected_output": "A Python project with synchronous producer.py using Producer (not AIOProducer), consumer.py, common.py, docker-compose.yml, schemas/value.schema.json, tests/test_project.py, .env.example, requirements.txt. Uses PLAINTEXT for local Docker, docker-compose with Kafka and Schema Registry, graceful shutdown. Tests pass with pytest.",
+      "files": [],
+      "assertions": [
+        "producer.py is generated",
+        "consumer.py is generated",
+        "common.py is generated",
+        "docker-compose.yml is generated for local Docker",
+        "Unit tests are generated",
+        ".env.example sets KAFKA_ENV=local",
+        "common.py supports PLAINTEXT protocol",
+        "Producer uses synchronous Producer class with flush()",
+        "Producer uses JSONSerializer",
+        "Producer includes schema ID in message headers",
+        "JSON Schema includes order_id field",
+        "JSON Schema includes field descriptions",
+        "requirements.txt includes pytest",
+        "requirements.txt includes pytest-asyncio (consumer is always async)",
+        "README.md is generated",
+        "All unit tests pass with pytest"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I need a Python Kafka producer app",
+      "expected_output": "The skill should prompt the user about target environment (Confluent Cloud vs local Docker) and producer style (async vs synchronous) before generating. It should not assume either without asking. After gathering requirements, generates a complete project with producer.py, common.py, schema, tests, .env.example, requirements.txt.",
+      "files": [],
+      "assertions": [
+        "producer.py is generated",
+        "common.py is generated",
+        "Unit tests are generated",
+        "requirements.txt is generated",
+        ".env.example is generated",
+        "All unit tests pass with pytest"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "need a producer for a batch etl job -- reads csv rows (employee_id, department, salary, hire_date) and sends them to confluent cloud. keep it synchronous, this is just a script",
+      "expected_output": "A Python project with synchronous producer.py using Producer (not AIOProducer), common.py, schemas/value.schema.json, tests/test_project.py, .env.example, requirements.txt. Producer uses synchronous JSONSerializer and SchemaRegistryClient, calls poll()/flush(), has delivery callbacks. Tests pass with pytest.",
+      "files": [],
+      "assertions": [
+        "producer.py is generated",
+        "common.py is generated",
+        "JSON Schema is generated",
+        "Unit tests are generated",
+        "Producer uses synchronous JSONSerializer",
+        "Producer calls flush() for delivery",
+        "Producer calls poll() to serve callbacks",
+        "produce() does not rely on a module-level global producer — the producer is injectable (parameter, fixture, or constructor arg) so tests can substitute a fake one",
+        "Producer includes schema ID in message headers",
+        "JSON Schema includes employee_id field",
+        "JSON Schema includes field descriptions",
+        "requirements.txt includes pytest",
+        "All unit tests pass with pytest"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "I have an order-events topic that carries three event types: OrderCreated, OrderUpdated, and OrderCancelled. I need an async Python producer on Confluent Cloud that can produce all three event types to the same topic.",
+      "expected_output": "A Python project with an async producer using AIOProducer that produces multiple event types to a single topic. The JSON Schema uses oneOf with $ref to define a union of event types, each with an event_type discriminator field. Uses TopicNameStrategy (default) — no RecordNameStrategy. Tests pass with pytest.",
+      "files": [],
+      "assertions": [
+        "producer.py is generated",
+        "common.py is generated",
+        "JSON Schema is generated",
+        "Unit tests are generated",
+        "Schema uses oneOf for union of event types",
+        "Schema uses $ref to reference sub-schemas",
+        "Schema defines sub-schemas in $defs",
+        "Sub-schemas include event_type discriminator field",
+        "Schema includes OrderCreated event type",
+        "Schema includes OrderCancelled event type",
+        "JSON Schema includes field descriptions",
+        "Producer uses AIOProducer for async",
+        "Producer does NOT use RecordNameStrategy",
+        "Producer uses default TopicNameStrategy with the union schema",
+        "requirements.txt includes pytest",
+        "requirements.txt includes pytest-asyncio for async producer",
+        "All unit tests pass with pytest"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "I have an existing FastAPI app that produces JSON messages to Kafka without Schema Registry. Here's my current producer code in evals/files/existing_producer.py:\n\n```python\n# evals/files/existing_producer.py\nfrom confluent_kafka import Producer\nimport json\nimport os\n\nproducer = Producer({'bootstrap.servers': os.environ['BOOTSTRAP_SERVER']})\n\ndef send_event(topic: str, event: dict):\n    producer.produce(topic, value=json.dumps(event).encode('utf-8'))\n    producer.poll(0)\n```\n\nI want to add Schema Registry integration. I'm on Confluent Cloud. My events look like: {\"user_id\": \"abc\", \"action\": \"page_view\", \"url\": \"/home\", \"timestamp\": \"2026-04-13T10:00:00Z\"}",
+      "expected_output": "The skill should NOT scaffold a brand new project. It should: (1) generate a JSON Schema from the existing message structure, (2) generate common.py and schemas/value.schema.json, (3) modify the existing producer code to use JSONSerializer with Schema Registry instead of raw json.dumps, (4) set auto.register.schemas=false. The modified producer should preserve the existing function signature as much as possible.",
+      "files": ["evals/files/existing_producer.py"],
+      "assertions": [
+        "Existing producer file is modified to use Schema Registry serialization",
+        "Existing producer no longer uses raw json.dumps for serialization",
+        "JSON Schema is generated from the existing message structure",
+        "Generated schema includes user_id from existing message structure",
+        "Generated schema includes action field",
+        "Generated schema includes descriptions",
+        "Timestamp field uses date-time format",
+        "Skill did NOT scaffold a new top-level producer.py",
+        "Skill modifies the existing producer file in place",
+        "Serializer has auto.register.schemas disabled"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "I need a Python Kafka producer and consumer for WarpStream. Synchronous producer. Sending device telemetry events with fields: device_id, temperature, humidity, battery_level, timestamp.",
+      "expected_output": "A Python project targeting WarpStream with synchronous producer.py, consumer.py, common.py, schemas/value.schema.json, tests/test_project.py, .env.example, requirements.txt. Producer uses WarpStream-optimized librdkafka config: idempotence disabled, large batch sizes, high in-flight requests. Consumer uses large fetch sizes. .env.example has KAFKA_ENV=warpstream and client.id with ws_az=. Tests pass with pytest.",
+      "files": [],
+      "assertions": [
+        "producer.py is generated",
+        "consumer.py is generated",
+        "common.py is generated",
+        "Unit tests are generated",
+        ".env.example is generated",
+        ".env.example sets KAFKA_ENV=warpstream",
+        ".env.example includes ws_az for zone-aware routing",
+        "JSON Schema includes device_id field",
+        "JSON Schema includes temperature field",
+        "JSON Schema includes field descriptions",
+        "Producer uses synchronous Producer class with flush()",
+        "Producer uses JSONSerializer",
+        "requirements.txt includes pytest",
+        "README.md is generated",
+        "All unit tests pass with pytest"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "I need an async Python Kafka producer for Confluent Cloud that sends payment events with fields: payment_id, amount, currency, status. I'm using FastAPI.",
+      "expected_output": "The skill's first response is a recap of the gathered requirements (target environment, components, producer style) as a short bulleted summary, plus an explicit request for the user to confirm or correct before anything is generated. The skill does not generate producer.py or any other project file in this first turn, even though the prompt already answers the required questions.",
+      "files": [],
+      "assertions": [
+        "Assistant's first response includes a bulleted recap of the gathered requirements (target environment, producer style, components)",
+        "Assistant's first response explicitly asks the user to confirm or correct the recap",
+        "Assistant does NOT generate producer.py, common.py, or any project file in the first response",
+        "Assistant does not proceed to generate files without waiting for user confirmation, even though the prompt fully answered the required questions"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "I want a Python producer for Confluent Cloud. I already have a JSON Schema registered for click events -- here it is: {\"type\": \"object\", \"properties\": {\"session_id\": {\"type\": \"string\"}, \"page\": {\"type\": \"string\"}, \"clicked_at\": {\"type\": \"string\", \"format\": \"date-time\"}}, \"required\": [\"session_id\", \"page\", \"clicked_at\"]}. Please use this instead of generating a new one. Synchronous producer is fine.",
+      "expected_output": "The skill uses the user-provided JSON Schema as schemas/value.schema.json instead of generating a new schema from field names. It still generates common.py, producer.py, tests, .env.example, requirements.txt for a synchronous Confluent Cloud producer. Tests pass with pytest.",
+      "files": [],
+      "assertions": [
+        "producer.py is generated",
+        "common.py is generated",
+        "Unit tests are generated",
+        "schemas/value.schema.json matches the user-provided schema rather than a newly generated one",
+        "Generated schema includes session_id field from the user-provided schema",
+        "Skill does not ask the user for field names or types since a schema was already provided",
+        "requirements.txt includes pytest",
+        "All unit tests pass with pytest"
+      ]
+    }
+  ]
+}

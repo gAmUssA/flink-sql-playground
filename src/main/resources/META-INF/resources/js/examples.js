@@ -24,10 +24,12 @@ ORDER BY user_id;`
     {
         title: "Tumbling Window",
         mode: "STREAMING",
-        schema: `CREATE TEMPORARY TABLE sensor_readings (
+        schema: `-- PROCTIME() is processing time: the wall clock when a row reaches Flink. Windows
+-- close by that clock, so the table needs no WATERMARK (and nothing is ever late).
+CREATE TEMPORARY TABLE sensor_readings (
     sensor_id INT,
     temperature DOUBLE,
-    event_time AS PROCTIME()
+    proc_time AS PROCTIME()
 ) WITH (
     'connector' = 'datagen',
     'rows-per-second' = '10',
@@ -41,14 +43,16 @@ SELECT sensor_id, window_start, window_end,
     COUNT(*) AS reading_count,
     ROUND(AVG(temperature), 1) AS avg_temp
 FROM TABLE(
-    TUMBLE(TABLE sensor_readings, DESCRIPTOR(event_time), INTERVAL '10' SECOND)
+    TUMBLE(TABLE sensor_readings, DESCRIPTOR(proc_time), INTERVAL '10' SECOND)
 )
 GROUP BY sensor_id, window_start, window_end;`
     },
     {
         title: "Hopping Window",
         mode: "STREAMING",
-        schema: `CREATE TEMPORARY TABLE clicks (
+        schema: `-- PROCTIME() is processing time: the wall clock when a row reaches Flink. Windows
+-- close by that clock, so the table needs no WATERMARK (and nothing is ever late).
+CREATE TEMPORARY TABLE clicks (
     user_id INT,
     page STRING,
     click_time AS PROCTIME()
@@ -70,7 +74,9 @@ GROUP BY user_id, window_start, window_end;`
     {
         title: "Cumulate Window",
         mode: "STREAMING",
-        schema: `CREATE TEMPORARY TABLE page_views (
+        schema: `-- PROCTIME() is processing time: the wall clock when a row reaches Flink. Windows
+-- close by that clock, so the table needs no WATERMARK (and nothing is ever late).
+CREATE TEMPORARY TABLE page_views (
     page_id INT,
     view_time AS PROCTIME()
 ) WITH (
@@ -90,7 +96,9 @@ GROUP BY page_id, window_start, window_end;`
     {
         title: "Interval Join",
         mode: "STREAMING",
-        schema: `CREATE TEMPORARY TABLE orders_stream (
+        schema: `-- Both times are PROCTIME(): when each row reaches Flink, not when the order or
+-- shipment happened. No WATERMARK is needed; for event time, see the Temporal Join.
+CREATE TEMPORARY TABLE orders_stream (
     order_id INT,
     product_id INT,
     order_time AS PROCTIME()
@@ -114,10 +122,12 @@ CREATE TEMPORARY TABLE shipments (
     'fields.shipment_id.kind' = 'sequence',
     'fields.shipment_id.start' = '1',
     'fields.shipment_id.end' = '100',
-    'fields.order_ref.min' = '1',
-    'fields.order_ref.max' = '5'
+    'fields.order_ref.kind' = 'sequence',
+    'fields.order_ref.start' = '1',
+    'fields.order_ref.end' = '100'
 );`,
-        query: `-- Join orders with shipments within a time interval
+        query: `-- Join orders with shipments that ARRIVE within 10 seconds of each other.
+-- The interval bounds the state: Flink forgets a row once no partner can still match.
 SELECT
     o.order_id,
     o.product_id,
@@ -125,7 +135,7 @@ SELECT
     o.order_time,
     s.ship_time
 FROM orders_stream o, shipments s
-WHERE o.product_id = s.order_ref
+WHERE o.order_id = s.order_ref
     AND o.order_time BETWEEN s.ship_time - INTERVAL '10' SECOND
                          AND s.ship_time + INTERVAL '10' SECOND;`
     },
@@ -285,7 +295,7 @@ CREATE TEMPORARY TABLE sensor_readings (
     temperature_c   DOUBLE,
     pressure_psi    DOUBLE,
     ph_level        DOUBLE,
-    event_time      AS PROCTIME()
+    proc_time       AS PROCTIME()   -- processing time: windows close by the wall clock
 ) WITH (
     'connector' = 'faker',
     'rows-per-second' = '100',
@@ -296,25 +306,39 @@ CREATE TEMPORARY TABLE sensor_readings (
     'fields.pressure_psi.expression' = '#{Number.randomDouble ''2'',''5'',''30''}',
     'fields.ph_level.expression' = '#{Number.randomDouble ''2'',''3'',''6''}'
 );`,
-        query: `-- Real-time tank dashboard: 5-second tumbling windows
+        query: `-- Real-time tank dashboard: 5-second tumbling windows.
+-- Aggregate INSIDE the window first, then enrich. The window aggregate fires once
+-- per window and forgets its rows. (Join first and GROUP BY window_start afterwards,
+-- and it is no longer a window: a plain aggregation that updates forever. The Job
+-- Graph tab shows the difference: WindowAggregate vs GroupAggregate.) The two joins
+-- after it are regular joins, so they still keep state and re-emit a window's row
+-- when a tank or recipe row changes.
+WITH per_tank AS (
+    SELECT window_start, window_end, tank_id, recipe_id,
+        COUNT(*)           AS readings,
+        AVG(temperature_c) AS avg_temp_c,
+        AVG(pressure_psi)  AS avg_pressure,
+        AVG(ph_level)      AS avg_ph
+    FROM TABLE(
+        TUMBLE(TABLE sensor_readings, DESCRIPTOR(proc_time), INTERVAL '5' SECOND)
+    )
+    GROUP BY window_start, window_end, tank_id, recipe_id
+)
 SELECT
+    p.window_start,
+    p.tank_id,
+    p.recipe_id,
     t.tank_name,
     t.tank_type,
     r.beer_name,
     r.style,
-    COUNT(*)                            AS readings,
-    ROUND(AVG(s.temperature_c), 2)      AS avg_temp_c,
-    ROUND(AVG(s.pressure_psi), 2)       AS avg_pressure,
-    ROUND(AVG(s.ph_level), 2)           AS avg_ph
-FROM TABLE(
-    TUMBLE(TABLE sensor_readings, DESCRIPTOR(event_time), INTERVAL '5' SECOND)
-) s
-JOIN tanks t ON s.tank_id = t.tank_id
-JOIN recipes r ON s.recipe_id = r.recipe_id
-GROUP BY
-    t.tank_name, t.tank_type,
-    r.beer_name, r.style,
-    window_start, window_end;`
+    p.readings,
+    ROUND(p.avg_temp_c, 2)   AS avg_temp_c,
+    ROUND(p.avg_pressure, 2) AS avg_pressure,
+    ROUND(p.avg_ph, 2)       AS avg_ph
+FROM per_tank p
+JOIN tanks t ON p.tank_id = t.tank_id
+JOIN recipes r ON p.recipe_id = r.recipe_id;`
     },
     {
         title: "Batch vs Streaming",
@@ -469,8 +493,10 @@ GROUP BY window_start, window_end;
         title: "Late Data & the Watermark Dial (Faker)",
         mode: "STREAMING",
         schema: `-- The SAME 15s-scattered faker data, but a DELIBERATELY TIGHT 5s watermark.
--- Rows whose event_time is older than (max_seen - 5s) arrive "late" and get
--- dropped before they reach the window. This is the completeness/latency dial.
+-- Flink emits the watermark (max event time seen - 5s) periodically, every 200 ms.
+-- A row behind the watermark is late, but it still counts while its window is
+-- open. Once the watermark passes a window's end the window fires, and any row
+-- for it that arrives later is dropped. Open the Timeline tab to watch it happen.
 CREATE TEMPORARY TABLE txn_events (
     txn_id     STRING,
     card_id    INT,
@@ -479,19 +505,21 @@ CREATE TEMPORARY TABLE txn_events (
     WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
 ) WITH (
     'connector' = 'faker',
+    'rows-per-second' = '50',
     'number-of-rows' = '500',
     'fields.txn_id.expression' = '#{Internet.UUID}',
     'fields.card_id.expression' = '#{Number.numberBetween ''1'',''8''}',
     'fields.amount.expression' = '#{Number.randomDouble ''2'',''5'',''500''}',
     'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
 );`,
-        query: `-- Add up the per-window "txns" counts: the total comes out LESS than the 500 rows
--- generated, because late rows were silently dropped. Run it twice — it even moves.
+        query: `-- Add up the per-window "txns" counts: the total usually comes out LESS than the
+-- 500 rows generated, because rows that missed their window were silently dropped.
+-- The data is random, so run it twice: the loss moves.
 SELECT window_start, window_end, COUNT(*) AS txns
 FROM TABLE(TUMBLE(TABLE txn_events, DESCRIPTOR(event_time), INTERVAL '10' SECOND))
 GROUP BY window_start, window_end;
 -- FIX: widen the WATERMARK to cover the real spread — event_time - INTERVAL '15' SECOND —
---      and the counts add back up to 500. Tight watermark = lower latency, more loss.`
+--      and the counts add up to 500. Tight watermark = windows fire sooner, more loss.`
     },
     {
         title: "Watermark Timeline: who misses the window",
@@ -518,7 +546,8 @@ CREATE TEMPORARY TABLE clicks (
 -- is a 5-second window, and it fires when the watermark crosses its top edge.
 -- RED dots arrived after their window had fired: Flink dropped them, so the counts
 -- below are short. Set the WATERMARK to ts - INTERVAL '10' SECOND, Build Schema and
--- run again: no red dots, every click counted, and each result 8 seconds later.
+-- run again: no red dots, every click counted, and windows fire about 8 seconds
+-- later (the last ones close together when the 500 rows run out, either way).
 SELECT window_start, window_end, COUNT(*) AS clicks
 FROM TABLE(TUMBLE(TABLE clicks, DESCRIPTOR(ts), INTERVAL '5' SECOND))
 GROUP BY window_start, window_end;`
@@ -544,32 +573,47 @@ CREATE TEMPORARY TABLE txn_events (
     'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
 );
 
--- A VERSIONED dimension table: needs a PRIMARY KEY and its own WATERMARK.
-CREATE TEMPORARY TABLE fx_rates (
+-- Rate updates arrive as an append-only stream (like a Kafka topic): many rows
+-- per currency, each with the time it took effect, and its own WATERMARK.
+CREATE TEMPORARY TABLE fx_rate_updates (
     ccy         STRING,
     rate_to_eur DOUBLE,
     rate_time   TIMESTAMP(3),
-    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND,
-    PRIMARY KEY (ccy) NOT ENFORCED
+    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND
 ) WITH (
     'connector' = 'faker',
     'number-of-rows' = '50',
     'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
     'fields.rate_to_eur.expression' = '#{Number.randomDouble ''3'',''0'',''2''}',
     'fields.rate_time.expression' = '#{date.past ''20'',''SECONDS''}'
-);`,
-        query: `-- Enrich each txn with the FX rate as it was AT THE TXN'S EVENT TIME.
+);
+
+-- A temporal join needs a VERSIONED table: a primary key plus event time. This
+-- deduplication (latest row per ccy, by rate_time) is how Flink derives one
+-- from an append-only stream: it infers PRIMARY KEY (ccy) and keeps every version.
+CREATE TEMPORARY VIEW fx_rates AS
+SELECT ccy, rate_to_eur, rate_time
+FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY ccy ORDER BY rate_time DESC) AS rn
+    FROM fx_rate_updates
+)
+WHERE rn = 1;`,
+        query: `-- Enrich each txn with the FX rate as it was AT THE TXN'S EVENT TIME. Flink waits
+-- for BOTH watermarks to pass a txn's time before it emits the row.
 SELECT
     t.txn_id,
+    t.ccy,
     t.amount,
     r.rate_to_eur,
     ROUND(t.amount * r.rate_to_eur, 2) AS amount_eur
 FROM txn_events AS t
-JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
+LEFT JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
   ON t.ccy = r.ccy;
--- GOTCHA: the right side MUST be versioned — PRIMARY KEY + WATERMARK. Forget the
---         watermark on the dimension and Flink can't reconstruct "the rate as of 9:42",
---         so the join just refuses. People blame the join; it's the DDL.`
+-- LEFT JOIN: a txn older than its currency's first rate gets a NULL rate instead of
+-- vanishing (an inner join would silently drop it).
+-- GOTCHA: the right side MUST be versioned — a primary key plus a WATERMARK. Point the
+--         join at the raw fx_rate_updates and Flink refuses: it can't tell which row
+--         is "the rate as of 9:42". People blame the join; it's the DDL.`
     },
     {
         title: "Fraud: Impossible Travel (MATCH_RECOGNIZE)",

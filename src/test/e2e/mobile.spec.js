@@ -202,6 +202,18 @@ test('the job graph of a join fits the phone: it scrolls inside, the page does n
   expect(fits, 'the graph box stays inside the window').toBe(true);
 });
 
+test('on a phone the timeline zoom controls are tappable and the chart stays in the window', async ({ page }) => {
+  await page.locator('#mode-segmented [data-mode="STREAMING"]').tap();
+  await page.locator('.m-views [data-mview="results"]').tap();
+  await page.locator('.rtab[data-tab="timeline"]').tap();
+  await page.locator('#timeline-record-btn').tap();
+  await expect(page.locator('.wt-dot').first()).toBeVisible();
+  await page.locator('[data-wt-zoom="in"]').tap();
+  await expect(page.locator('[data-wt-zoom="reset"]')).toBeEnabled();
+  await expectNoHorizontalScroll(page);
+  await expectTouchTargets(page);
+});
+
 test('every visible control is at least 44px in each view', async ({ page }) => {
   for (const view of ['query', 'schema', 'results']) {
     await page.locator(`.m-views [data-mview="${view}"]`).tap();

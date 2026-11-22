@@ -604,8 +604,19 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 .wt-stat b { color: var(--text); font-weight: 600; }
 .wt-stat.is-dropped b { color: var(--op-d); }
 .wt-stat.is-late b, .wt-stat.is-partial b { color: var(--op-uu); }
-.wt-chart { overflow: hidden; }
-.wt-svg { display: block; }
+.wt-chart { overflow: hidden; position: relative; }
+/* A horizontal drag selects records to zoom into; vertical drags still scroll the page. */
+.wt-svg { display: block; touch-action: pan-y; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.wt-brush { position: absolute; top: 0; bottom: 0; background: color-mix(in oklab, var(--accent) 18%, transparent); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); pointer-events: none; }
+.wt-zoom { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.wt-zoom-btn { min-width: 32px; height: 28px; padding: 0 8px; border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-family: var(--mono); font-size: 12px; cursor: pointer; }
+.wt-zoom-btn:hover:not(:disabled) { border-color: color-mix(in oklab, var(--accent) 60%, transparent); }
+.wt-zoom-btn:disabled { opacity: .45; cursor: default; }
+.wt-zoom-hint { font-size: 11.5px; color: var(--text-3); margin-left: 4px; }
+@media (pointer: coarse) { .wt-zoom-btn { min-width: 44px; height: 44px; } }
+.wt-wm-step { fill: var(--surface); stroke: var(--text-2); stroke-width: 1.5; }
+.wt-wm-label { font-family: var(--mono); font-size: 10.5px; fill: var(--text-2); }
+.wt-fire-label { font-family: var(--mono); font-size: 10px; fill: var(--accent); }
 .wt-band { fill: color-mix(in oklab, var(--accent) 9%, transparent); }
 .wt-band.alt { fill: color-mix(in oklab, var(--accent) 16%, transparent); }
 .wt-band.is-open { fill: color-mix(in oklab, var(--text-3) 8%, transparent); }
