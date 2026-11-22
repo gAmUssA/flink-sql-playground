@@ -384,8 +384,6 @@ svg { display: block; }
 .rv-table tbody tr.is-flash td { background: color-mix(in oklab, var(--accent) 16%, transparent); transition: none; }
 .rv-key { color: var(--accent) !important; font-weight: 600; }
 .rv-null { color: var(--text-3); font-style: italic; }
-.rv-op-badge { font-family: var(--mono); font-size: 10px; font-weight: 700; }
-.rv-op-badge.op-i { color: var(--op-i); } .rv-op-badge.op-uu { color: var(--op-uu); } .rv-op-badge.op-du { color: var(--op-du); } .rv-op-badge.op-d { color: var(--op-d); }
 td.al-right, th.al-right { text-align: right; }
 
 /* ---- Table column filtering ---- */
@@ -445,14 +443,27 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
 @keyframes logIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
 .rv-op { font-weight: 700; font-size: 12px; width: 26px; flex: 0 0 auto; }
 .rv-op-label { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; width: 62px; flex: 0 0 auto; }
-.op-i { border-left: 3px solid var(--op-i); } .op-i .rv-op, .op-i .rv-op-label { color: var(--op-i); }
-.op-uu { border-left: 3px solid var(--op-uu); } .op-uu .rv-op, .op-uu .rv-op-label { color: var(--op-uu); }
-.op-du { border-left: 3px solid var(--op-du); } .op-du .rv-op, .op-du .rv-op-label { color: var(--op-du); }
-.op-d { border-left: 3px solid var(--op-d); } .op-d .rv-op, .op-d .rv-op-label { color: var(--op-d); }
+/* The op stripe marks changelog rows only; the op toggles (.rv-op-toggle.op-*) carry their op
+   in the mark's colour and the border instead. */
+.rv-log-row.op-i { border-left: 3px solid var(--op-i); } .rv-log-row.op-i .rv-op, .rv-log-row.op-i .rv-op-label { color: var(--op-i); }
+.rv-log-row.op-uu { border-left: 3px solid var(--op-uu); } .rv-log-row.op-uu .rv-op, .rv-log-row.op-uu .rv-op-label { color: var(--op-uu); }
+.rv-log-row.op-du { border-left: 3px solid var(--op-du); } .rv-log-row.op-du .rv-op, .rv-log-row.op-du .rv-op-label { color: var(--op-du); }
+.rv-log-row.op-d { border-left: 3px solid var(--op-d); } .rv-log-row.op-d .rv-op, .rv-log-row.op-d .rv-op-label { color: var(--op-d); }
 /* A retracted row reads as superseded through muted cell text, not opacity, so it keeps 4.5:1. */
 .rv-log-row.op-du .rv-log-cell { color: var(--text-2); }
-.rv-log-vals { display: flex; gap: 16px; flex-wrap: wrap; }
-.rv-log-cell { color: var(--text); }
+/* One line per event, however wide the row or long its values: the values scroll sideways inside
+   the row instead of wrapping, so every row is one line tall and fits any results box that shows
+   a row at all (#72). Wrapped, a row grew with its values, up to 278px against a 216px box at
+   320x568. The zero min-width lets the values shrink below their width and scroll. Values cut
+   off at the row's end fade out there, which says there is more (overlay scrollbars show only
+   while scrolling); the end padding lets the last value scroll clear of the fade. */
+.rv-log-vals {
+  display: flex; gap: 16px; flex-wrap: nowrap; flex: 1 1 auto; min-width: 0; padding-right: 20px;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+.rv-log-cell { color: var(--text); flex: 0 0 auto; white-space: nowrap; }
 .rv-log-cell i { color: var(--text-3); font-style: normal; margin-right: 6px; }
 
 /* ---- Changelog stream-control bar (op toggles + highlight search) ---- */
@@ -794,12 +805,11 @@ th.th-filtered { box-shadow: inset 0 -2px 0 var(--accent); }
        568x320): the bar scrolls away with the rows, so the pinned headers never sit under it. */
     .rv-filterbar { position: static; }
     /* The changelog's bar (148px) scrolls away too, and the rows and the list around them are
-       tighter, so the newest row shows whole in the 77px box at 568x320 after a run (rows 70px,
-       down from 124px). */
+       tighter, so more of the 77px box at 568x320 goes to rows. */
     .rv-log-bar { position: static; }
     .rv-log { padding: 4px 12px; }
     .rv-log-row { padding: 4px 9px; gap: 8px; }
-    .rv-log-vals { gap: 0 12px; }
+    .rv-log-vals { gap: 12px; }
   }
 
   /* The keyboard open on a phone held sideways leaves a window at most 260px tall: while a code

@@ -727,10 +727,11 @@ function matchFilter(val, f) {
 // wrapping on narrow screens: --filterbar-h on the results box follows it, and is 0 where the bar
 // scrolls with the rows. Each render replaces the bar, so it is observed afresh.
 // A box too short for the pinned bar and what must show below it (the header row and one row of
-// the table, or the tallest changelog row: every rendered row is measured, as any of the up to
-// MAX_LOG events may wrap tallest) gets .bar-scrolls: the bar scrolls away with the rows, as it
-// does on wider sideways phones. That is a phone held sideways below the 560px floor (such as
-// 540x400), or an upright 375x667 phone, whose changelog rows wrap to 247px.
+// the table, or the tallest changelog row) gets .bar-scrolls: the bar scrolls away with the rows,
+// as it does on wider sideways phones. That is a phone held sideways below the 560px floor (such
+// as 540x400). Changelog rows keep their values on one line (#72), but every rendered row is
+// still measured: one of the up to MAX_LOG events whose values overflow carries a sideways
+// scrollbar where scrollbars take room, and is that much taller.
 const resultsBarObserver = new ResizeObserver(() => fitResultsBar());
 function fitResultsBar() {
   const box = document.getElementById('results-container');

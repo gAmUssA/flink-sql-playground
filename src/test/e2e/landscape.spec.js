@@ -3,7 +3,7 @@
 // projects, in Chromium and WebKit (see playwright.config.js). mobile.spec.js runs there too.
 const { test, expect } = require('@playwright/test');
 const { openApp, fontsReady, layoutState, layoutOf, PHONE, DESKTOP } = require('./layout');
-const { runManyRows, runRetractions, scrollResults, headerHits, openEachFilter, changelogReach, opTogglesWork } = require('./results-bars');
+const { runManyRows, runRetractions, runLongTail, scrollResults, headerHits, openEachFilter, changelogReach, opTogglesWork } = require('./results-bars');
 const { measureContrast, settleAnimations } = require('./contrast');
 
 const MIN_CONTENT = 160;
@@ -399,6 +399,48 @@ for (const [width, height] of [[568, 320], [667, 375], [844, 390], [915, 412]]) 
     const p = await search.evaluate((el) => { const q = el.getBoundingClientRect(); return { x: q.left + q.width / 2, y: q.top + q.height / 2 }; });
     await page.touchscreen.tap(p.x, p.y);
     await expect(search).toBeFocused();
+  });
+}
+
+// A changelog row used to wrap its values, so a wide or long event grew taller than the results
+// box and never showed whole: 124px against an 88px box at 540x388, 155px against 110px at
+// 480x410, 278px against 216px at 320x568, and the long tail's 55th event against the 77px box at
+// 568x320 (#72). The values now stay on one line and scroll sideways inside their row. 320x568 is
+// an upright 4-inch phone; it runs here, with the other sizes, rather than on every phone project.
+for (const [width, height] of [[568, 320], [540, 388], [559, 420], [480, 410], [320, 568]]) {
+  test(`at ${width}x${height}, every changelog row fits the results box, its values on one line`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await runLongTail(page, true);
+    await fontsReady(page);
+    const g = await page.locator('#results-container').evaluate((box) => {
+      const b = box.getBoundingClientRect();
+      const left = b.left + box.clientLeft, right = left + box.clientWidth;
+      const rows = [...box.querySelectorAll('.rv-log-row')];
+      const vals = rows.map((r) => r.querySelector('.rv-log-vals'));
+      return { box: box.clientHeight,
+        tallest: Math.max(...rows.map((r) => r.getBoundingClientRect().height)),
+        // Rows wider than the box, and values that wrapped onto a second line.
+        wide: rows.filter((r) => { const q = r.getBoundingClientRect(); return q.left < left - 0.5 || q.right > right + 0.5; }).length,
+        wrapped: vals.filter((v) => new Set([...v.children].map((c) => Math.round(c.getBoundingClientRect().top))).size > 1).length,
+        longScrolls: vals[54].scrollWidth > vals[54].clientWidth + 1 };
+    });
+    expect(g.box, 'results box height').toBeGreaterThan(0);
+    expect(g.tallest, `tallest row against the ${g.box}px box`).toBeLessThanOrEqual(g.box);
+    expect({ wide: g.wide, wrapped: g.wrapped, longScrolls: g.longScrolls }).toEqual({ wide: 0, wrapped: 0, longScrolls: true });
+    // The end of the long event's last value (wider than the row) scrolls sideways into view; scrollLeft
+    // is whole pixels, so on a fractional layout the end may sit up to 1px past the edge.
+    const end = await page.locator('.rv-log-row').nth(54).evaluate(async (row) => {
+      const v = row.querySelector('.rv-log-vals');
+      v.scrollLeft = v.scrollWidth;
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      const last = v.lastElementChild.getBoundingClientRect(), view = v.getBoundingClientRect();
+      return { scrolled: v.scrollLeft > 0, endInView: last.right <= view.right + 1 && last.right > view.left };
+    });
+    expect(end).toEqual({ scrolled: true, endInView: true });
+    const r = await changelogReach(page);
+    expect(r.rows).toBe(60);
+    expect(r.unreachable, 'rows never shown whole').toEqual([]);
+    expect(r.atEnd, 'whole rows shown after the run').toBeGreaterThanOrEqual(1);
   });
 }
 

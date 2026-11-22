@@ -35,7 +35,7 @@ async function runRetractions(page, touch) {
   await runStream(page, touch, 'retractions', 8);
 }
 
-/** Runs the streaming query whose 60 events include a 55th that wraps taller than the 50 before it. */
+/** Runs the streaming query whose 60 events include a 55th whose long values overflow its row. */
 async function runLongTail(page, touch) {
   await runStream(page, touch, 'long tail', 60);
 }

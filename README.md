@@ -85,6 +85,9 @@ node scripts/serve-static.js 8790 &                   # then, in another step:
 node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95 performance=85 transfer-kb=400
 ```
 
+Add `--theme=nebula`, `--theme=carbon` or `--theme=cobalt` to audit one theme; without it the
+page follows the browser's colour scheme, as on a first visit.
+
 The tests serve on port 8790 and reuse a server already listening there, except on CI. Set
 `E2E_PORT` (for example `E2E_PORT=8796 npx playwright test`) when another checkout serves 8790.
 

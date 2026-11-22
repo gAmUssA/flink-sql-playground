@@ -14,9 +14,25 @@ async function openApp(page) {
  * one face at a time as text first needs it, so a measurement taken before the swap sees the
  * fallback font's sizes and one taken after sees Plex's (#66). Reading layout first starts the
  * loads that text rendered since the last frame needs; with nothing loading it returns at once.
+ *
+ * The faces are declared by the fonts stylesheet (#webfonts), so that is awaited first: while it
+ * is pending there is nothing for document.fonts to wait on, and Chromium resolves fonts.ready
+ * at once (WebKit waits). stubApi records when the sheet settles, as a failed sheet looks pending;
+ * a page opened without it waits for the sheet at most 5 seconds.
  */
 async function fontsReady(page) {
-  await page.evaluate(() => { void document.body.offsetHeight; return document.fonts.ready.then(() => undefined); });
+  await page.evaluate(async () => {
+    const link = document.getElementById('webfonts');
+    if (link && link.rel === 'stylesheet' && !link.sheet && !window.__webfontsSettled) {
+      await new Promise((resolve) => {
+        link.addEventListener('load', resolve, { once: true });
+        link.addEventListener('error', resolve, { once: true });
+        if (!('__webfontsSettled' in window)) setTimeout(resolve, 5000);
+      });
+    }
+    void document.body.offsetHeight;
+    await document.fonts.ready;
+  });
 }
 
 /** What the phone criterion says, and what the page actually shows. */
