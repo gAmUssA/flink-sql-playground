@@ -671,23 +671,17 @@ class ExampleQueriesSmokeTest {
                     'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
                     'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
                 );
-                CREATE TEMPORARY TABLE fx_rate_updates (
+                CREATE TEMPORARY TABLE fx_rates (
                     ccy STRING, rate_to_eur DOUBLE, rate_time TIMESTAMP(3),
-                    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND
+                    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND,
+                    PRIMARY KEY (ccy) NOT ENFORCED
                 ) WITH (
                     'connector' = 'faker',
                     'number-of-rows' = '50',
                     'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
                     'fields.rate_to_eur.expression' = '#{Number.randomDouble ''3'',''0'',''2''}',
                     'fields.rate_time.expression' = '#{date.past ''20'',''SECONDS''}'
-                );
-                CREATE TEMPORARY VIEW fx_rates AS
-                SELECT ccy, rate_to_eur, rate_time
-                FROM (
-                    SELECT *, ROW_NUMBER() OVER (PARTITION BY ccy ORDER BY rate_time DESC) AS rn
-                    FROM fx_rate_updates
                 )
-                WHERE rn = 1
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
@@ -699,10 +693,13 @@ class ExampleQueriesSmokeTest {
 
         assertTrue(result.columnNames().containsAll(List.of("txn_id", "amount_eur")));
         assertTrue(result.rowCount() > 0, "Expected at least one temporally-joined row");
-        // The deduplicated view is versioned: most txns find a rate as of their event time.
+        // Every rate is a version, so nearly every txn finds the rate in effect at its time: rates
+        // reach 20 s back, txns 15 s. A "latest per ccy" ROW_NUMBER view instead drops rates that
+        // arrive out of order and left ~35-50% of txns without a rate (2026-11-23).
         int rateIdx = result.columnNames().indexOf("rate_to_eur");
         long enriched = result.rows().stream().filter(r -> r.get(rateIdx) != null).count();
-        assertTrue(enriched > 0, "Expected txns enriched with a rate from the versioned view");
+        assertTrue(enriched >= result.rowCount() * 0.9,
+                "Expected nearly every txn enriched, got " + enriched + " of " + result.rowCount());
     }
 
     @Test

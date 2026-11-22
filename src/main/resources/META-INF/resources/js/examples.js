@@ -573,31 +573,25 @@ CREATE TEMPORARY TABLE txn_events (
     'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
 );
 
--- Rate updates arrive as an append-only stream (like a Kafka topic): many rows
--- per currency, each with the time it took effect, and its own WATERMARK.
-CREATE TEMPORARY TABLE fx_rate_updates (
+-- A VERSIONED table: a PRIMARY KEY plus event time. Every rate row is a new
+-- version of its currency, in effect from its rate_time; the temporal join keeps
+-- all of them and picks the one valid at each txn's time, even when rates
+-- arrive out of order. (A ROW_NUMBER "latest per ccy" view would NOT do here:
+-- it only keeps rates that arrive newer than the last one, so out-of-order
+-- rates never become versions and older txns find no rate.)
+CREATE TEMPORARY TABLE fx_rates (
     ccy         STRING,
     rate_to_eur DOUBLE,
     rate_time   TIMESTAMP(3),
-    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND
+    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND,
+    PRIMARY KEY (ccy) NOT ENFORCED
 ) WITH (
     'connector' = 'faker',
     'number-of-rows' = '50',
     'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
     'fields.rate_to_eur.expression' = '#{Number.randomDouble ''3'',''0'',''2''}',
     'fields.rate_time.expression' = '#{date.past ''20'',''SECONDS''}'
-);
-
--- A temporal join needs a VERSIONED table: a primary key plus event time. This
--- deduplication (latest row per ccy, by rate_time) is how Flink derives one
--- from an append-only stream: it infers PRIMARY KEY (ccy) and keeps every version.
-CREATE TEMPORARY VIEW fx_rates AS
-SELECT ccy, rate_to_eur, rate_time
-FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY ccy ORDER BY rate_time DESC) AS rn
-    FROM fx_rate_updates
-)
-WHERE rn = 1;`,
+);`,
         query: `-- Enrich each txn with the FX rate as it was AT THE TXN'S EVENT TIME. Flink waits
 -- for BOTH watermarks to pass a txn's time before it emits the row.
 SELECT
@@ -611,9 +605,9 @@ LEFT JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
   ON t.ccy = r.ccy;
 -- LEFT JOIN: a txn older than its currency's first rate gets a NULL rate instead of
 -- vanishing (an inner join would silently drop it).
--- GOTCHA: the right side MUST be versioned — a primary key plus a WATERMARK. Point the
---         join at the raw fx_rate_updates and Flink refuses: it can't tell which row
---         is "the rate as of 9:42". People blame the join; it's the DDL.`
+-- GOTCHA: the right side MUST be versioned — a PRIMARY KEY plus a WATERMARK. Drop
+--         either and Flink refuses: it can't tell which row is "the rate as of 9:42".
+--         People blame the join; it's the DDL.`
     },
     {
         title: "Fraud: Impossible Travel (MATCH_RECOGNIZE)",

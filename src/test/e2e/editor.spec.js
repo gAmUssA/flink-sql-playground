@@ -155,7 +155,7 @@ test('the Interval Join preset offers shipments columns after s.', async ({ page
 });
 
 test('the Temporal Join preset offers fx_rates columns after r.', async ({ page }) => {
-  // LEFT JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r, fx_rates being a versioned view
+  // LEFT JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
   const labels = await presetQualifierLabels(page, 'Temporal Join — enrich at event time (Faker)', 'r.rate_to_eur');
   await expect.poll(labels).toEqual(['ccy', 'rate_time', 'rate_to_eur']);
 });

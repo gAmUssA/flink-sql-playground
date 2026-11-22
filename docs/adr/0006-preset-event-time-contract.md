@@ -59,10 +59,18 @@ Nothing stopped a future preset, or an edit to one, from quietly breaking any of
   the joins after the window still keep state). Processing-time presets name the column
   `proc_time` (or describe arrival, as in the interval join, which now matches each shipment to
   its own order) and say in a comment that PROCTIME needs no WATERMARK.
-- The temporal join reads a versioned view built the way Flink documents for an append-only
-  stream (latest row per key by event time with ROW_NUMBER), not a PRIMARY KEY declared on an
-  insert-only faker table. It is a LEFT JOIN, so a transaction older than its currency's first
-  rate keeps a NULL rate instead of vanishing. The editor's autocomplete now reads view columns.
+- The temporal join keeps its versioned table as a PRIMARY KEY plus event time on the rates
+  table: every rate row is a version of its currency from its `rate_time`, and the join picks
+  the one valid at each transaction's time. It is now a LEFT JOIN, so a transaction older than
+  its currency's first rate keeps a NULL rate instead of vanishing.
+  Copilot's review proposed the ROW_NUMBER "latest per key" view that Flink documents for
+  append-only streams instead, and #79 shipped it. Measured in production it left 35-50% of
+  transactions without a rate (the primary-key table: none). That view keeps only rows newer
+  than the latest seen, and faker writes rates out of event-time order, so most rates never
+  became versions. #80 restored the table, and `ExampleQueriesSmokeTest` now requires at least
+  90% of transactions to be enriched. The dedup view is the right tool when versions arrive in
+  event-time order, which this generator does not guarantee. The editor's autocomplete reads
+  view columns either way.
 - The lossy "Late Data" preset is paced at 50 rows per second, so its loss comes from many
   periodic watermarks rather than from where one timer tick happens to fall, and its comments
   separate a late row (behind the watermark, still counted) from a dropped one (its window had
@@ -73,7 +81,8 @@ Nothing stopped a future preset, or an edit to one, from quietly breaking any of
 - Easier: a new event-time preset has to say what its watermark is for, and the build checks
   the claim twice, once from the SQL and once by running it.
 - Deferred: the E-Commerce and Brewmaster "dimension" tables declare PRIMARY KEYs on insert-only
-  faker data too, so regular joins treat duplicate inserts as unique keys. That is not about
+  faker data, so regular joins treat duplicate inserts as unique keys (in a temporal join the
+  same declaration is what makes each insert a version, which is intended). That is not about
   event time; it is tracked as bean flink-sql-playground-nhqw.
 - Harder: a generator whose scatter the static test cannot read (anything other than faker
   `date.past` or datagen `max-past`) needs the test taught first.
