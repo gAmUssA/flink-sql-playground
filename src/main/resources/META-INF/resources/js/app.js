@@ -1091,6 +1091,8 @@ function renderJobGraph() {
 }
 
 function updateSinkCount() {
+  // Only the plan of the query whose rows are arriving carries its count.
+  if (!R.plan || R.plan.key !== R.ranKey) return;
   const el = document.querySelector('#results-container .pg-sink-count');
   if (el) el.textContent = `${R.rowsReceived.toLocaleString('en-US')} rows received`;
 }

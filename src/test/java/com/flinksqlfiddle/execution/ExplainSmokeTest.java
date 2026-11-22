@@ -169,6 +169,10 @@ class ExplainSmokeTest {
         ddl(ORDERS);
         ExplainResult plan = service.explain(session, ExecutionMode.STREAMING, "EXPLAIN SELECT id FROM orders");
         assertEquals("Sink: collect", plan.nodes().get(plan.roots().getFirst()).label());
+        // Flink's grammar has no nested EXPLAIN: a syntax error, reported as a user error.
+        NotExplainableException nested = assertThrows(NotExplainableException.class, () -> service.explain(
+                session, ExecutionMode.STREAMING, "EXPLAIN PLAN FOR EXPLAIN /* twice */ SELECT id FROM orders"));
+        assertEquals("INVALID_SQL", nested.code());
     }
 
     @Test

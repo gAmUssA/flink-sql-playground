@@ -223,6 +223,45 @@ class PlanParserTest {
         assertEquals(new PlanAdvice(2, "ADVICE", "second"), r.advice().get(1));
     }
 
+    /** Every shape at once: two sinks, a reused sub-plan, a join, quotes, advice that wraps. */
+    @Test
+    void multiSinkReuseJoinAndWrappedAdviceTogether() {
+        ExplainResult r = PlanParser.parse("""
+                == Optimized Physical Plan With Advice ==
+                Sink(table=[default_catalog.default_database.totals], fields=[k, c], upsertMaterialize=[true], changelogMode=[NONE])
+                +- GroupAggregate(advice=[1], groupBy=[k], select=[k, COUNT(*) AS c], changelogMode=[I,UB,UA])
+                   +- Exchange(distribution=[hash[k]], changelogMode=[I])
+                      +- Join(joinType=[InnerJoin], where=[AND(=(k, k0), =(name, _UTF-16LE'a]b''c'))], select=[k, k0], changelogMode=[I])
+                         :- [#1] Calc(select=[k], where=[<>(k, _UTF-16LE'[x')], changelogMode=[I])
+                         :  +- TableSourceScan(table=[[default_catalog, default_database, `my.events`]], fields=[k], changelogMode=[I])
+                         +- Exchange(distribution=[hash[k0]], changelogMode=[I])
+                            +- Calc(select=[k AS k0], changelogMode=[I])
+                               +- Reused(reference_id=[1])
+
+                Sink(table=[default_catalog.default_database.audit], fields=[k], changelogMode=[NONE])
+                +- Reused(reference_id=[1])
+
+                advice[1]: [WARNING] The state of GroupAggregate can grow without bound,
+                consider setting 'table.exec.state.ttl'.
+
+                == Optimized Execution Plan ==
+                """, ExecutionMode.STREAMING);
+
+        assertTrue(r.nodes().stream().noneMatch(n -> n.attrs().containsKey("_raw")));
+        assertEquals(List.of("Sink: totals", "Sink: audit"), r.roots().stream().map(i -> r.nodes().get(i).label()).toList());
+        assertEquals("unbounded", r.nodes().get(r.roots().get(0)).state(), "upsertMaterialize");
+        int shared = byKind(r, "TableSourceScan").id() - 1; // the [#1] Calc sits right above the scan
+        assertEquals("Calc", r.nodes().get(shared).kind());
+        assertEquals("<>(k, _UTF-16LE'[x')", r.nodes().get(shared).attrs().get("where"));
+        assertEquals("Source: my.events", byKind(r, "TableSourceScan").label());
+        // The shared Calc feeds the join's left side, the right side's Calc, and the audit sink.
+        long feeders = r.nodes().stream().filter(n -> n.inputs().contains(shared)).count();
+        assertEquals(3, feeders);
+        assertEquals("AND(=(k, k0), =(name, _UTF-16LE'a]b''c'))", byKind(r, "Join").attrs().get("where"));
+        assertEquals(new PlanAdvice(1, "WARNING",
+                "The state of GroupAggregate can grow without bound, consider setting 'table.exec.state.ttl'."), r.advice().getFirst());
+    }
+
     @Test
     void missingSectionIsAnError() {
         assertThrows(IllegalStateException.class,

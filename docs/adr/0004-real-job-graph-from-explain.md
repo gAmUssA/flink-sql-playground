@@ -84,5 +84,8 @@ Options considered for which plan:
   `scripts/dump-presets.mjs` through the Gradle `dumpPresets` task) and fails on an
   unreachable operator, a raw attribute list, or a missing changelog mode, and it checks
   that an aggregate reports `[I,UB,UA]` through the collect sink.
+- Planning has no timeout, as for `/execute`: both plan on the session's planner thread, and a
+  Calcite plan cannot be cancelled midway. `/explain` takes no slot, so it is cheaper to call
+  in a loop than `/execute`. Rate limits per session are tracked as follow-up work.
 - Later work (the watermark timeline) can reuse the plan to find the rowtime column and the
   window spec instead of matching SQL text.

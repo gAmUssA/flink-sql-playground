@@ -137,7 +137,7 @@ public class SqlExecutionService {
      * changelog modes match the rows the user will see: a bare {@code explainSql} of a SELECT
      * plans without a sink, and an aggregate then reports {@code [I,UA]} where the collected
      * stream carries {@code [I,UB,UA]}. An INSERT or a statement set is planned as written.
-     * A leading EXPLAIN is unwrapped. Anything else (DDL, SHOW, CTAS) is rejected: planning
+     * Leading EXPLAINs are unwrapped. Anything else (DDL, SHOW, CTAS) is rejected: planning
      * a CTAS goes through table creation, and DDL has no plan.
      *
      * <p>Planning submits no job and takes no MiniCluster slot. It runs on the session's planner
@@ -166,7 +166,7 @@ public class SqlExecutionService {
             throw new NotExplainableException("Explain one statement at a time");
         }
         Operation operation = operations.getFirst();
-        if (operation instanceof ExplainOperation explain) {
+        while (operation instanceof ExplainOperation explain) {
             operation = explain.getChild();
         }
         List<Operation> targets = explainTargets(operation);
