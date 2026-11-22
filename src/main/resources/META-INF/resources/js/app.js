@@ -1045,13 +1045,16 @@ async function refreshSchemaBrowser() {
   if (!sessionId) return;
   try {
     const res = await fetch(api(`/api/sessions/${sessionId}/tables`));
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     schemaTables = data.tables || [];
     updateEditorTables();
     confirmingDrop = null;
     renderSchemaBrowser();
-  } catch (e) { /* convenience feature */ }
+  } catch (e) {
+    // The browser keeps the last list it showed; the status bar belongs to the statement that ran.
+    console.warn('Schema browser refresh failed:', e);
+  }
 }
 
 function renderSchemaBrowser() {
