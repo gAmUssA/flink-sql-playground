@@ -185,6 +185,23 @@ test('no horizontal page scroll in any view, with or without results', async ({ 
   }
 });
 
+// A streaming join plan is wider than a phone: it scrolls sideways inside the graph, the page
+// never does, and the graph's controls stay tappable.
+test('the job graph of a join fits the phone: it scrolls inside, the page does not', async ({ page }) => {
+  await page.locator('#mode-segmented [data-mode="STREAMING"]').tap();
+  await page.locator('#run-query-btn').tap();
+  await expect(page.locator('#run-query-btn .run-label')).toHaveText('Run Query');
+  await page.locator('.m-views [data-mview="results"]').tap();
+  await page.locator('.rtab[data-tab="graph"]').tap();
+  await expect(page.locator('.pg-node')).toHaveCount(6);
+  await expectNoHorizontalScroll(page);
+  await expectTouchTargets(page);
+  const summary = await page.locator('.pg-raw summary').boundingBox();
+  expect(summary.height).toBeGreaterThanOrEqual(MIN_TARGET);
+  const fits = await page.locator('.pg-scroll').evaluate((el) => el.getBoundingClientRect().right <= window.innerWidth + 0.5);
+  expect(fits, 'the graph box stays inside the window').toBe(true);
+});
+
 test('every visible control is at least 44px in each view', async ({ page }) => {
   for (const view of ['query', 'schema', 'results']) {
     await page.locator(`.m-views [data-mview="${view}"]`).tap();

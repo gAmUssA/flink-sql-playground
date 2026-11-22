@@ -4,7 +4,8 @@ Notes for coding agents working in this repo. Read this before you build, test, 
 dependencies or deploy. It records what earlier sessions had to figure out the hard way.
 
 Deeper docs: `docs/ARCHITECTURE.md` (system design, packages, test layers),
-`docs/STARTUP.md` (cold start), `docs/adr/` (shared MiniCluster, AOT cache, CodeMirror),
+`docs/STARTUP.md` (cold start), `docs/adr/` (shared MiniCluster, AOT cache, CodeMirror,
+job graph from EXPLAIN),
 `DEPLOY.md` (Railway, Supabase, Fly, VPS).
 
 ## What this is
@@ -55,9 +56,14 @@ npx playwright test   # browser tests, static server + stubbed API, no backend
   must keep it.
 - Lighthouse (CI thresholds): `node scripts/serve-static.js 8790 &` then
   `node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95 performance=85 transfer-kb=400`.
-- Shipped example queries (`js/examples.js`) are executed by `ExampleQueriesSmokeTest` and
-  their table qualifiers are checked by `src/test/js/preset-qualifiers.test.js`. Editor
-  autocomplete changes must keep every preset working.
+- Shipped example queries (`js/examples.js`) are executed by `ExampleQueriesSmokeTest`,
+  planned by `ExplainSmokeTest` (the Gradle `dumpPresets` task exports them to JSON with
+  `scripts/dump-presets.mjs`; smokeTest depends on it), and their table qualifiers are
+  checked by `src/test/js/preset-qualifiers.test.js`. Editor autocomplete changes and new
+  presets must keep every preset working.
+- The Job Graph tab is the real optimized plan (`/explain`, `PlanParser`, `js/job-graph.js`;
+  ADR 0004). A Flink upgrade can change the text plan format or the internal
+  `CollectModifyOperation` API it relies on: run `ExplainSmokeTest` after any Flink bump.
 
 ## Dependencies: where versions live
 
@@ -109,6 +115,11 @@ There is no manual deploy step. **Merging to `main` deploys.**
   (tests passed, skipped), and a **Follow-ups** list. Advisory review findings that are not
   fixed go into a new issue and are linked, not dropped.
 - Worktrees for parallel agents live under `.claude/worktrees/` (gitignored).
-- On the maintainer's machine a git guard blocks plain `git push` to this (non-Confluent)
-  repo. Agents must not work around it. Commit locally and ask the maintainer to run
-  `git push-external -u origin <branch>`, then open the PR with `gh pr create`.
+- Work is tracked as beans (`.beans/`, `beans prime` for the CLI guide). Commit bean files
+  with the code they describe. Record decisions that later work depends on as an ADR in
+  `docs/adr/`.
+- On the maintainer's machine a git guard (Airlock) blocks plain `git push` to this
+  (non-Confluent) repo. Push with `zsh -ic 'git push-external -u origin <branch>'`:
+  `push-external` comes from the maintainer's zsh config, so a non-interactive shell does
+  not see it. It scans every commit in the pushed history (about a minute). Never push with
+  `/opt/homebrew/bin/git` or `/usr/bin/git` to skip the guard. Then `gh pr create`.

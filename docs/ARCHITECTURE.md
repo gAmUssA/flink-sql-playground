@@ -18,7 +18,8 @@ Flink SQL Playground is a Quarkus 3.40 web application that embeds Apache Flink 
           ▼                 ▼                 │
 ┌─────────────────────────────────────────────────────────┐
 │  REST API (Quarkus REST / JAX-RS)                       │
-│  /api/sessions  /api/sessions/{id}/execute  /api/fiddles│
+│  /api/sessions  /api/sessions/{id}/execute|explain      │
+│  /api/fiddles                                           │
 ├─────────────────────────────────────────────────────────┤
 │  SessionManager        SqlExecutionService              │
 │  (Caffeine cache)      (validate → execute → collect)   │
@@ -59,6 +60,10 @@ A query execution follows this path:
 5. **Execution** — The query runs on the session's dedicated planner thread via `session.runOnPlannerThread()`. This is required because Calcite's `RelMetadataQuery` uses thread-local state.
 6. **Result collection** — A `CompletableFuture` iterates `TableResult.collect()` with a 15-second collection timeout (for unbounded streams) and a 1000-row cap. A 30-second hard timeout kills the Flink job if collection stalls.
 7. **Response** — `ExecuteResponse` returns columns, column types, rows, row kinds (+I, +U, -U, -D), execution time, and a truncated flag.
+
+### Job graph (EXPLAIN)
+
+`POST /api/sessions/{id}/explain` takes the same `{ sql, mode }` body and returns the optimized physical plan without running anything: operator nodes with their inputs, changelog mode (`I`, `UB`, `UA`, `D`), state kind (`unbounded`, `time-bounded`, `pattern`) and plan advice. A SELECT is planned through the same collect sink `executeSql` uses, so its changelog modes match the rows the changelog tab shows. `PlanParser` reads Flink's text plan; `js/job-graph.js` draws it in the Job Graph tab. DDL, SHOW and CTAS return 400. See [ADR 0004](adr/0004-real-job-graph-from-explain.md).
 
 ## Session Management
 

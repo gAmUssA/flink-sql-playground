@@ -1,13 +1,27 @@
 package com.flinksqlfiddle.execution;
 
+import com.flinksqlfiddle.execution.plan.ExplainResult;
+import com.flinksqlfiddle.execution.plan.PlanParser;
 import com.flinksqlfiddle.security.SqlSecurityValidator;
 import com.flinksqlfiddle.session.FlinkSession;
 import com.flinksqlfiddle.util.SqlText;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.core.execution.JobClient;
+import org.apache.flink.table.api.ExplainDetail;
+import org.apache.flink.table.api.ExplainFormat;
+import org.apache.flink.table.api.SqlParserException;
 import org.apache.flink.table.api.TableEnvironment;
+import org.apache.flink.table.api.ValidationException;
+import org.apache.flink.table.api.internal.TableEnvironmentInternal;
 import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.catalog.ResolvedSchema;
+import org.apache.flink.table.operations.CollectModifyOperation;
+import org.apache.flink.table.operations.ExplainOperation;
+import org.apache.flink.table.operations.ModifyOperation;
+import org.apache.flink.table.operations.Operation;
+import org.apache.flink.table.operations.QueryOperation;
+import org.apache.flink.table.operations.SinkModifyOperation;
+import org.apache.flink.table.operations.StatementSetOperation;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.util.CloseableIterator;
@@ -115,6 +129,75 @@ public class SqlExecutionService {
                 : session.getStreamEnv();
 
         return executeOnSessionThread(session, tEnv, sql);
+    }
+
+    /**
+     * Returns the optimized physical plan of {@code sql} without running it. A query is planned
+     * with the same collect sink that {@link #execute} and {@link #prepareStream} attach, so the
+     * changelog modes match the rows the user will see: a bare {@code explainSql} of a SELECT
+     * plans without a sink, and an aggregate then reports {@code [I,UA]} where the collected
+     * stream carries {@code [I,UB,UA]}. An INSERT or a statement set is planned as written.
+     * Leading EXPLAINs are unwrapped. Anything else (DDL, SHOW, CTAS) is rejected: planning
+     * a CTAS goes through table creation, and DDL has no plan.
+     *
+     * <p>Planning submits no job and takes no MiniCluster slot. It runs on the session's planner
+     * thread, like every other TableEnvironment call (see {@link FlinkSession}). See
+     * docs/adr/0004-real-job-graph-from-explain.md.
+     */
+    public ExplainResult explain(FlinkSession session, ExecutionMode mode, String sql) {
+        validator.validate(sql);
+        TableEnvironment tEnv = (mode == ExecutionMode.BATCH) ? session.getBatchEnv() : session.getStreamEnv();
+        String text;
+        try {
+            text = session.runOnPlannerThread(() -> explainText(tEnv, mode, sql));
+        } catch (ValidationException | SqlParserException e) {
+            throw new NotExplainableException(e.getMessage(), "INVALID_SQL");
+        }
+        return PlanParser.parse(text, mode);
+    }
+
+    @VisibleForTesting
+    static String explainText(TableEnvironment tEnv, ExecutionMode mode, String sql) {
+        if (!(tEnv instanceof TableEnvironmentInternal internal)) {
+            throw new IllegalStateException("TableEnvironment does not expose the planner");
+        }
+        List<Operation> operations = internal.getParser().parse(sql);
+        if (operations.size() != 1) {
+            throw new NotExplainableException("Explain one statement at a time");
+        }
+        Operation operation = operations.getFirst();
+        while (operation instanceof ExplainOperation explain) {
+            operation = explain.getChild();
+        }
+        List<Operation> targets = explainTargets(operation);
+        // PLAN_ADVICE is streaming-only: the batch planner throws UnsupportedOperationException.
+        ExplainDetail[] details = mode == ExecutionMode.STREAMING
+                ? new ExplainDetail[]{ExplainDetail.CHANGELOG_MODE, ExplainDetail.PLAN_ADVICE}
+                : new ExplainDetail[0];
+        log.debug("Explaining [{}]: {}", mode, SqlText.truncate(sql));
+        return internal.explainInternal(targets, ExplainFormat.TEXT, details);
+    }
+
+    /** The operations to plan; a statement set is planned as its INSERTs, together. */
+    private static List<Operation> explainTargets(Operation operation) {
+        if (operation instanceof QueryOperation query) {
+            return List.of(new CollectModifyOperation(query));
+        }
+        if (isPlainInsert(operation)) {
+            return List.of(operation);
+        }
+        if (operation instanceof StatementSetOperation set
+                && !set.getOperations().isEmpty()
+                && set.getOperations().stream().allMatch(SqlExecutionService::isPlainInsert)) {
+            return List.copyOf(set.getOperations());
+        }
+        throw new NotExplainableException(
+                "Only queries, INSERT statements and statement sets have a job graph");
+    }
+
+    /** An INSERT into an existing table. Subclasses (CTAS, RTAS staging) create tables. */
+    private static boolean isPlainInsert(Operation operation) {
+        return operation instanceof ModifyOperation && operation.getClass() == SinkModifyOperation.class;
     }
 
     public List<TableInfo> listTables(FlinkSession session) {

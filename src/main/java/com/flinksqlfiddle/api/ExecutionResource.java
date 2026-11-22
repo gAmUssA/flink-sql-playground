@@ -7,6 +7,7 @@ import com.flinksqlfiddle.execution.QueryResult;
 import com.flinksqlfiddle.execution.ResultStreamListener;
 import com.flinksqlfiddle.execution.SqlExecutionService;
 import com.flinksqlfiddle.execution.SqlExecutionService.StreamingQuery;
+import com.flinksqlfiddle.execution.plan.ExplainResult;
 import com.flinksqlfiddle.session.FlinkSession;
 import com.flinksqlfiddle.session.SessionManager;
 import io.smallrye.common.annotation.Blocking;
@@ -68,6 +69,20 @@ public class ExecutionResource {
         FlinkSession session = sessionManager.getSession(sessionId);
         QueryResult result = executionService.execute(session, request.mode(), request.sql());
         return ExecuteResponse.from(result);
+    }
+
+    /**
+     * Returns the optimized physical plan of a query without running it: the operator DAG with
+     * each operator's changelog mode and state, plus Flink's plan advice. Feeds the Graph tab.
+     */
+    @POST
+    @Path("/explain")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RunOnVirtualThread
+    public ExplainResult explain(@PathParam("sessionId") String sessionId,
+                                 @Valid ExecuteRequest request) {
+        FlinkSession session = sessionManager.getSession(sessionId);
+        return executionService.explain(session, request.mode(), request.sql());
     }
 
     /**

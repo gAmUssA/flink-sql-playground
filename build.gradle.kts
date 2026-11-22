@@ -171,6 +171,17 @@ tasks.test {
     configureTestLogging()
 }
 
+// The shipped example presets as JSON, so ExplainSmokeTest can plan every one of them.
+val presetsJson = layout.buildDirectory.file("presets/presets.json")
+val dumpPresets by tasks.registering(Exec::class) {
+    description = "Writes js/examples.js presets as JSON for the smoke tests"
+    group = "verification"
+    inputs.files("src/main/resources/META-INF/resources/js/examples.js", "scripts/dump-presets.mjs",
+        "src/main/frontend/sql-schema.mjs")
+    outputs.file(presetsJson)
+    commandLine("node", "scripts/dump-presets.mjs", presetsJson.get().asFile.path)
+}
+
 // Separate task for slow smoke tests (Flink MiniCluster). Run sequentially since each
 // test spins up a full MiniCluster and needs significant memory.
 tasks.register<Test>("smokeTest") {
@@ -183,6 +194,9 @@ tasks.register<Test>("smokeTest") {
     }
     maxParallelForks = 1
     jvmArgs("-Xmx1g")
+    dependsOn(dumpPresets)
+    inputs.file(presetsJson)
+    systemProperty("presets.json", presetsJson.get().asFile.path)
     configureTestLogging(streams = true)
 }
 

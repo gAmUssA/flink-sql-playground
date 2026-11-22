@@ -130,7 +130,11 @@ const R = {
   running: false,
   truncated: false,
   executionTimeMs: 0,
-  jobNodes: ['Source', 'Operator', 'Sink: collect'],
+  rowsReceived: 0,            // every row the sink has received (log is capped at MAX_LOG)
+  // Job graph: the optimized plan from /explain. key = mode + query text it was planned for.
+  plan: null,                 // { key, status: 'loading' | 'ok' | 'error', data, error, code }
+  ranKey: null,               // plan key of the query whose results are shown
+  planRawOpen: false,         // the "physical plan as text" disclosure stays open across renders
   filters: {},               // colIndex -> { op, v, v2 }
   clMuted: {},               // changelog: op -> true when that op type is muted/hidden
   clSearch: '',              // changelog: free-text search query
@@ -399,6 +403,8 @@ async function buildSchema() {
       if (!res.ok) { const err = await res.json(); setStatus('Schema error: ' + err.error, 'error'); return; }
     }
     setStatus('Schema built', 'ready');
+    R.plan = null; // tables changed: the cached plan may be stale
+    if (activeTab === 'graph') { ensurePlan(); renderActiveView(); }
     await refreshSchemaBrowser();
   } catch (err) {
     setStatus('Schema error: ' + err.message, 'error');
@@ -417,6 +423,7 @@ function setRunningUI(running) {
   btn.querySelector('[data-icon], svg')?.remove();
   btn.insertAdjacentHTML('afterbegin', iconSvg(running ? 'stop' : 'play', 14));
   document.getElementById('res-run').style.display = running ? '' : 'none';
+  if (activeTab === 'graph') renderActiveView();
 }
 
 async function runQuery() {
@@ -425,6 +432,9 @@ async function runQuery() {
   const query = queryEditor.getValue().trim();
   if (!query) { setStatus('No query to execute', 'ready'); return; }
   resetResults();
+  R.ranKey = planKey(getMode(), query);
+  // Plan alongside the run (not before it): planning takes no slot and adds no wait to rows.
+  fetchPlan(query, getMode());
   if (isPhoneLayout()) setPhoneView('results');
   if (getMode() === 'STREAMING') await runStreamingQuery(query);
   else await runBatchQuery(query);
@@ -518,7 +528,7 @@ async function runStreamingQuery(query) {
 function resetResults() {
   R.columns = []; R.columnTypes = []; R.aligns = [];
   R.materialized = new Map(); R.log = []; R.samples = [];
-  R.truncated = false; R.executionTimeMs = 0; R.err = null;
+  R.truncated = false; R.executionTimeMs = 0; R.err = null; R.rowsReceived = 0;
   R.filters = {};
   R.clMuted = {}; R.clSearch = '';
   closeFilterPopover();
@@ -531,7 +541,6 @@ function setSchema(columns, columnTypes) {
   R.columns = columns || [];
   R.columnTypes = columnTypes || [];
   R.aligns = R.columnTypes.map((t) => isNumericType(t) ? 'right' : 'left');
-  R.jobNodes = deriveJobNodes();
   renderActiveView();
 }
 
@@ -542,6 +551,7 @@ function isNumericType(t) {
 function ingestRow(kind, values) {
   // changelog
   R.log.push({ op: kind, values });
+  R.rowsReceived++;
   if (R.log.length > MAX_LOG) R.log = R.log.slice(R.log.length - MAX_LOG);
   // materialized (upsert keyed on first column)
   const key = values.length ? String(values[0]) : String(R.materialized.size);
@@ -570,18 +580,43 @@ function startThroughput() {
 }
 function stopThroughput() { if (throughputTimer) clearInterval(throughputTimer); throughputTimer = null; }
 
-/* ---- job graph derivation ---- */
-function deriveJobNodes() {
-  const q = (queryEditor ? queryEditor.getValue() : '').toUpperCase();
-  let op = 'Calc';
-  if (/\bGROUP\s+BY\b/.test(q) && /(TUMBLE|HOP|CUMULATE|WINDOW)/.test(q)) op = 'WindowAggregate';
-  else if (/\bGROUP\s+BY\b/.test(q)) op = 'GroupAggregate';
-  else if (/ROW_NUMBER|\bRANK\b|OVER\s*\(/.test(q)) op = 'OverAggregate';
-  else if (/\bJOIN\b/.test(q)) op = 'Join';
-  // source table name from FROM clause
-  const m = (queryEditor ? queryEditor.getValue() : '').match(/FROM\s+`?([A-Za-z0-9_]+)`?/i);
-  const src = m ? 'Source: ' + m[1] : 'Source';
-  return [src, op, 'Sink: collect'];
+/* ---- job graph: the optimized plan from /explain ---- */
+let planRequest = 0;
+function planKey(mode, query) { return mode + '\n' + query; }
+
+// Plans `query` without running it. The newest request wins: an older response that lands
+// late (the user switched mode or ran another query) is dropped.
+async function fetchPlan(query, mode) {
+  const key = planKey(mode, query);
+  const req = ++planRequest;
+  R.plan = { key, status: 'loading' };
+  if (activeTab === 'graph') renderActiveView();
+  let next;
+  try {
+    const res = await fetch(api(`/api/sessions/${sessionId}/explain`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql: query, mode })
+    });
+    const body = await res.json().catch(() => ({}));
+    next = res.ok && Array.isArray(body.nodes)
+      ? { key, status: 'ok', data: body }
+      : { key, status: 'error', error: body.error || `Planning failed (HTTP ${res.status})`, code: body.code };
+  } catch (err) {
+    next = { key, status: 'error', error: err.message };
+  }
+  if (req !== planRequest) return;
+  R.plan = next;
+  if (activeTab === 'graph') renderActiveView();
+}
+
+// Opening the Graph tab plans what the editor holds, unless a query is running: then the graph
+// keeps showing the plan of the running query.
+function ensurePlan() {
+  if (!sessionId || !queryEditor || R.running) return;
+  const query = queryEditor.getValue().trim();
+  if (!query) return;
+  if (R.plan && R.plan.key === planKey(getMode(), query) && R.plan.status !== 'error') return;
+  fetchPlan(query, getMode());
 }
 
 /* ============================== Rendering ============================== */
@@ -590,7 +625,10 @@ function scheduleRender() {
   renderScheduled = true;
   requestAnimationFrame(() => {
     renderScheduled = false;
-    if (activeTab === 'table' || activeTab === 'graph') renderActiveView();
+    if (activeTab === 'table') renderActiveView();
+    // The graph only changes when the plan arrives or the run starts or stops; per row, just
+    // the sink's count moves. A full render per frame would reset its scroll and disclosure.
+    else if (activeTab === 'graph') updateSinkCount();
     // Changelog: patch only the rows + counts so the live search input keeps focus
     // while the user types and rows stream in. Full render only when the bar isn't up yet.
     else if (activeTab === 'changelog') {
@@ -603,6 +641,7 @@ function scheduleRender() {
 function setActiveTab(tab) {
   activeTab = tab;
   if (tab !== 'table') closeFilterPopover();
+  if (tab === 'graph') ensurePlan();
   document.querySelectorAll('#results-tabs .rtab').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
   renderActiveView();
 }
@@ -636,7 +675,16 @@ function renderActiveView() {
     case 'table': body.innerHTML = renderTable(); watchResultsBar(); break;
     case 'changelog': body.innerHTML = renderChangelog(); watchResultsBar(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
     case 'throughput': body.innerHTML = renderThroughput(); releaseResultsBar(); break;
-    case 'graph': body.innerHTML = renderJobGraph(); releaseResultsBar(); break;
+    case 'graph': {
+      const scroller = body.querySelector('.pg-scroll');
+      const keep = { top: body.scrollTop, left: scroller ? scroller.scrollLeft : 0 };
+      body.innerHTML = renderJobGraph();
+      releaseResultsBar();
+      body.scrollTop = keep.top;
+      const next = body.querySelector('.pg-scroll');
+      if (next) next.scrollLeft = keep.left;
+      break;
+    }
   }
 }
 
@@ -1020,23 +1068,39 @@ function renderThroughput() {
 }
 
 function renderJobGraph() {
-  const nodes = R.columns.length ? R.jobNodes : ['Source', 'Operator', 'Sink: collect'];
-  const counts = [R.log.length, R.log.length, R.materialized.size];
-  const running = R.running;
-  const fmt = (n) => (n || 0).toLocaleString('en-US');
-  let track = '';
-  nodes.forEach((label, i) => {
-    const ic = i === 0 ? 'db' : i === nodes.length - 1 ? 'grid' : 'bolt';
-    const live = running ? ' is-live' : '';
-    const active = running && i === nodes.length - 1 ? ' is-active' : '';
-    track += `<div class="jg-node${live}${active}"><div class="jg-node-ic">${iconSvg(ic, 15)}</div><div class="jg-node-text"><span class="jg-node-name">${escapeHtml(label)}</span><span class="jg-node-meta">${fmt(counts[i])} rows</span></div></div>`;
-    if (i < nodes.length - 1) {
-      track += `<div class="jg-edge${running ? ' is-flowing' : ''}"><span class="jg-edge-line"></span><span class="jg-dot"></span><span class="jg-dot d2"></span><span class="jg-dot d3"></span></div>`;
-    }
+  const P = R.plan;
+  if (!P) {
+    const hasQuery = queryEditor && queryEditor.getValue().trim();
+    return emptyState('flow', 'No job graph yet', hasQuery ? 'Run the query, or open this tab once the session is ready.' : 'Write a query to see the plan Flink builds for it.');
+  }
+  if (P.status === 'loading') return emptyState('flow', 'Planning…', 'Asking Flink for the optimized plan.');
+  if (P.status === 'error') {
+    const ddl = P.code === 'NOT_EXPLAINABLE';
+    return emptyState('info', ddl ? 'No job graph for this statement' : 'Flink could not plan this query', P.error, !ddl);
+  }
+  const running = R.running && P.key === R.ranKey;
+  const graph = JobGraph.render(P.data, {
+    running,
+    sinkRows: P.key === R.ranKey && (R.running || R.rowsReceived) ? R.rowsReceived : null,
+    icon: iconSvg,
+    rawOpen: R.planRawOpen
   });
-  return `<div class="rv-jobgraph"><div class="jg-track">${track}</div>
-    <div class="jg-legend"><span class="jg-status${running ? ' is-run' : ''}"><i></i> ${running ? 'RUNNING' : (R.columns.length ? 'FINISHED' : 'IDLE')}</span><span class="jg-par">parallelism 1 · 1 slot</span></div></div>`;
+  const status = running ? 'RUNNING' : (P.key === R.ranKey && R.columns.length ? 'FINISHED' : 'PLANNED');
+  return `<div class="rv-jobgraph">${graph}
+    <div class="jg-legend"><span class="jg-status${running ? ' is-run' : ''}"><i></i> ${status}</span><span class="jg-par">${P.data.mode.toLowerCase()} · parallelism 1</span></div></div>`;
 }
+
+function updateSinkCount() {
+  // Only the plan of the query whose rows are arriving carries its count.
+  if (!R.plan || R.plan.key !== R.ranKey) return;
+  const el = document.querySelector('#results-container .pg-sink-count');
+  if (el) el.textContent = `${R.rowsReceived.toLocaleString('en-US')} rows received`;
+}
+
+// <details> toggle events don't bubble; listen in the capture phase.
+document.addEventListener('toggle', (e) => {
+  if (e.target instanceof Element && e.target.matches('.pg-raw')) R.planRawOpen = e.target.open;
+}, true);
 
 /* ============================== Schema browser (sidebar) ============================== */
 let schemaTables = [];        // last-known tables (so confirm toggles don't re-fetch)
@@ -1225,6 +1289,9 @@ function populateExamples() {
     if (schemaEditor) schemaEditor.setValue(ex.schema);
     if (queryEditor) queryEditor.setValue(ex.query);
     setMode(ex.mode);
+    // The preset's tables don't exist until its schema is built; drop the old plan until then.
+    R.plan = null;
+    if (activeTab === 'graph') renderActiveView();
   });
 }
 
@@ -1414,7 +1481,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tour-btn').addEventListener('click', startTour);
 
   document.querySelectorAll('#mode-segmented button').forEach((b) => {
-    b.addEventListener('click', () => setMode(b.dataset.mode));
+    b.addEventListener('click', () => {
+      setMode(b.dataset.mode);
+      // The plan depends on the mode (batch and streaming planners differ): re-plan if shown.
+      if (activeTab === 'graph') ensurePlan();
+    });
   });
   document.querySelectorAll('#results-tabs .rtab').forEach((b) => {
     b.addEventListener('click', () => setActiveTab(b.dataset.tab));
