@@ -1,11 +1,11 @@
 ---
 # flink-sql-playground-ip4e
 title: Real job graph from EXPLAIN
-status: in-progress
+status: completed
 type: feature
 priority: high
 created_at: 2026-11-22T18:06:36Z
-updated_at: 2026-11-22T18:12:31Z
+updated_at: 2026-11-22T19:02:54Z
 parent: flink-sql-playground-e6yy
 ---
 
@@ -28,3 +28,7 @@ This is what explains *why* a query emits retractions: the changelog tab shows t
 - Static Pages build has no backend in the stub: e2e tests need a stub plan in `src/test/e2e/stub-api.js`.
 - Plan text format: parse the indented `== Optimized Physical Plan ==` section, or use `EXPLAIN JSON_EXECUTION_PLAN` for structure and merge in changelog modes. Pick one and document why.
 - Per-node row counts are not available from EXPLAIN; drop them or show only source/sink counts honestly.
+
+## Summary of Changes
+
+Shipped in PR #76. Backend `POST /api/sessions/{id}/explain` plans through the collect sink (changelog modes match the changelog tab); `PlanParser` turns Flink's text plan into a DAG with changelog modes, state kind and advice. Frontend `js/job-graph.js` draws it (exchanges as edges, update origins, advice, raw plan). Decisions: docs/adr/0004-real-job-graph-from-explain.md. Adversarial review by Copilot (herdr); planner rate limits deferred to flink-sql-playground-weay.
