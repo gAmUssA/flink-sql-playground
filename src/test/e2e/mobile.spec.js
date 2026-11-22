@@ -443,7 +443,7 @@ test('scrolled sideways and down, the pinned first column and its header corner 
 
 // The changelog's bar (op toggles and search) is pinned where the box leaves room below it for a
 // whole row, and scrolls away with the rows elsewhere. On main it stayed pinned on a 375x667 phone,
-// whose rows wrap to 247px under a 198px bar in a 367px box, so no row ever showed whole (#68),
+// whose rows wrapped to 247px under a 198px bar in a 367px box, so no row ever showed whole (#68),
 // and on a phone held sideways (#69).
 test('after a streaming run, every changelog row can be scrolled into view whole, clear of the bar', async ({ page }) => {
   await runRetractions(page, true);

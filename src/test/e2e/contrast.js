@@ -6,6 +6,13 @@
  * element's own and its ancestors' background colours composited from the root down, with each
  * `opacity` below 1 blending its subtree into what lies behind it. Colours are resolved through a
  * canvas, so color-mix() and alpha work whatever syntax the browser reports.
+ *
+ * Limits: only `background-color` and `opacity` along the element's ancestor chain are
+ * composited. A `background-image` (gradients included), `backdrop-filter`, `filter`,
+ * `mix-blend-mode` or `mask-image` on the path is ignored, and so is any layer behind the element
+ * that is not its ancestor (a positioned or sticky sibling, an overlay, content scrolled under a
+ * translucent bar). A target drawn over one of those can pass here and still fail on screen:
+ * check such a target another way (a screenshot's pixels) before relying on this.
  */
 function measureContrast(targets) {
   const cv = document.createElement('canvas'); cv.width = cv.height = 1;

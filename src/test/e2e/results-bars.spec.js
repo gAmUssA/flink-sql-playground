@@ -64,9 +64,11 @@ test('the changelog bar stays pinned and a whole row shows below it while the ro
   }
 });
 
-// The changelog keeps up to 400 events, and a row's height depends on how far its values wrap.
-// At 1024x700 the 197px box holds the 51px bar and the tallest of the first 50 rows (93px), but
-// not event 55 (169px): measuring only the first 50 rows left the bar pinned over it.
+// The changelog keeps up to 400 events. When rows wrapped their values, the 197px box at
+// 1024x700 held the 51px bar and the tallest of the first 50 rows (93px), but not event 55
+// (169px): measuring only the first 50 rows left the bar pinned over it. Rows now keep one line
+// (#72), but event 55 overflows its row and, where scrollbars take room, is taller by its
+// sideways scrollbar.
 test('with more than 50 events, a later and taller changelog row can still be scrolled into view whole', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 700 });
   await runLongTail(page, false);

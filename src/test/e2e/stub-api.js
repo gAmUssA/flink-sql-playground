@@ -7,13 +7,33 @@ const TYPES = ['INT', 'STRING', 'BIGINT', 'DOUBLE', 'DOUBLE', 'TIMESTAMP(3)', 'T
 const row = (i) => [i, `region-${i}`, i * 10, i * 123.45, 12.34 + i, '2026-10-06 10:00:00.000', '2026-10-06 11:00:00.000', 'ACTIVE'];
 const ROWS = [1, 2, 3, 4, 5].map(row);
 const MANY_ROWS = Array.from({ length: 40 }, (_, i) => row(i + 1));
-// 60 events, of which event 55 carries a long status that wraps its changelog row taller than
-// any of the 50 before it.
+// 60 events, of which event 55 carries a long status, far wider than any changelog row: its
+// values scroll sideways inside the row (#72), which wrapped them before.
 const LONG_TAIL = Array.from({ length: 60 }, (_, i) => (i === 54
   ? [...row(i + 1).slice(0, 7), Array.from({ length: 14 }, (_, w) => `pending-review-step-${w + 1}`).join(' ')]
   : row(i + 1)));
 
+/**
+ * Records, as window.__webfontsSettled ('load' or 'error'), when the web fonts stylesheet
+ * (#webfonts, preloaded in index.html and turned into a stylesheet by js/app.js) has settled, for
+ * fontsReady in layout.js. A failed sheet leaves no trace on the element to read afterwards: its
+ * `sheet` stays null, as it does while the sheet is pending. Load events do not reach the window,
+ * so this listens on the document, in the capture phase.
+ */
+function recordWebFonts() {
+  window.__webfontsSettled = null;
+  const settle = (e) => {
+    const link = e.target;
+    if (link.id !== 'webfonts' || link.rel !== 'stylesheet' || (e.type === 'load' && !link.sheet)) return;
+    window.__webfontsSettled = e.type;
+  };
+  document.addEventListener('load', settle, true);
+  document.addEventListener('error', settle, true);
+}
+
 async function stubApi(page) {
+  // Every test that opens the app stubs the API first, so the fonts record starts here too.
+  await page.addInitScript(recordWebFonts);
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^.*\/api\//, '/api/');
