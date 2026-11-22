@@ -118,6 +118,8 @@ There is no manual deploy step. **Merging to `main` deploys.**
 - Work is tracked as beans (`.beans/`, `beans prime` for the CLI guide). Commit bean files
   with the code they describe. Record decisions that later work depends on as an ADR in
   `docs/adr/`.
-- On the maintainer's machine a git guard blocks plain `git push` to this (non-Confluent)
-  repo. Agents must not work around it. Commit locally and ask the maintainer to run
-  `git push-external -u origin <branch>`, then open the PR with `gh pr create`.
+- On the maintainer's machine a git guard (Airlock) blocks plain `git push` to this
+  (non-Confluent) repo. Push with `zsh -ic 'git push-external -u origin <branch>'`:
+  `push-external` comes from the maintainer's zsh config, so a non-interactive shell does
+  not see it. It scans every commit in the pushed history (about a minute). Never push with
+  `/opt/homebrew/bin/git` or `/usr/bin/git` to skip the guard. Then `gh pr create`.
