@@ -2,6 +2,7 @@ package com.flinksqlfiddle.api;
 
 import com.flinksqlfiddle.api.dto.ErrorResponse;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
+import com.flinksqlfiddle.execution.NotExplainableException;
 import com.flinksqlfiddle.fiddle.FiddleNotFoundException;
 import com.flinksqlfiddle.security.ForbiddenSqlException;
 import com.flinksqlfiddle.session.SessionLimitExceededException;
@@ -63,6 +64,13 @@ public class GlobalExceptionHandler {
         return RestResponse.ResponseBuilder.<ErrorResponse>create(408)
                 .entity(new ErrorResponse(e.getMessage(), "EXECUTION_TIMEOUT"))
                 .build();
+    }
+
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleNotExplainable(NotExplainableException e) {
+        log.debug("Not explainable: {}", e.getMessage());
+        return RestResponse.status(RestResponse.Status.BAD_REQUEST,
+                new ErrorResponse(e.getMessage(), e.code()));
     }
 
     @ServerExceptionMapper

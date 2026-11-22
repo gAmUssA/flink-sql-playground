@@ -3,7 +3,11 @@ package com.flinksqlfiddle.api;
 import com.flinksqlfiddle.execution.ExecutionMode;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
 import com.flinksqlfiddle.execution.QueryResult;
+import com.flinksqlfiddle.execution.NotExplainableException;
 import com.flinksqlfiddle.execution.SqlExecutionService;
+import com.flinksqlfiddle.execution.plan.ExplainResult;
+import com.flinksqlfiddle.execution.plan.PlanAdvice;
+import com.flinksqlfiddle.execution.plan.PlanNode;
 import com.flinksqlfiddle.security.ForbiddenSqlException;
 import com.flinksqlfiddle.session.FlinkSession;
 import com.flinksqlfiddle.session.SessionManager;
@@ -135,5 +139,81 @@ class ExecutionResourceTest {
                 .when().post(EXECUTE_URL)
                 .then().statusCode(500)
                 .body("code", is("INTERNAL_ERROR"));
+    }
+
+    @Test
+    void explainReturnsThePlan() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        ExplainResult plan = new ExplainResult(ExecutionMode.STREAMING,
+                List.of(new PlanNode(0, "Sink", "Sink: collect", java.util.Map.of(), List.of(), null, List.of(), List.of(1)),
+                        new PlanNode(1, "GroupAggregate", "GroupAggregate", java.util.Map.of("groupBy", "k"),
+                                List.of("I", "UB", "UA"), "unbounded", List.of(1), List.of())),
+                List.of(0), List.of(new PlanAdvice(1, "ADVICE", "enable mini-batch")), "Sink(...)");
+        when(executionService.explain(eq(session), eq(ExecutionMode.STREAMING), eq("SELECT k, COUNT(*) FROM t GROUP BY k")))
+                .thenReturn(plan);
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"SELECT k, COUNT(*) FROM t GROUP BY k\", \"mode\": \"STREAMING\"}")
+                .when().post("/api/sessions/test-session/explain")
+                .then().statusCode(200)
+                .body("mode", is("STREAMING"))
+                .body("roots[0]", is(0))
+                .body("nodes[1].label", is("GroupAggregate"))
+                .body("nodes[1].changelogMode[1]", is("UB"))
+                .body("nodes[1].state", is("unbounded"))
+                .body("nodes[1].attrs.groupBy", is("k"))
+                .body("nodes[0].inputs[0]", is(1))
+                .body("advice[0].text", is("enable mini-batch"));
+    }
+
+    @Test
+    void explainOfDdlIsABadRequest() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        when(executionService.explain(eq(session), any(), any()))
+                .thenThrow(new NotExplainableException("Only queries, INSERT statements and statement sets have a job graph"));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"CREATE TABLE t (a INT)\", \"mode\": \"STREAMING\"}")
+                .when().post("/api/sessions/test-session/explain")
+                .then().statusCode(400)
+                .body("code", is("NOT_EXPLAINABLE"));
+    }
+
+    @Test
+    void explainOfUnknownTableIsABadRequest() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        when(executionService.explain(eq(session), any(), any()))
+                .thenThrow(new NotExplainableException("Object 'nope' not found", "INVALID_SQL"));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"SELECT * FROM nope\", \"mode\": \"STREAMING\"}")
+                .when().post("/api/sessions/test-session/explain")
+                .then().statusCode(400)
+                .body("code", is("INVALID_SQL"))
+                .body("error", is("Object 'nope' not found"));
+    }
+
+    @Test
+    void explainOfForbiddenSqlIsForbidden() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        when(executionService.explain(eq(session), any(), any()))
+                .thenThrow(new ForbiddenSqlException("CREATE FUNCTION statements are not allowed"));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"CREATE FUNCTION f AS 'x'\", \"mode\": \"STREAMING\"}")
+                .when().post("/api/sessions/test-session/explain")
+                .then().statusCode(403);
+    }
+
+    @Test
+    void explainRequiresMode() {
+        given().contentType("application/json")
+                .body("{\"sql\": \"SELECT 1\"}")
+                .when().post("/api/sessions/test-session/explain")
+                .then().statusCode(400);
     }
 }
