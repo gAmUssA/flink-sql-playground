@@ -92,6 +92,21 @@ class TableNotFoundSmokeTest {
     }
 
     @Test
+    void viewsAndCteNames() {
+        // A view the session does not have is reported like a table.
+        assertEquals("order_view", missing(() -> service.execute(session, ExecutionMode.BATCH,
+                "SELECT * FROM order_view")).table());
+        // A name that is neither a CTE nor a table.
+        assertEquals("b", missing(() -> service.explain(session, ExecutionMode.STREAMING,
+                "WITH a AS (SELECT * FROM users) SELECT * FROM b")).table());
+        // A view whose table was dropped: the span points into the view's text, not the query's.
+        service.execute(session, ExecutionMode.STREAMING, "CREATE TEMPORARY VIEW uv AS SELECT user_id, name FROM users");
+        service.execute(session, ExecutionMode.STREAMING, "DROP TEMPORARY TABLE users");
+        assertEquals("users", missing(() -> service.execute(session, ExecutionMode.BATCH,
+                "SELECT *\nFROM uv")).table());
+    }
+
+    @Test
     void insertTargetAndViewOverAMissingTable() {
         assertEquals("sink", missing(() -> service.explain(session, ExecutionMode.STREAMING,
                 "INSERT INTO sink SELECT * FROM users")).table());

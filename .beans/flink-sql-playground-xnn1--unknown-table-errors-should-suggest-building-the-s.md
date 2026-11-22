@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: high
 created_at: 2026-11-22T21:46:59Z
-updated_at: 2026-11-22T22:31:51Z
+updated_at: 2026-11-22T22:53:44Z
 ---
 
 Reported by Vik, 2026-11-22.
@@ -27,8 +27,8 @@ Keep Flink's original message available underneath for people who want it.
 - Also covers: the Job Graph and Timeline tabs opened before building the schema (they show the same raw error today).
 - Tests: unit test for the error mapping, e2e for the first-visit flow (load page → Run Query → helpful message + button), phone layout, contrast.
 
-- [ ] Backend: TABLE_NOT_FOUND error code with the table name on all four endpoints
-- [ ] Frontend: friendly message + Flink's original detail, Build Schema and run action
-- [ ] Declared-but-not-built vs not-declared wording
-- [ ] Job Graph / Timeline empty states use it too
-- [ ] Tests (unit, e2e desktop + phone)
+- [x] Backend: TABLE_NOT_FOUND error code with the table name on all four endpoints
+- [x] Frontend: friendly message + Flink's original detail, Build Schema and run action
+- [x] Declared-but-not-built vs not-declared wording
+- [x] Job Graph / Timeline empty states use it too
+- [x] Tests (unit, e2e desktop + phone)

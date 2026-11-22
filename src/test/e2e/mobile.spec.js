@@ -482,3 +482,24 @@ test('after a streaming run, every changelog row can be scrolled into view whole
   expect(r.unreachable, 'rows never shown whole').toEqual([]);
   expect(await opTogglesWork(page), 'op toggles reachable at the top').toEqual({ ops: 4, failed: [] });
 });
+
+test('a query run before Build Schema explains itself on the phone, and Build Schema and run fits and works', async ({ page }) => {
+  await page.evaluate(() => queryEditor.setValue('-- stub: table not found orders\nSELECT * FROM orders'));
+  await page.locator('#mode-segmented [data-mode="BATCH"]').tap();
+  await page.locator('#run-query-btn').tap();
+  const nf = page.locator('#results-container .rv-nf');
+  await expect(nf.locator('.rv-empty-label')).toHaveText('Table orders isn’t built yet');
+  await expect(nf.locator('.rv-nf-detail')).toContainText("Object 'orders' not found");
+  await expectNoHorizontalScroll(page);
+  await page.locator('#results-container [data-nf-build]').scrollIntoViewIfNeeded();
+  await expectTappable(page, '#results-container [data-nf-build]');
+  await expectTouchTargets(page);
+  // The text wraps inside the panel: nothing pokes past its right edge.
+  const overflow = await nf.evaluate((el) => {
+    const box = el.closest('#results-container').getBoundingClientRect();
+    return [...el.querySelectorAll('*')].filter((c) => c.getBoundingClientRect().right > box.right + 0.5).map((c) => c.className);
+  });
+  expect(overflow).toEqual([]);
+  await page.locator('#results-container [data-nf-build]').tap();
+  await expect(page.locator('.rv-table')).toBeVisible();
+});

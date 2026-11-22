@@ -418,7 +418,7 @@ async function runSchemaBuild() {
         const err = await res.json().catch(() => ({}));
         const error = err.error || `HTTP ${res.status}`;
         setStatus('Schema error: ' + error, 'error');
-        return { ok: false, error };
+        return { ok: false, error, code: err.code };
       }
     }
     setStatus('Schema built', 'ready');
@@ -695,7 +695,8 @@ function declaredTableNames() {
   try { return FlinkEditor.parseCreateTables(schemaEditor ? schemaEditor.getValue() : '').map((t) => t.name); } catch { return []; }
 }
 
-function missingTableState(info, flinkMessage) {
+// `extra`: markup after the hint when the state offers no build (the Timeline's record button).
+function missingTableState(info, flinkMessage, extra = '') {
   const name = info.table;
   const code = (n) => `<code class="rv-nf-name">${escapeHtml(n)}</code>`;
   const declared = declaredTableNames();
@@ -704,7 +705,8 @@ function missingTableState(info, flinkMessage) {
   if (declared.includes(name)) {
     label = `Table ${code(name)} isn’t built yet`;
     hint = 'The schema editor declares it, but this session doesn’t have it. Build the schema to create it, then run the query again.';
-    action = `<div class="wt-actions"><button class="btn outline rv-nf-build" data-nf-build${buildAndRunBusy ? ' disabled aria-busy="true"' : ''}>`
+    // aria-disabled, not disabled, while busy: a disabled button drops keyboard focus.
+    action = `<div class="wt-actions"><button type="button" class="btn outline rv-nf-build" data-nf-build${buildAndRunBusy ? ' aria-disabled="true" aria-busy="true"' : ''}>`
       + `${iconSvg('play', 14)} ${buildAndRunBusy ? 'Building schema…' : 'Build Schema and run'}</button></div>`;
   } else if (typeof info.suggestion === 'string' && info.suggestion) {
     label = `No table named ${code(name)}`;
@@ -720,7 +722,7 @@ function missingTableState(info, flinkMessage) {
     ? `<p class="rv-nf-fail" role="alert">The schema didn’t build: ${escapeHtml(schemaBuildFailure)}</p>` : '';
   const detail = flinkMessage ? `<p class="rv-nf-detail"><span class="rv-nf-detail-k">Flink:</span> ${escapeHtml(flinkMessage)}</p>` : '';
   return `<div class="rv-empty rv-nf" data-missing-table="${escapeAttr(name)}"><div class="rv-empty-ic">${iconSvg('table', 26)}</div>`
-    + `<p class="rv-empty-label">${label}</p><p class="rv-nf-hint">${hint}</p>${action}${failed}${detail}</div>`;
+    + `<p class="rv-empty-label">${label}</p><p class="rv-nf-hint">${hint}</p>${action || extra}${failed}${detail}</div>`;
 }
 
 // "Build Schema and run": builds the schema editor's statements, then runs the query (which
@@ -728,9 +730,12 @@ function missingTableState(info, flinkMessage) {
 document.addEventListener('click', async (e) => {
   const btn = e.target instanceof Element && e.target.closest('[data-nf-build]');
   if (!btn || buildAndRunBusy) return;
+  // Each render replaces the button: put focus back on the new one if it was on the old.
+  const keepFocus = () => { if (btn === document.activeElement || !document.activeElement || document.activeElement === document.body) document.querySelector('#results-container [data-nf-build]')?.focus(); };
   buildAndRunBusy = true;
   schemaBuildFailure = null;
   renderActiveView();
+  keepFocus();
   let result;
   try {
     result = await buildSchema();
@@ -738,9 +743,13 @@ document.addEventListener('click', async (e) => {
     buildAndRunBusy = false;
   }
   if (!result.ok) {
-    schemaBuildFailure = result.error;
+    // A session that is gone (expired after 15 idle minutes, or the server restarted) cannot be
+    // built into; the page needs a new one.
+    schemaBuildFailure = result.code === 'SESSION_NOT_FOUND' || !sessionId
+      ? 'this session has ended. Reload the page to start a new one.'
+      : result.error;
     renderActiveView();
-    document.querySelector('#results-container [data-nf-build]')?.focus();
+    keepFocus();
     return;
   }
   if (!R.running) await runQuery();
@@ -1265,7 +1274,7 @@ function renderTimeline(body) {
     return emptyState('clock', 'Watermarks live in streaming mode', 'Switch to Streaming to record an event-time timeline.');
   }
   if (TL.status === 'error') {
-    if (isTableNotFound(TL.info)) return missingTableState(TL.info, TL.error);
+    if (isTableNotFound(TL.info)) return missingTableState(TL.info, TL.error, timelineButton());
     const known = TL.code === 'NO_EVENT_TIME' || TL.code === 'NOT_STREAMING' || TL.code === 'NOT_EXPLAINABLE';
     return emptyState('clock', known ? 'No event-time timeline for this query' : 'Could not record the timeline', TL.error, !known, timelineButton());
   }
