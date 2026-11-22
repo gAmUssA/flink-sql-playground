@@ -1,16 +1,18 @@
 'use strict';
-// Event-time hygiene of every shipped preset (js/examples.js), checked from the SQL text:
+// Event-time hygiene of every shipped preset (js/examples.js), checked from the SQL text, for
+// what only the text can tell (ADR 0006):
 //
+// - Every watermarked preset promises lossless or lossy in src/test/resources/
+//   preset-watermarks.json, and every promise names a watermarked preset.
 // - A WATERMARK is declared on a TIMESTAMP(3) / TIMESTAMP_LTZ(3) column of the same table, as
-//   `col` or `col - INTERVAL 'n' UNIT` (bounded out-of-orderness).
-// - The watermark delay matches what the preset promises (src/test/resources/
-//   preset-watermarks.json): lossless presets wait at least as long as their generator scatters
-//   event times (faker date.past, datagen max-past); lossy ones deliberately wait less.
-// - Window TVFs and MATCH_RECOGNIZE use a time attribute: a watermarked column or PROCTIME().
+//   `col` or `col - INTERVAL 'n' UNIT` (bounded out-of-orderness). Other shapes fail loudly.
+// - The watermark delay keeps the promise against how far the generator scatters event times
+//   (faker date.past, datagen max-past): lossless waits at least that long, lossy less.
 // - A PROCTIME() column is not named like an event time, and carries no WATERMARK.
-// - An event-time temporal join reads a versioned table: PRIMARY KEY plus WATERMARK.
 //
-// PresetWatermarkSmokeTest checks the same promises against real Flink with the timeline probe.
+// Whether the SQL is valid Flink (windows on time attributes, versioned temporal tables,
+// MATCH_RECOGNIZE ordering) is left to Flink's planner: ExplainSmokeTest plans every preset.
+// PresetWatermarkSmokeTest checks the promises against real Flink with the timeline probe.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -20,6 +22,7 @@ const vm = require('node:vm');
 
 const EXAMPLES_JS = path.join(__dirname, '../../main/resources/META-INF/resources/js/examples.js');
 const EXPECTATIONS = JSON.parse(fs.readFileSync(path.join(__dirname, '../resources/preset-watermarks.json'), 'utf8'));
+const PROMISES = ['lossless', 'lossy'];
 const load = () => import(path.join(__dirname, '../../main/frontend/sql-schema.mjs'));
 
 function presets() {
@@ -79,9 +82,12 @@ function tables(schema, { stripComments, maskSql }) {
   return out;
 }
 
-test('every watermarked preset has a declared promise, and every promise a preset', () => {
-  const titles = presets().filter((p) => /WATERMARK\s+FOR/i.test(p.schema)).map((p) => p.title);
+test('every watermarked preset has a valid promise, and every promise a preset', async () => {
+  const { stripComments } = await load();
+  // A WATERMARK FOR inside a comment declares nothing.
+  const titles = presets().filter((p) => /WATERMARK\s+FOR/i.test(stripComments(p.schema))).map((p) => p.title);
   const promised = Object.keys(EXPECTATIONS).filter((k) => !k.startsWith('_'));
+  for (const k of promised) assert.ok(PROMISES.includes(EXPECTATIONS[k]), `${k}: promise "${EXPECTATIONS[k]}" is not one of ${PROMISES}`);
   assert.deepEqual([...titles].sort(), [...promised].sort(),
     'add the preset to src/test/resources/preset-watermarks.json as lossless or lossy');
 });
@@ -113,33 +119,6 @@ test('watermarks: syntax, rowtime type, and a delay that keeps the preset\'s pro
       }
       if (promise === 'lossy' && wm.delayMs >= disorder) {
         problems.push(`${where}: promised lossy, but the watermark (${wm.delayMs} ms) covers all ${disorder} ms of disorder`);
-      }
-    }
-  }
-  assert.deepEqual(problems, []);
-});
-
-test('windows, MATCH_RECOGNIZE and temporal joins use time attributes the right way', async () => {
-  const sqlSchema = await load();
-  const problems = [];
-  for (const p of presets()) {
-    const ts = tables(p.schema, sqlSchema);
-    const query = sqlSchema.stripComments(p.query);
-    const isTime = (table, col) => {
-      const t = ts.get(String(table).toLowerCase());
-      return !!t && (t.proctime.has(col) || (t.watermark && t.watermark.col === col));
-    };
-    for (const m of query.matchAll(/\b(TUMBLE|HOP|CUMULATE|SESSION)\s*\(\s*TABLE\s+`?(\w+)`?\s*,\s*DESCRIPTOR\(\s*`?(\w+)`?\s*\)/gi)) {
-      if (!isTime(m[2], m[3])) problems.push(`${p.title}: ${m[1]} on ${m[2]}.${m[3]}, which is neither watermarked nor PROCTIME()`);
-    }
-    for (const m of query.matchAll(/FROM\s+`?(\w+)`?\s+MATCH_RECOGNIZE\s*\([\s\S]*?ORDER\s+BY\s+`?(\w+)`?/gi)) {
-      if (!isTime(m[1], m[2])) problems.push(`${p.title}: MATCH_RECOGNIZE orders by ${m[1]}.${m[2]}, which is not a time attribute`);
-    }
-    for (const m of query.matchAll(/JOIN\s+`?(\w+)`?\s+FOR\s+SYSTEM_TIME\s+AS\s+OF\s+`?\w+`?\.`?(\w+)`?/gi)) {
-      const versioned = ts.get(m[1].toLowerCase());
-      const left = [...ts.values()].find((t) => t.watermark && t.watermark.col === m[2]);
-      if (left && (!versioned || !versioned.primaryKey || !versioned.watermark)) {
-        problems.push(`${p.title}: event-time temporal join on ${m[1]}, which needs a PRIMARY KEY and a WATERMARK`);
       }
     }
   }

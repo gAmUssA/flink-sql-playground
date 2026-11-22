@@ -475,3 +475,25 @@ test('a table named __proto__ completes like any other table (#57)', async () =>
   assert.deepEqual(columnCandidates('SELECT  FROM __proto__', merged).map((c) => c.label), ['x']);
   assert.equal(tableAliases('SELECT p. FROM __proto__ p', 9).p, '__proto__');
 });
+
+test('parseCreateTables lists views: select-list names, explicit column lists, types from earlier tables', async () => {
+  const { parseCreateTables } = await load();
+  const sql = `CREATE TEMPORARY TABLE fx_rate_updates (ccy STRING, rate_to_eur DOUBLE, rate_time TIMESTAMP(3)) WITH ('connector' = 'faker');
+CREATE TEMPORARY VIEW fx_rates AS
+SELECT ccy, rate_to_eur, rate_time FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY ccy ORDER BY rate_time DESC) AS rn FROM fx_rate_updates
+) WHERE rn = 1;
+CREATE VIEW IF NOT EXISTS v2 (a, \`b c\`) AS SELECT x, y FROM t;
+CREATE VIEW v3 AS SELECT o.ccy AS currency, COUNT(*) AS n, o.*, SUM(x) FROM fx_rate_updates o GROUP BY o.ccy;
+CREATE TABLE later (z INT) WITH ('connector' = 'datagen'`;
+  const tables = parseCreateTables(sql);
+  assert.deepEqual(tables.map((t) => t.name), ['fx_rate_updates', 'fx_rates', 'v2', 'v3', 'later'], 'in text order');
+  assert.deepEqual(tables[1].columns, [
+    { name: 'ccy', type: 'STRING', kind: 'view' },
+    { name: 'rate_to_eur', type: 'DOUBLE', kind: 'view' },
+    { name: 'rate_time', type: 'TIMESTAMP(3)', kind: 'view' },
+  ]);
+  assert.deepEqual(tables[2].columns.map((c) => c.name), ['a', 'b c']);
+  assert.deepEqual(tables[3].columns.map((c) => c.name), ['currency', 'n'], 'aliases kept; o.* and unnamed expressions skipped');
+  assert.equal(tables[4].name, 'later', 'the table being written stays last for WITH-option completion');
+});

@@ -54,6 +54,15 @@
    * meta: { table, rowtime, watermark, window }, ticks: [{ t, wm }] in arrival order.
    * Returns { points, windows, stats, range }.
    */
+  let cache = null;
+  /** analyze() for render(): recomputed only when the recording changes, not on every zoom. */
+  function analyzeCached(meta, ticks) {
+    if (cache && cache.meta === meta && cache.ticks === ticks && cache.n === ticks.length) return cache.model;
+    const model = analyze(meta, ticks);
+    cache = { meta, ticks, n: ticks.length, model };
+    return model;
+  }
+
   function analyze(meta, ticks) {
     const requested = meta && meta.window;
     const tooMany = windowsPerRecord(requested) > MAX_WINDOWS_PER_RECORD;
@@ -74,11 +83,14 @@
       else if (k.wm != null && k.t <= k.wm) status = 'late';
       return { i, t: k.t, wm: k.wm, status };
     });
-    // A window fires at the first record whose watermark reaches its end.
+    // A window fires at the first record whose watermark reaches its end. The watermark a record
+    // sees never goes down (null before the first), so that record is found by binary search.
     const sorted = [...windows.values()].sort((a, b) => a.end - b.end || a.start - b.start);
+    const wmAt = (i) => (ticks[i].wm == null ? -Infinity : ticks[i].wm);
     for (const w of sorted) {
-      const at = ticks.findIndex((k) => fired(k.wm, w.end));
-      w.firedAt = at < 0 ? null : at;
+      let lo = 0, hi = ticks.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (wmAt(mid) >= w.end - 1) hi = mid; else lo = mid + 1; }
+      w.firedAt = lo < ticks.length ? lo : null;
     }
     const count = (s) => points.filter((p) => p.status === s).length;
     const lags = ticks.filter((k) => k.wm != null);
@@ -191,9 +203,12 @@
     const ts = visible.flatMap((p) => (p.wm != null ? [p.t, p.wm] : [p.t]));
     const minT = ts.length ? ts.reduce((a, b) => Math.min(a, b)) : model.range.min;
     const maxT = ts.length ? ts.reduce((a, b) => Math.max(a, b)) : model.range.max;
+    // At least 50 ms (zoomed) or 1 s of event time, centred on the data, so identical timestamps
+    // still get a time-axis label.
     const span = Math.max(maxT - minT, v.zoomed ? 50 : 1000);
-    const lo = minT - span * 0.06;
-    const hi = maxT + span * 0.06;
+    const mid = (minT + maxT) / 2;
+    const lo = mid - span * 0.56;
+    const hi = mid + span * 0.56;
     const xspan = Math.max(v.to - v.from, 1);
     const x = (i) => pad.l + ((i - v.from) / xspan) * w;
     const y = (t) => pad.t + h - ((t - lo) / (hi - lo)) * h;
@@ -254,7 +269,8 @@
       grid += `<line class="wt-grid" x1="${pad.l}" x2="${pad.l + w}" y1="${f(y(t))}" y2="${f(y(t))}"/>`;
       grid += `<text class="wt-axis" x="${pad.l - 6}" y="${f(y(t) + 3.5)}" text-anchor="end">${clock(t, step < 1000)}</text>`;
     }
-    const range = v.zoomed ? `records ${Math.round(v.from) + 1}–${Math.round(v.to) + 1} of ${model.points.length}` : 'arrival order';
+    const range = v.zoomed && visible.length
+      ? `records ${visible[0].i + 1}–${visible[visible.length - 1].i + 1} of ${model.points.length}` : 'arrival order';
     grid += `<text class="wt-axis" x="${pad.l + w}" y="${height - 6}" text-anchor="end">${range} →</text>`;
 
     return `<svg class="wt-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Event time of each record against the watermark" data-from="${v.from}" data-to="${v.to}" data-pl="${pad.l}" data-w="${f(w)}" data-n="${model.points.length}">${grid}${svg}</svg>`;
@@ -277,7 +293,7 @@
    * HTML for the view. opts: { width, height, recording, truncated }.
    */
   function render(meta, ticks, opts) {
-    const model = analyze(meta, ticks);
+    const model = analyzeCached(meta, ticks);
     const s = model.stats;
     const pct = (v) => (s.total ? Math.round((v / s.total) * 100) : 0);
     const spec = model.windowsSkipped ? null : meta.window;

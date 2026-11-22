@@ -54,7 +54,10 @@ considered:
 - The browser (`js/watermark-timeline.js`) decides each record's fate the way Flink's window
   operators do. A window has fired when `watermark >= window_end - 1 ms`. A record whose
   windows had all fired when it arrived is **dropped**. One whose windows only partly fired
-  (HOP, CUMULATE) **missed some windows**. One behind the watermark whose window was still
+  (HOP, CUMULATE) **missed some windows**: Flink 2.3's slice-based window aggregation drops a
+  record only once its last window has fired, and otherwise keeps it for the windows still
+  open, so the fired ones simply lack it (checked against the packaged
+  `SliceSharedSyncStateWindowAggProcessor` in Copilot's review). One behind the watermark whose window was still
   open is **late but counted**. Without windows, a record behind the watermark is **late**.
 - **The probe reads its own sample of the stream.** Generated sources (datagen, faker) produce
   new rows on every read, so the timeline's records and counts are not the rows of the user's

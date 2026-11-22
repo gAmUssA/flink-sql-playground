@@ -218,14 +218,75 @@ function typeLength(rest) {
 
 const CREATE_TABLE = /\bcreate\s+(?:temporary\s+)?table\s+(?:if\s+not\s+exists\s+)?((?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*)\s*\(/gi;
 
+const CREATE_VIEW = /\bcreate\s+(?:temporary\s+)?view\s+(?:if\s+not\s+exists\s+)?((?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*)\s*(\()?/gi;
+
+/**
+ * Columns of CREATE [TEMPORARY] VIEW statements: the explicit column list, or else the outer
+ * SELECT list (each item's alias, or its last identifier). A `*` item contributes nothing. Types
+ * come from a same-named column of a table declared earlier, which covers the usual view over
+ * one table (a deduplication or a projection); otherwise the type is empty. kind is 'view'.
+ */
+function parseCreateViews(text, masked, tables) {
+  const views = [];
+  CREATE_VIEW.lastIndex = 0;
+  let m;
+  while ((m = CREATE_VIEW.exec(masked)) !== null) {
+    const nameAt = m.index + m[0].indexOf(m[1]);
+    const name = lastIdentifier(text.slice(nameAt, nameAt + m[1].length));
+    let names = [];
+    let after = m.index + m[0].length;
+    if (m[2]) { // CREATE VIEW v (a, b) AS ...
+      const close = closingParen(masked, after - 1);
+      names = splitTopLevel(masked.slice(after, close === -1 ? masked.length : close), text.slice(after, close === -1 ? masked.length : close))
+        .map((c) => lastIdentifier(c.raw));
+    } else {
+      const select = /\bas\s+select\b/iy;
+      const at = skipSpace(masked, after);
+      select.lastIndex = at;
+      const head = select.exec(masked);
+      if (!head) continue;
+      const listStart = at + head[0].length;
+      // The outer SELECT list ends at the first FROM outside parentheses.
+      let depth = 0;
+      let listEnd = masked.length;
+      for (let i = listStart; i < masked.length; i++) {
+        const c = masked[i];
+        if (c === '(') depth++;
+        else if (c === ')') depth--;
+        else if (depth === 0 && /^from\b/i.test(masked.slice(i, i + 5)) && /\W/.test(masked[i - 1] || ' ')) { listEnd = i; break; }
+        else if (depth === 0 && c === ';') { listEnd = i; break; }
+      }
+      names = splitTopLevel(masked.slice(listStart, listEnd), text.slice(listStart, listEnd)).map((item) => {
+        if (/^\*$|\.\s*\*$/.test(item.masked.trim())) return null;
+        const alias = item.masked.match(/\bas\s+(`(?:[^`]|``)*`|[\w$]+)\s*$/i);
+        if (alias) return lastIdentifier(item.raw.slice(item.masked.length - alias[1].length));
+        const ident = item.masked.match(/^(`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(`(?:[^`]|``)*`|[\w$]+))*$/);
+        return ident ? lastIdentifier(item.raw) : null;
+      });
+    }
+    const typeOf = (col) => {
+      for (const t of tables) {
+        const hit = t.columns.find((c) => c.name.toLowerCase() === col.toLowerCase());
+        if (hit) return hit.type;
+      }
+      return '';
+    };
+    const columns = names.filter(Boolean).map((n) => ({ name: n, type: typeOf(n), kind: 'view' }));
+    if (name) views.push({ at: m.index, table: { name, columns } });
+  }
+  return views;
+}
+
 /**
  * Tables declared by CREATE [TEMPORARY] TABLE statements, with their physical, computed and
  * metadata columns: [{name, columns: [{name, type, kind}]}], kind being 'physical', 'computed'
- * or 'metadata'. An unfinished statement contributes the columns typed so far.
+ * or 'metadata'. An unfinished statement contributes the columns typed so far. Views declared
+ * with CREATE [TEMPORARY] VIEW are listed too (kind 'view', see parseCreateViews), in text order.
  */
 export function parseCreateTables(text) {
   const masked = maskSql(text);
   const tables = [];
+  const at = [];
   CREATE_TABLE.lastIndex = 0;
   let m;
   while ((m = CREATE_TABLE.exec(masked)) !== null) {
@@ -248,9 +309,11 @@ export function parseCreateTables(text) {
       const kind = computed ? 'computed' : /\bmetadata\b/i.test(rest.slice(typeEnd)) ? 'metadata' : 'physical';
       return { name: lastIdentifier(rawName), type, kind };
     }).filter(Boolean);
-    if (name) tables.push({ name, columns });
+    if (name) { tables.push({ name, columns }); at.push(m.index); }
   }
-  return tables;
+  const all = tables.map((table, i) => ({ at: at[i], table }));
+  for (const v of parseCreateViews(text, masked, tables)) all.push(v);
+  return all.sort((a, b) => a.at - b.at).map((x) => x.table);
 }
 
 const NAME = /(?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))*/y;

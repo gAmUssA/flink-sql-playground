@@ -153,3 +153,34 @@ test('the zoom bar disables what cannot be done', () => {
   assert.match(left, /data-wt-zoom="left"[^>]*disabled/);
   assert.doesNotMatch(left, /data-wt-zoom="right"[^>]*disabled/);
 });
+
+test('the visible range label names the records actually drawn, for fractional bounds too', () => {
+  const ticks = Array.from({ length: 40 }, (_, i) => ({ t: 1000 + i * 100, wm: null }));
+  const html = W.render(meta(null), ticks, { width: 600, height: 240, view: { from: 10.2, to: 20.8 } });
+  assert.match(html, /records 12–21 of 40/);
+  assert.equal((html.match(/class="wt-dot /g) || []).length, 10);
+});
+
+test('identical event times still get a time-axis label', () => {
+  const ticks = Array.from({ length: 20 }, () => ({ t: 10005, wm: 9000 }));
+  const html = W.render(meta(null), ticks, { width: 600, height: 240, view: { from: 2, to: 9 } });
+  assert.ok((html.match(/class="wt-axis" x="\d+(\.\d)?" y="[\d.]+" text-anchor="end">\d\d:\d\d:\d\d/g) || []).length >= 1);
+});
+
+test('fire times are found by binary search on the watermark, and zooming reuses the analysis', () => {
+  const hop = { kind: 'HOP', sizeMs: 64000, slideMs: 1000, stepMs: 0, offsetMs: 0 };
+  const ticks = Array.from({ length: 1000 }, (_, i) => ({ t: i * 997, wm: i ? i * 997 - 5000 : null }));
+  let started = Date.now();
+  W.render(meta(hop), ticks, { width: 800, height: 300 });
+  const first = Date.now() - started;
+  started = Date.now();
+  for (let k = 0; k < 20; k++) W.render(meta(hop), ticks, { width: 800, height: 300, view: { from: k * 10, to: k * 10 + 80 } });
+  const zooms = Date.now() - started;
+  assert.ok(first < 1500, `first render ${first} ms`);
+  assert.ok(zooms < first * 20, `20 zoomed renders took ${zooms} ms`);
+  const a = W.analyze(meta(hop), ticks);
+  for (const w of a.windows.slice(0, 200)) {
+    const expected = ticks.findIndex((k) => k.wm != null && k.wm >= w.end - 1);
+    assert.equal(w.firedAt, expected < 0 ? null : expected);
+  }
+});

@@ -525,8 +525,9 @@ class ExampleQueriesSmokeTest {
                     'fields.shipment_id.kind' = 'sequence',
                     'fields.shipment_id.start' = '1',
                     'fields.shipment_id.end' = '20',
-                    'fields.order_ref.min' = '1',
-                    'fields.order_ref.max' = '5'
+                    'fields.order_ref.kind' = 'sequence',
+                    'fields.order_ref.start' = '1',
+                    'fields.order_ref.end' = '20'
                 )
                 """);
 
@@ -538,7 +539,7 @@ class ExampleQueriesSmokeTest {
                     o.order_time,
                     s.ship_time
                 FROM orders_stream o, shipments s
-                WHERE o.product_id = s.order_ref
+                WHERE o.order_id = s.order_ref
                     AND o.order_time BETWEEN s.ship_time - INTERVAL '5' SECOND
                                          AND s.ship_time + INTERVAL '5' SECOND
                 """);
@@ -670,28 +671,38 @@ class ExampleQueriesSmokeTest {
                     'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
                     'fields.event_time.expression' = '#{date.past ''15'',''SECONDS''}'
                 );
-                CREATE TEMPORARY TABLE fx_rates (
+                CREATE TEMPORARY TABLE fx_rate_updates (
                     ccy STRING, rate_to_eur DOUBLE, rate_time TIMESTAMP(3),
-                    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND,
-                    PRIMARY KEY (ccy) NOT ENFORCED
+                    WATERMARK FOR rate_time AS rate_time - INTERVAL '20' SECOND
                 ) WITH (
                     'connector' = 'faker',
                     'number-of-rows' = '50',
                     'fields.ccy.expression' = '#{regexify ''(USD|GBP|JPY|CHF|SEK)''}',
                     'fields.rate_to_eur.expression' = '#{Number.randomDouble ''3'',''0'',''2''}',
                     'fields.rate_time.expression' = '#{date.past ''20'',''SECONDS''}'
+                );
+                CREATE TEMPORARY VIEW fx_rates AS
+                SELECT ccy, rate_to_eur, rate_time
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY ccy ORDER BY rate_time DESC) AS rn
+                    FROM fx_rate_updates
                 )
+                WHERE rn = 1
                 """);
 
         QueryResult result = service.execute(session, ExecutionMode.STREAMING, """
-                SELECT t.txn_id, t.amount, r.rate_to_eur, ROUND(t.amount * r.rate_to_eur, 2) AS amount_eur
+                SELECT t.txn_id, t.ccy, t.amount, r.rate_to_eur, ROUND(t.amount * r.rate_to_eur, 2) AS amount_eur
                 FROM txn_events AS t
-                JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
+                LEFT JOIN fx_rates FOR SYSTEM_TIME AS OF t.event_time AS r
                   ON t.ccy = r.ccy
                 """);
 
         assertTrue(result.columnNames().containsAll(List.of("txn_id", "amount_eur")));
         assertTrue(result.rowCount() > 0, "Expected at least one temporally-joined row");
+        // The deduplicated view is versioned: most txns find a rate as of their event time.
+        int rateIdx = result.columnNames().indexOf("rate_to_eur");
+        long enriched = result.rows().stream().filter(r -> r.get(rateIdx) != null).count();
+        assertTrue(enriched > 0, "Expected txns enriched with a rate from the versioned view");
     }
 
     @Test

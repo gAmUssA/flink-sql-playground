@@ -381,8 +381,13 @@ public class SqlExecutionService {
                 count++;
             }
         } catch (Exception e) {
-            // A deadline/stop cancellation surfaces here as an iterator failure; treat as a clean end.
-            log.debug("Stream iteration ended: {}", e.getMessage());
+            // The deadline cancels the job, which surfaces here as an iterator failure: a clean,
+            // truncated end. Anything else is the job failing (a bad cast, an overflow): report it
+            // instead of ending the stream as if every row had arrived.
+            if (!deadlineFired.get()) {
+                throw new RuntimeException("Query failed: " + rootCauseMessage(e), e);
+            }
+            log.debug("Stream iteration ended by the deadline: {}", e.getMessage());
         } finally {
             if (deadline != null) {
                 deadline.cancel(false);

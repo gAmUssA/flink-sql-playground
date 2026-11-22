@@ -690,7 +690,21 @@ function renderActiveView() {
     case 'table': body.innerHTML = renderTable(); watchResultsBar(); break;
     case 'changelog': body.innerHTML = renderChangelog(); watchResultsBar(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
     case 'throughput': body.innerHTML = renderThroughput(); releaseResultsBar(); break;
-    case 'timeline': body.innerHTML = renderTimeline(body); releaseResultsBar(); break;
+    case 'timeline': {
+      if (timelineDrag) break; // the brush and its geometry belong to the chart on screen
+      // Redrawing replaces the controls: put keyboard focus back on the same one.
+      const focused = document.activeElement && body.contains(document.activeElement)
+        ? (document.activeElement.dataset.wtZoom ? `[data-wt-zoom="${document.activeElement.dataset.wtZoom}"]`
+          : document.activeElement.id ? `#${document.activeElement.id}` : null) : null;
+      body.innerHTML = renderTimeline(body);
+      releaseResultsBar();
+      if (focused) {
+        const again = body.querySelector(focused);
+        const target = again && !again.disabled ? again : body.querySelector('[data-wt-zoom]:not([disabled])');
+        if (target) target.focus();
+      }
+      break;
+    }
     case 'graph': {
       const scroller = body.querySelector('.pg-scroll');
       const keep = { top: body.scrollTop, left: scroller ? scroller.scrollLeft : 0 };
@@ -1174,7 +1188,7 @@ function renderTimeline(body) {
     return emptyState('clock', 'No timeline yet', 'Run the query with this tab open, or record a sample of its source now.', false, timelineButton());
   }
   timelineDrawn = `${body.clientWidth}x${body.clientHeight}`;
-  const width = Math.max(Math.floor(body.clientWidth) - 36, 280);
+  const width = Math.max(Math.floor(body.clientWidth) - 36, 200);
   const height = Math.max(Math.min(Math.round(body.clientHeight * 0.55), 360), 200);
   return WatermarkTimeline.render(TL.meta, TL.ticks, { width, height, recording: TL.status === 'recording', truncated: TL.truncated, view: TL.view })
     + (TL.status === 'recording' ? '' : timelineButton('Record again'));
@@ -1187,55 +1201,65 @@ function timelineButton(label = 'Record timeline') {
 // Zoom: the buttons, a drag across the chart (mouse, pen or a horizontal finger drag), and a
 // trackpad pinch (a ctrl+wheel event). The view is a record range; see WatermarkTimeline.zoom.
 function setTimelineView(view) {
+  const same = (a, b) => (a == null && b == null) || (a && b && a.from === b.from && a.to === b.to);
+  if (same(view, TL.view)) return; // e.g. a pinch at full zoom-out: nothing to redraw
   TL.view = view;
   if (activeTab === 'timeline') renderActiveView();
 }
-function svgIndexAt(svg, clientX) {
+/** The chart's geometry, read once: survives the chart being redrawn mid-gesture. */
+function svgGeometry(svg) {
   const box = svg.getBoundingClientRect();
-  const from = Number(svg.dataset.from), to = Number(svg.dataset.to);
-  const pl = Number(svg.dataset.pl), w = Number(svg.dataset.w);
-  const share = Math.max(0, Math.min(1, (clientX - box.left - pl) / w));
-  return from + share * (to - from);
+  return { left: box.left, from: Number(svg.dataset.from), to: Number(svg.dataset.to), pl: Number(svg.dataset.pl), w: Number(svg.dataset.w) };
+}
+function indexAt(geo, clientX) {
+  const share = Math.max(0, Math.min(1, (clientX - geo.left - geo.pl) / geo.w));
+  return geo.from + share * (geo.to - geo.from);
 }
 document.addEventListener('click', (e) => {
   const zoomBtn = e.target instanceof Element && e.target.closest('[data-wt-zoom]');
   if (zoomBtn && !zoomBtn.disabled) setTimelineView(WatermarkTimeline.zoom(TL.view, TL.ticks.length, zoomBtn.dataset.wtZoom));
 });
+// One drag at a time: the first pointer down on the chart owns the gesture until it lifts; other
+// pointers (a second finger) are ignored. Redraws wait for the gesture to end (renderTimeline).
 let timelineDrag = null;
 document.addEventListener('pointerdown', (e) => {
+  if (timelineDrag) return;
   const svg = e.target instanceof Element && e.target.closest('.wt-svg');
   if (!svg || e.button !== 0) return;
   const chart = svg.closest('.wt-chart');
-  timelineDrag = { svg, chart, x0: e.clientX, brush: chart.querySelector('.wt-brush'), id: e.pointerId };
+  timelineDrag = { geo: svgGeometry(svg), chartLeft: chart.getBoundingClientRect().left, x0: e.clientX,
+    brush: chart.querySelector('.wt-brush'), id: e.pointerId };
 });
 document.addEventListener('pointermove', (e) => {
   const d = timelineDrag;
   if (!d || e.pointerId !== d.id) return;
-  const box = d.chart.getBoundingClientRect();
-  const left = Math.min(d.x0, e.clientX) - box.left, width = Math.abs(e.clientX - d.x0);
+  const left = Math.min(d.x0, e.clientX) - d.chartLeft, width = Math.abs(e.clientX - d.x0);
   if (width < 6) return;
   Object.assign(d.brush.style, { left: `${left}px`, width: `${width}px` });
   d.brush.hidden = false;
 });
-document.addEventListener('pointerup', (e) => {
+function endTimelineDrag(e, cancelled) {
   const d = timelineDrag;
-  timelineDrag = null;
   if (!d || e.pointerId !== d.id) return;
-  d.brush.hidden = true;
-  if (Math.abs(e.clientX - d.x0) < 8) return; // a tap, not a drag
-  const a = svgIndexAt(d.svg, d.x0), b = svgIndexAt(d.svg, e.clientX);
-  const next = WatermarkTimeline.clampView({ from: Math.min(a, b), to: Math.max(a, b) }, TL.ticks.length);
-  setTimelineView(next.zoomed ? { from: next.from, to: next.to } : null);
-});
-document.addEventListener('pointercancel', () => {
-  if (timelineDrag) timelineDrag.brush.hidden = true;
   timelineDrag = null;
-});
+  d.brush.hidden = true;
+  if (!cancelled && Math.abs(e.clientX - d.x0) >= 8) { // shorter is a tap, not a drag
+    const a = indexAt(d.geo, d.x0), b = indexAt(d.geo, e.clientX);
+    const next = WatermarkTimeline.clampView({ from: Math.min(a, b), to: Math.max(a, b) }, TL.ticks.length);
+    TL.view = next.zoomed ? { from: next.from, to: next.to } : null;
+  }
+  // Always redraw: the new view, and any rows that arrived while the gesture held redraws back.
+  if (activeTab === 'timeline') {
+    renderActiveView();
+  }
+}
+document.addEventListener('pointerup', (e) => endTimelineDrag(e, false));
+document.addEventListener('pointercancel', (e) => endTimelineDrag(e, true));
 document.addEventListener('wheel', (e) => {
   const svg = e.ctrlKey && e.target instanceof Element && e.target.closest('.wt-svg');
   if (!svg) return; // a plain wheel scrolls the page as usual
   e.preventDefault();
-  setTimelineView(WatermarkTimeline.zoom(TL.view, TL.ticks.length, e.deltaY < 0 ? 'in' : 'out', svgIndexAt(svg, e.clientX)));
+  setTimelineView(WatermarkTimeline.zoom(TL.view, TL.ticks.length, e.deltaY < 0 ? 'in' : 'out', indexAt(svgGeometry(svg), e.clientX)));
 }, { passive: false });
 
 document.addEventListener('click', (e) => {

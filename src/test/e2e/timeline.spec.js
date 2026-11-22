@@ -188,6 +188,55 @@ test('a trackpad pinch (ctrl + wheel) zooms; a plain wheel does not', async ({ p
   await expect.poll(() => page.locator('.wt-dot').count()).toBeLessThan(TIMELINE_TICKS.length);
 });
 
+test('a redraw during a drag neither moves the selection nor drops the brush', async ({ page }) => {
+  await open(page);
+  await recordSample(page);
+  const box = await chartBox(page);
+  const geo = await page.locator('.wt-svg').evaluate((svg) => ({ from: +svg.dataset.from, to: +svg.dataset.to, pl: +svg.dataset.pl, w: +svg.dataset.w }));
+  const at = (share) => box.x + geo.pl + share * geo.w;
+  const index = (share) => geo.from + share * (geo.to - geo.from);
+  await page.mouse.move(at(0.2), box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(at(0.4), box.y + box.height / 2, { steps: 3 });
+  // A row arrives mid-gesture and asks for a redraw, as a live recording does.
+  await page.evaluate(() => { TL.ticks.push({ t: TL.ticks[TL.ticks.length - 1].t + 100, wm: null }); renderActiveView(); });
+  await expect(page.locator('.wt-brush')).toBeVisible();
+  await page.mouse.up();
+  const label = await page.locator('.wt-axis').last().textContent();
+  const [, first, last] = label.match(/records (\d+)–(\d+)/).map(Number);
+  expect(Math.abs(first - (Math.ceil(index(0.2)) + 1))).toBeLessThanOrEqual(1);
+  expect(Math.abs(last - (Math.floor(index(0.4)) + 1))).toBeLessThanOrEqual(1);
+  await expect(page.locator('.wt-axis').last()).toHaveText(/of 121 →$/); // the held-back row is drawn now
+});
+
+test('zooming from the keyboard keeps focus on the zoom button', async ({ page }) => {
+  await open(page);
+  await recordSample(page);
+  await page.locator('[data-wt-zoom="in"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-wt-zoom="in"]')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-wt-zoom="out"]')).toBeEnabled();
+  const zoomed = await page.locator('.wt-dot').count();
+  expect(zoomed).toBeLessThan(TIMELINE_TICKS.length / 3);
+});
+
+test('a second pointer cannot hijack or strand a drag', async ({ page }) => {
+  await open(page);
+  await recordSample(page);
+  const box = await chartBox(page);
+  const y = box.y + box.height / 2;
+  const fire = (type, id, x) => page.locator('.wt-svg').dispatchEvent(type, { pointerId: id, clientX: x, clientY: y, button: 0, bubbles: true, isPrimary: id === 1 });
+  await fire('pointerdown', 1, box.x + box.width * 0.3);
+  await fire('pointermove', 1, box.x + box.width * 0.45);
+  await fire('pointerdown', 2, box.x + box.width * 0.8); // ignored: a drag is in progress
+  await fire('pointerup', 2, box.x + box.width * 0.9);   // ignored: not the dragging pointer
+  await expect(page.locator('.wt-brush')).toBeVisible();
+  await fire('pointerup', 1, box.x + box.width * 0.45);
+  await expect(page.locator('.wt-brush')).toBeHidden();
+  expect(await page.locator('.wt-dot').count()).toBeLessThan(TIMELINE_TICKS.length / 3);
+});
+
 test('a new recording starts at the full view', async ({ page }) => {
   await open(page);
   await recordSample(page);
