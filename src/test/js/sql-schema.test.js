@@ -497,3 +497,16 @@ CREATE TABLE later (z INT) WITH ('connector' = 'datagen'`;
   assert.deepEqual(tables[3].columns.map((c) => c.name), ['currency', 'n'], 'aliases kept; o.* and unnamed expressions skipped');
   assert.equal(tables[4].name, 'later', 'the table being written stays last for WITH-option completion');
 });
+
+test('declaredTablePaths keeps each declared name qualified, as written, in text order', async () => {
+  const { declaredTablePaths } = await load();
+  const sql = `-- CREATE TABLE ghost (x INT)
+CREATE TEMPORARY TABLE orders (id INT) WITH ('connector' = 'datagen');
+CREATE TABLE IF NOT EXISTS other_db . /* c */ \`my orders\` (id INT);
+CREATE TEMPORARY VIEW \`sales.eu\`.v AS SELECT 1;
+SELECT 'CREATE TABLE fake (x INT)';
+CREATE TABLE default_catalog.default_database.t (x INT`;
+  assert.deepEqual(declaredTablePaths(sql), [
+    ['orders'], ['other_db', 'my orders'], ['sales.eu', 'v'], ['default_catalog', 'default_database', 't'],
+  ]);
+});

@@ -124,6 +124,72 @@ test('double clicks build once and run once', async ({ page }) => {
   expect(sql.map((s) => s.split('\n')[0])).toEqual(['CREATE TEMPORARY TABLE orders (', '-- stub: table not found orders']);
 });
 
+// Holds every CREATE (Build Schema) for `ms`, so a test can act while the schema builds.
+async function slowBuild(page, ms = 800) {
+  await page.route('**/api/sessions/*/execute', async (route) => {
+    if (/CREATE/.test(route.request().postData() || '')) await new Promise((r) => setTimeout(r, ms));
+    await route.fallback();
+  });
+}
+
+test('a query edited while the schema builds is not run: the build finishes, the button comes back', async ({ page }) => {
+  await open(page);
+  await slowBuild(page);
+  await run(page, missingOrders);
+  const sql = executed(page);
+  const btn = page.locator(`${NF} [data-nf-build]`);
+  await btn.click();
+  await expect(btn).toHaveAttribute('aria-busy', 'true');
+  // The new text is an INSERT: running it was never asked for.
+  await page.evaluate(() => queryEditor.setValue('INSERT INTO sink SELECT * FROM orders'));
+  await expect(page.locator('#status-text')).toHaveText('Schema built. The query or mode changed while it built, so it was not run.');
+  await expect(btn).toHaveText(/Build Schema and run/);
+  await expect(btn).not.toHaveAttribute('aria-busy', 'true');
+  expect(sql.map((s) => s.split('\n')[0])).toEqual(['CREATE TEMPORARY TABLE orders (']);
+});
+
+test('a mode switched while the schema builds is not run either', async ({ page }) => {
+  await open(page);
+  await slowBuild(page);
+  await run(page, missingOrders, 'BATCH');
+  const sql = executed(page);
+  await page.locator(`${NF} [data-nf-build]`).click();
+  await page.click('#mode-segmented [data-mode="STREAMING"]');
+  await expect(page.locator('#status-text')).toHaveText('Schema built. The query or mode changed while it built, so it was not run.');
+  expect(sql.filter((s) => s.includes('SELECT * FROM orders'))).toEqual([]);
+});
+
+test('a query someone else started while the schema builds keeps running: the build does not stop or rerun it', async ({ page }) => {
+  await open(page);
+  await slowBuild(page);
+  await run(page, missingOrders, 'STREAMING');
+  const sql = executed(page);
+  await page.locator(`${NF} [data-nf-build]`).click();
+  // Another query starts (and stays live for 1.5 s), then the editor goes back to the clicked one.
+  await page.evaluate(() => queryEditor.setValue('-- stub: slow\nSELECT 2'));
+  await page.click('#run-query-btn');
+  await expect(page.locator('#run-query-btn')).toHaveClass(/is-running/);
+  await page.evaluate((q) => queryEditor.setValue(q), missingOrders);
+  await expect(page.locator('#status-text')).toHaveText('Schema built. Another query is running, so the query was not run.');
+  await expect(page.locator('#run-query-btn')).toHaveClass(/is-running/);
+  await expect(page.locator('#run-query-btn')).not.toHaveClass(/is-running/);
+  expect(sql.map((s) => s.split('\n')[0])).toEqual(['CREATE TEMPORARY TABLE orders (', '-- stub: slow']);
+});
+
+test('a qualified name the schema editor declares elsewhere is a different table, with no build button', async ({ page }) => {
+  await open(page);
+  // The schema editor declares orders in the default database; the query reads other_db.orders.
+  await run(page, '-- stub: table not found other_db.orders\nSELECT * FROM other_db.orders');
+  const nf = page.locator(NF);
+  await expect(nf.locator('.rv-empty-label')).toHaveText('No table named other_db.orders');
+  await expect(nf.locator('.rv-nf-hint')).toHaveText('The schema editor declares orders, which is a different table. Building the schema won’t create other_db.orders: check the database name.');
+  await expect(nf.locator('[data-nf-build]')).toHaveCount(0);
+  // Fully qualified in the default database: the same table as the declared orders.
+  await run(page, '-- stub: table not found default_catalog.default_database.orders\nSELECT * FROM default_catalog.default_database.orders');
+  await expect(nf.locator('.rv-empty-label')).toHaveText('Table orders isn’t built yet');
+  await expect(nf.locator('[data-nf-build]')).toHaveCount(1);
+});
+
 test('a session that has ended says to reload instead of building into nothing', async ({ page }) => {
   await open(page);
   await run(page, missingOrders);

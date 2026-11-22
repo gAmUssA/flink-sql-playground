@@ -82,18 +82,23 @@ function recordWebFonts() {
 
 /**
  * The 400 TABLE_NOT_FOUND body for a statement that names a table the stub session has not built:
- * a statement containing "-- stub: table not found NAME" (NAME is the rest of the line) fails
+ * a statement containing "-- stub: table not found NAME" (NAME is the rest of the line, dotted
+ * when qualified) fails
  * until a CREATE TABLE/VIEW NAME has been executed (Build Schema). "-- stub: did you mean OTHER"
  * adds Flink's case-insensitive suggestion. Null when the statement should run.
  */
 function missingTable(sql, built) {
   const m = /-- stub: table not found (.+)$/m.exec(sql);
   if (!m || built.has(m[1].trim())) return null;
-  const table = m[1].trim();
+  // A dotted NAME is qualified: "other_db.orders" is table orders in database other_db, which a
+  // CREATE of orders does not build.
+  const name = m[1].trim();
+  const path = /^[\w$]+(?:\.[\w$]+)+$/.test(name) ? name.split('.') : [name];
+  const table = path[path.length - 1];
   const suggestion = (/-- stub: did you mean (.+)$/m.exec(sql) || [])[1];
   return { error: `SQL validation failed. From line 2, column 15 to line 2, column 20: Object '${table}' not found`
     + (suggestion ? ` within 'default_catalog.default_database'; did you mean '${suggestion.trim()}'?` : ''),
-  code: 'TABLE_NOT_FOUND', table, ...(suggestion ? { suggestion: suggestion.trim() } : {}) };
+  code: 'TABLE_NOT_FOUND', table, path, ...(suggestion ? { suggestion: suggestion.trim() } : {}) };
 }
 
 const CREATE = /^\s*(?:--[^\n]*\n\s*)*CREATE\s+(?:TEMPORARY\s+)?(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([^`\s(]+)/i;
