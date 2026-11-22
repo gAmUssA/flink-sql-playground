@@ -160,11 +160,10 @@ test('the Temporal Join preset offers fx_rates columns after r.', async ({ page 
   await expect.poll(labels).toEqual(['ccy', 'rate_time', 'rate_to_eur']);
 });
 
-test('the Brewmaster preset offers sensor_readings columns after s.', async ({ page }) => {
-  // FROM TABLE(TUMBLE(TABLE sensor_readings, ...)) s
-  const labels = await presetQualifierLabels(page, 'Brewmaster Monitoring (Faker)', 's.temperature_c');
-  await expect.poll(labels).toEqual(['event_time', 'ph_level', 'pressure_psi', 'reading_id', 'recipe_id', 'tank_id',
-    'temperature_c']);
+test('the Brewmaster preset offers tanks columns after t.', async ({ page }) => {
+  // WITH per_tank AS (SELECT ... FROM TABLE(TUMBLE(...)) GROUP BY ...) ... FROM per_tank p JOIN tanks t
+  const tanks = await presetQualifierLabels(page, 'Brewmaster Monitoring (Faker)', 't.tank_type');
+  await expect.poll(tanks).toEqual(['capacity_liters', 'location', 'tank_id', 'tank_name', 'tank_type']);
 });
 
 test('accepting a table name that needs quoting inserts it in backticks', async ({ page }) => {
