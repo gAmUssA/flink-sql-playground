@@ -181,7 +181,7 @@ public final class PlanParser {
      * brackets are matched without regard to quotes. Returns {@code null} when the text does
      * not have that shape.
      */
-    static Map<String, String> parseAttrs(String text) {
+    public static Map<String, String> parseAttrs(String text) {
         String cleaned = WINDOW_REF.matcher(text).replaceAll("$1");
         Map<String, String> attrs = parseAttrs(cleaned, true);
         return attrs != null ? attrs : parseAttrs(cleaned, false);
@@ -237,7 +237,7 @@ public final class PlanParser {
     }
 
     /** Splits on commas outside brackets and parentheses. */
-    static List<String> splitTopLevel(String text) {
+    public static List<String> splitTopLevel(String text) {
         List<String> parts = new ArrayList<>();
         int depth = 0;
         int start = 0;

@@ -28,6 +28,7 @@ const ICONS = {
   bolt: '<path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z" fill="currentColor" stroke="none"/>',
   expand: '<path d="M9 21H5a2 2 0 0 1-2-2v-4"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
   minimize: '<path d="M9 3v4a2 2 0 0 1-2 2H3"/><path d="M21 9h-4a2 2 0 0 1-2-2V3"/><path d="M3 15h4a2 2 0 0 1 2 2v4"/><path d="M15 21v-4a2 2 0 0 1 2-2h4"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   dot: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
   filter: '<path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/>',
@@ -144,6 +145,11 @@ const MAX_LOG = 400;
 const MAX_SAMPLES = 80;
 
 let throughputTimer = null;
+
+// Watermark timeline (js/watermark-timeline.js): a probe job's records of the query's watermarked
+// source. key = plan key of the query it was recorded for.
+const TL = { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null, controller: null };
+const MAX_TICKS = 2000;
 let rowsSinceSample = 0;
 let flashKeys = new Set();
 let renderScheduled = false;
@@ -427,12 +433,16 @@ function setRunningUI(running) {
 }
 
 async function runQuery() {
-  if (R.running) { if (activeStreamController) activeStreamController.abort(); return; }
+  if (R.running) { if (activeStreamController) activeStreamController.abort(); stopTimeline(); return; }
   if (!sessionId) { setStatus('No active session', 'error'); return; }
   const query = queryEditor.getValue().trim();
   if (!query) { setStatus('No query to execute', 'ready'); return; }
   resetResults();
   R.ranKey = planKey(getMode(), query);
+  R.ranQuery = query;
+  stopTimeline();
+  // The probe is a second job: record only when someone is looking at the timeline.
+  if (activeTab === 'timeline' && getMode() === 'STREAMING') startTimeline(query);
   // Plan alongside the run (not before it): planning takes no slot and adds no wait to rows.
   fetchPlan(query, getMode());
   if (isPhoneLayout()) setPhoneView('results');
@@ -626,6 +636,7 @@ function scheduleRender() {
   requestAnimationFrame(() => {
     renderScheduled = false;
     if (activeTab === 'table') renderActiveView();
+    else if (activeTab === 'timeline') renderActiveView();
     // The graph only changes when the plan arrives or the run starts or stops; per row, just
     // the sink's count moves. A full render per frame would reset its scroll and disclosure.
     else if (activeTab === 'graph') updateSinkCount();
@@ -642,6 +653,10 @@ function setActiveTab(tab) {
   activeTab = tab;
   if (tab !== 'table') closeFilterPopover();
   if (tab === 'graph') ensurePlan();
+  // The probe is a second job: it records only while someone looks at the timeline.
+  if (tab !== 'timeline') stopTimeline();
+  // Opening the timeline during a streaming run records alongside it.
+  if (tab === 'timeline' && R.running && getMode() === 'STREAMING' && TL.key !== R.ranKey && TL.status !== 'recording') startTimeline(R.ranQuery);
   document.querySelectorAll('#results-tabs .rtab').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
   renderActiveView();
 }
@@ -651,8 +666,8 @@ function showError(msg) {
   renderActiveView();
 }
 
-function emptyState(icon, label, hint, isError) {
-  return `<div class="rv-empty${isError ? ' is-error' : ''}"><div class="rv-empty-ic">${iconSvg(icon, 26)}</div><p class="rv-empty-label">${escapeHtml(label)}</p><span class="rv-empty-hint">${escapeHtml(hint)}</span></div>`;
+function emptyState(icon, label, hint, isError, extra = '') {
+  return `<div class="rv-empty${isError ? ' is-error' : ''}"><div class="rv-empty-ic">${iconSvg(icon, 26)}</div><p class="rv-empty-label">${escapeHtml(label)}</p><span class="rv-empty-hint">${escapeHtml(hint)}</span>${extra}</div>`;
 }
 
 function fmtVal(v) {
@@ -675,6 +690,7 @@ function renderActiveView() {
     case 'table': body.innerHTML = renderTable(); watchResultsBar(); break;
     case 'changelog': body.innerHTML = renderChangelog(); watchResultsBar(); if (!clSearching()) body.scrollTop = body.scrollHeight; break;
     case 'throughput': body.innerHTML = renderThroughput(); releaseResultsBar(); break;
+    case 'timeline': body.innerHTML = renderTimeline(body); releaseResultsBar(); break;
     case 'graph': {
       const scroller = body.querySelector('.pg-scroll');
       const keep = { top: body.scrollTop, left: scroller ? scroller.scrollLeft : 0 };
@@ -1090,6 +1106,102 @@ function renderJobGraph() {
     <div class="jg-legend"><span class="jg-status${running ? ' is-run' : ''}"><i></i> ${status}</span><span class="jg-par">${P.data.mode.toLowerCase()} · parallelism 1</span></div></div>`;
 }
 
+/* ---- watermark timeline ---- */
+function resetTimeline() {
+  Object.assign(TL, { key: null, status: 'idle', meta: null, ticks: [], truncated: false, error: null, code: null });
+}
+function stopTimeline() {
+  if (TL.controller) TL.controller.abort();
+  TL.controller = null;
+  // Stopped before the meta frame: nothing to show, so back to idle (offers Record again).
+  if (TL.status === 'recording') TL.status = TL.meta ? 'done' : 'idle';
+}
+
+// Streams the probe's NDJSON: meta, then one tick per record, then end.
+async function startTimeline(query) {
+  if (!sessionId || !query) return;
+  stopTimeline();
+  resetTimeline();
+  const controller = new AbortController();
+  Object.assign(TL, { key: planKey('STREAMING', query), status: 'recording', controller });
+  if (activeTab === 'timeline') renderActiveView();
+  const fail = (error, code) => { if (TL.controller === controller) Object.assign(TL, { status: 'error', error, code, controller: null }); };
+  try {
+    const res = await fetch(api(`/api/sessions/${sessionId}/timeline/stream`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql: query, mode: 'STREAMING' }), signal: controller.signal
+    });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); fail(err.error || `Timeline failed (HTTP ${res.status})`, err.code); return; }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line || TL.controller !== controller) continue;
+        const ev = JSON.parse(line);
+        if (ev.type === 'meta') TL.meta = ev.meta;
+        else if (ev.type === 'tick' && TL.ticks.length < MAX_TICKS) TL.ticks.push({ t: ev.t, wm: ev.wm == null ? null : ev.wm });
+        else if (ev.type === 'end') TL.truncated = !!ev.truncated;
+        else if (ev.type === 'error') { fail(ev.error); break; }
+      }
+      if (activeTab === 'timeline') scheduleRender();
+    }
+    if (TL.controller === controller) { TL.status = 'done'; TL.controller = null; }
+  } catch (err) {
+    if (err.name !== 'AbortError') fail(err.message);
+  } finally {
+    // Every exit (end, error frame, HTTP error, abort) redraws the final state.
+    if (activeTab === 'timeline') renderActiveView();
+  }
+}
+
+function renderTimeline(body) {
+  if (getMode() !== 'STREAMING' && TL.status === 'idle') {
+    return emptyState('clock', 'Watermarks live in streaming mode', 'Switch to Streaming to record an event-time timeline.');
+  }
+  if (TL.status === 'error') {
+    const known = TL.code === 'NO_EVENT_TIME' || TL.code === 'NOT_STREAMING' || TL.code === 'NOT_EXPLAINABLE';
+    return emptyState('clock', known ? 'No event-time timeline for this query' : 'Could not record the timeline', TL.error, !known, timelineButton());
+  }
+  if (TL.status === 'idle' || !TL.meta) {
+    if (TL.status === 'recording') return emptyState('clock', 'Recording…', 'Planning the query and starting the probe.');
+    return emptyState('clock', 'No timeline yet', 'Run the query with this tab open, or record a sample of its source now.', false, timelineButton());
+  }
+  timelineDrawn = `${body.clientWidth}x${body.clientHeight}`;
+  const width = Math.max(Math.floor(body.clientWidth) - 36, 280);
+  const height = Math.max(Math.min(Math.round(body.clientHeight * 0.55), 360), 200);
+  return WatermarkTimeline.render(TL.meta, TL.ticks, { width, height, recording: TL.status === 'recording', truncated: TL.truncated })
+    + (TL.status === 'recording' ? '' : timelineButton('Record again'));
+}
+
+function timelineButton(label = 'Record timeline') {
+  return `<div class="wt-actions"><button class="btn outline wt-record" id="timeline-record-btn">${iconSvg('clock', 14)} ${label}</button></div>`;
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target instanceof Element && e.target.closest('#timeline-record-btn');
+  if (!btn) return;
+  if (getMode() !== 'STREAMING') setMode('STREAMING');
+  startTimeline(queryEditor.getValue().trim());
+});
+// The chart is drawn at the results box's pixel size: redraw when the box changes size
+// (window resize, maximize, rotation), keyed on the width/height actually drawn.
+let timelineDrawn = '';
+document.addEventListener('DOMContentLoaded', () => {
+  const box = document.getElementById('results-container');
+  if (!box || typeof ResizeObserver === 'undefined') return;
+  new ResizeObserver(() => {
+    const size = `${box.clientWidth}x${box.clientHeight}`;
+    if (activeTab === 'timeline' && TL.meta && size !== timelineDrawn) scheduleRender();
+  }).observe(box);
+});
+
 function updateSinkCount() {
   // Only the plan of the query whose rows are arriving carries its count.
   if (!R.plan || R.plan.key !== R.ranKey) return;
@@ -1291,6 +1403,7 @@ function populateExamples() {
     setMode(ex.mode);
     // The preset's tables don't exist until its schema is built; drop the old plan until then.
     R.plan = null;
+    stopTimeline(); resetTimeline();
     if (activeTab === 'graph') renderActiveView();
   });
 }
@@ -1483,6 +1596,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('#mode-segmented button').forEach((b) => {
     b.addEventListener('click', () => {
       setMode(b.dataset.mode);
+      if (getMode() !== 'STREAMING') stopTimeline();
       // The plan depends on the mode (batch and streaming planners differ): re-plan if shown.
       if (activeTab === 'graph') ensurePlan();
     });

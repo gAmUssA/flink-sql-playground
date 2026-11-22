@@ -87,7 +87,7 @@ test('views without a bar drop the bar state from the results box, and the table
   const state = () => page.locator('#results-container').evaluate((el) => ({
     scrolled: el.classList.contains('is-scrolled'), barScrolls: el.classList.contains('bar-scrolls'), barH: el.style.getPropertyValue('--filterbar-h') }));
   expect(await state()).toEqual({ scrolled: true, barScrolls: false, barH: '44px' });
-  for (const tab of ['throughput', 'graph']) {
+  for (const tab of ['throughput', 'graph', 'timeline']) {
     await page.locator(`.rtab[data-tab="${tab}"]`).click();
     await scrollResults(page, 40);
     expect(await state(), tab).toEqual({ scrolled: false, barScrolls: false, barH: '' });

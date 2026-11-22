@@ -1,10 +1,11 @@
 ---
 # flink-sql-playground-it01
 title: Watermark timeline
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-22T18:06:36Z
-updated_at: 2026-11-22T18:06:36Z
+updated_at: 2026-11-22T19:54:10Z
 parent: flink-sql-playground-e6yy
 blocked_by:
     - flink-sql-playground-ip4e
@@ -27,3 +28,7 @@ The "Watermark Dial" preset should make the loss obvious at a glance: tight 5s w
 - Needs the rowtime column and window spec: reuse the EXPLAIN plan from the job-graph feature (WatermarkAssigner, WindowAggregate window spec) instead of regexing SQL.
 - Sidecar must respect ExecutionLimits (rows, time) and the shared MiniCluster slot budget.
 - Only shown when the plan has a watermark; otherwise the tab is hidden.
+
+## Summary of Changes
+
+Timeline tab backed by a CURRENT_WATERMARK probe job (TimelineService, POST /timeline/stream) over the query's first watermarked source, windows read from the plan; js/watermark-timeline.js classifies records as Flink windows do (fired when wm >= end - 1). New canonical preset "Watermark Timeline: who misses the window". Decisions in docs/adr/0005-watermark-timeline-probe.md. Adversarial review by Copilot (herdr): all six findings fixed (pre-stream probe cancel, stop on tab leave / batch switch, window-count cap, negative offsets, real mid-run test).
