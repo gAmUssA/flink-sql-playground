@@ -48,8 +48,8 @@ runs every CREATE in both the batch and the streaming environment, and the batch
   ```
 
   The query keeps joining `tanks t`, so `t.` autocomplete works unchanged (the editor resolves
-  view columns, not CTE columns). Flink plans it as a `Rank` (rank 1) emitting `I,UB,UA`, not a
-  `Deduplicate`, because the join materializes `proc_time`; the preset comments say Rank.
+  view columns, not CTE columns). Flink 2.3 plans this view as a `Rank` (rank 1) emitting `I,UB,UA`,
+  not as a `Deduplicate` node, even with no join after it; the preset comments say Rank.
 - A PRIMARY KEY on a table whose source emits repeated keys as inserts is not allowed in presets.
   `DimensionPresetSmokeTest` runs both presets as shipped and replays their changelogs: no key may
   be live twice.
