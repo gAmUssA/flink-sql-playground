@@ -39,7 +39,7 @@ const embedSrc = (query = '', frag = fragment) => `${APP}/embed.html${query}#${f
  */
 async function hostPage(page, frames) {
   blogHtml = `<!doctype html><body style="margin:0">${frames.map((f, i) => `<iframe id="e${i}" src="${f.src}" loading="eager" `
-      + `style="display:block;border:0;width:${f.width || 400}px;height:${f.height || 500}px;margin-top:${f.top || 0}px"></iframe>`).join('')}</body>`;
+      + `style="display:block;border:0;width:${f.width || 400}px;height:${f.height || 500}px;margin-top:${f.top || 0}px;${f.style || ''}"></iframe>`).join('')}</body>`;
   await page.goto(`${HOST}/host`);
 }
 const frameOf = (page, i = 0) => page.frameLocator(`#e${i}`);
@@ -420,4 +420,76 @@ test('the embed page runs without console errors', async ({ page, isMobile }) =>
   await f.locator('#embed-schema-toggle').click();
   await page.waitForTimeout(800);
   expect(errors).toEqual([]);
+});
+
+test('autorun does not run in a frame too small to read', async ({ page, isMobile }) => {
+  test.skip(isMobile);
+  const calls = await open(page, [{ src: embedSrc('?autorun=1'), width: 1, height: 1 }]);
+  await ready(page, 0);
+  await page.waitForTimeout(1200);
+  expect(calls).toEqual([]);
+});
+
+test('autorun does not run in a transparent frame (IntersectionObserver v2)', async ({ page, isMobile, browserName }) => {
+  test.skip(isMobile || browserName !== 'chromium', 'only Chromium reports whether a frame is really visible; elsewhere autorun is best effort');
+  const calls = await open(page, [{ src: embedSrc('?autorun=1'), width: 400, height: 300, style: 'opacity:0' }]);
+  await ready(page, 0);
+  await page.waitForTimeout(1200);
+  expect(calls).toEqual([]);
+});
+
+test('a link changed after load voids a pending autorun and brings its own schema and link', async ({ page, isMobile }) => {
+  test.skip(isMobile);
+  const other = await FiddleLink.encode({ schema: '', query: 'SELECT 1', mode: 'BATCH' });
+  const calls = await open(page, [{ src: embedSrc('?autorun=1'), width: 400, height: 300, top: 2500 }]);
+  await ready(page);
+  // Off screen: autorun is pending. Point the frame at a damaged link, then scroll it into view.
+  await page.evaluate(() => { const f = document.getElementById('e0'); f.src = f.src.split('#')[0] + '#f=v1.broken'; });
+  await expect(frameOf(page).locator('#status-text')).toHaveText('This fiddle link is damaged or from a newer version');
+  await page.evaluate(() => document.getElementById('e0').scrollIntoView());
+  await page.waitForTimeout(1200);
+  expect(calls).toEqual([]);
+
+  // A valid new link: Run uses its (empty) schema in a fresh session, and Open in playground follows it.
+  await page.evaluate((frag) => { const f = document.getElementById('e0'); f.src = f.src.split('#')[0] + '#' + frag; }, other);
+  await expect(frameOf(page).locator('#embed-open')).toHaveAttribute('href', `${APP}/#${other}`);
+  await expect(frameOf(page).locator('#query-editor .cm-content')).toContainText('SELECT 1');
+  await frameOf(page).locator('#run-query-btn').click();
+  await expect(frameOf(page).locator('#status-text')).toContainText('row');
+  const executes = calls.filter((c) => /\/execute(\/stream)?$/.test(c));
+  expect(executes).toHaveLength(1); // no CREATE: the new fiddle has no schema
+});
+
+test('a fiddle with an empty schema runs without a schema build', async ({ page, isMobile }) => {
+  test.skip(isMobile);
+  const frag = await FiddleLink.encode({ schema: '', query: 'SELECT 1', mode: 'BATCH' });
+  const calls = await open(page, [{ src: embedSrc('', frag), width: 400, height: 300 }]);
+  const f = await ready(page);
+  await f.locator('#run-query-btn').click();
+  await expect(f.locator('#status-text')).toContainText('row');
+  expect(calls.filter((c) => c.endsWith('/execute'))).toHaveLength(1);
+});
+
+test('a session request that hangs times out, retries, and leaves Run usable', async ({ page, isMobile, browserName }) => {
+  test.skip(isMobile || browserName !== 'chromium', 'WebKit under Playwright does not abort a request its route is holding');
+  await open(page, [{ src: embedSrc(), width: 500, height: 400 }]);
+  let attempts = 0;
+  await page.route('**/api/sessions', (route) => { if (route.request().method() === 'POST' && ++attempts === 1) return; return route.fallback(); });
+  const f = await ready(page);
+  await f.locator('#run-query-btn').click();
+  await expect(f.locator('.rv-table tbody tr')).toHaveCount(5, { timeout: 25000 });
+  expect(attempts).toBe(2);
+  await expect(f.locator('#run-query-btn')).toBeEnabled();
+});
+
+test('Tab leaves the Share menu from the Share button', async ({ page, isMobile }) => {
+  test.skip(isMobile);
+  await stubApi(page);
+  await page.goto(`${APP}/`);
+  await expect(page.locator('.cm-editor')).toHaveCount(2);
+  await page.locator('#share-btn').click();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#share-menu')).toHaveCount(0);
+  const focused = await page.evaluate(() => document.activeElement.id);
+  expect(focused).not.toBe('tour-btn'); // before: focus fell back to the start of the page
 });

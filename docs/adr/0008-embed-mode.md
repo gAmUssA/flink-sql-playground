@@ -53,11 +53,15 @@ is paid on Run.
 build-info, no fiddle fetch (it only reads the fragment). The first Run creates the session
 (retrying 502/503/504 and network errors for about 40 seconds while it says "Waking up the Flink
 cluster…"), builds the schema once, then runs. Concurrent Runs share one session request. A
-session that expired is replaced on the next Run. Five embeds on a page open no session on load.
+session that expired is replaced on the next Run, and so is the session when the link loads another
+fiddle. A hung session request times out after 10 seconds and counts as a miss in the retry loop. Five embeds on a page open no session on load.
 
 **`autorun` is gated on visibility.** `?autorun=1` runs once, when at least half of the embed is
-on screen. An iframe that is scrolled off, hidden or 1x1 does not start a session, so a page cannot
-use autorun to open sessions the visitor never sees. Only the literal `1` counts.
+on screen. An iframe that is scrolled off, smaller than 200x120, or (in Chromium, through
+IntersectionObserver v2) covered or transparent does not start a session. This is best effort: a
+browser without v2 cannot tell a transparent frame from a visible one, so a hostile page can still
+open sessions there. The real cap is the server's session limit, row cap and timeouts. A link that
+changes after load voids a pending autorun. Only the literal `1` counts.
 
 **The embed has no destructive or persistent action.** It has Run/Stop, a schema toggle (read-only
 schema), the results tabs, and a link that opens the full app in a new tab (`rel="noopener"`).

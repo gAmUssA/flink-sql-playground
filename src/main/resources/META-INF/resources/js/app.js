@@ -336,6 +336,7 @@ function ensureSession() {
 // The Railway app sleeps when idle: the first request meets a cold start, which can answer 502/503
 // or time out for a while. An embed is often that first request, so it keeps trying for ~40 s.
 const WAKE_ATTEMPTS = 8;
+const WAKE_ATTEMPT_MS = 10000; // one try may wait this long before it counts as a miss
 const WAKE_PAUSE_MS = Number(window.EMBED_WAKE_PAUSE_MS) || 5000; // the override is for browser tests
 async function createSessionWithRetry() {
   for (let attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
@@ -352,7 +353,8 @@ async function createSessionWithRetry() {
 // Resolves 'ok', 'retry' (the backend may still be waking) or 'failed' (retrying will not help).
 async function createSession({ quiet = false } = {}) {
   try {
-    const res = await fetch(api('/api/sessions'), { method: 'POST' });
+    // An embed bounds each attempt: a hung request must not leave Run disabled for good.
+    const res = await fetch(api('/api/sessions'), quiet ? { method: 'POST', signal: AbortSignal.timeout(WAKE_ATTEMPT_MS) } : { method: 'POST' });
     if (res.status === 429) { setStatus('Session limit reached — try later', 'error'); return 'failed'; }
     if (quiet && [502, 503, 504].includes(res.status)) return 'retry';
     if (!res.ok) throw new Error('Failed to create session');
@@ -364,7 +366,7 @@ async function createSession({ quiet = false } = {}) {
     if (el) el.innerHTML = `${iconSvg('dot', 9)} session ${sessionId.substring(0, 8)}`;
     return 'ok';
   } catch (err) {
-    if (quiet && err instanceof TypeError) return 'retry'; // fetch itself failed: network error or a CORS-less 502
+    if (quiet && (err instanceof TypeError || err.name === 'TimeoutError')) return 'retry'; // fetch itself failed: network error or a CORS-less 502
     setStatus('Error: ' + err.message, 'error');
     return 'failed';
   }
@@ -504,13 +506,31 @@ function setRunningUI(running) {
 let embedStarting = false;      // a Run is creating the session or building the schema
 let embedSchemaBuilt = false;   // the schema editor's DDL ran in the current session
 let embedWaking = false;        // show the cold-start state in the results area
+let embedEpoch = 0;             // bumped when the link loads another fiddle: work started for the old one is dropped
 
 function resetEmbedSession() { sessionId = null; embedSchemaBuilt = false; }
+
+// A hash change loaded another fiddle: its schema is not in the current session, a pending
+// autorun was meant for the old link, and "Open in playground" must carry the new fragment.
+function onEmbedFiddleReplaced() {
+  embedEpoch++;
+  resetEmbedSession();
+  if (autorunWatcher) { autorunWatcher.disconnect(); autorunWatcher = null; }
+  const link = document.getElementById('embed-open');
+  const hash = window.location.hash;
+  if (link && FiddleLink.isFiddleFragment(hash)) link.href = EmbedParams.playgroundUrl(document.baseURI, hash.slice(1));
+}
 
 // Makes the session and builds the schema if this Run needs either. Resolves true when the
 // query can run. Never creates more than one session, whatever the number of Runs.
 async function embedPrepare() {
   embedStarting = true;
+  const epoch = embedEpoch;
+  const replaced = () => {
+    if (epoch === embedEpoch) return false;
+    setStatus('The fiddle changed. Press Run.', 'ready');
+    return true;
+  };
   const btn = runButton();
   btn.disabled = true;
   try {
@@ -519,10 +539,14 @@ async function embedPrepare() {
       resetResults(); R.err = null; renderActiveView();
       await ensureSession();
       embedWaking = false;
+      if (replaced()) { renderActiveView(); return false; }
       if (!sessionId) { renderActiveView(); return false; }
     }
+    // A fiddle with no schema (SELECT 1) has nothing to build.
+    if (!embedSchemaBuilt && !splitSqlStatements(schemaEditor.getValue().trim()).length) embedSchemaBuilt = true;
     if (!embedSchemaBuilt) {
       const built = await buildSchema();
+      if (replaced()) return false;
       if (!built.ok) {
         // A session that expired between two Runs is replaced on the next press.
         if (built.code === 'SESSION_NOT_FOUND') resetEmbedSession();
@@ -1678,7 +1702,7 @@ function toggleShareMenu() {
     const at = items.indexOf(document.activeElement);
     if (e.key === 'ArrowDown') { items[(at + 1) % items.length].focus(); e.preventDefault(); }
     else if (e.key === 'ArrowUp') { items[(at - 1 + items.length) % items.length].focus(); e.preventDefault(); }
-    else if (e.key === 'Tab') closeShareMenu();
+    else if (e.key === 'Tab') closeShareMenu({ restoreFocus: true }); // Tab then moves on from the Share button
   });
 }
 document.addEventListener('click', (e) => {
@@ -1716,7 +1740,8 @@ function applyFiddle(fiddle, message) {
   setMode(fiddle.mode);
   setStatus(message, 'ready');
   // An embed builds its schema itself, on Run (embedPrepare): a second build here would fail on CREATE.
-  if (!EMBED) setTimeout(() => { if (sessionId) buildSchema(); }, 500);
+  if (EMBED) onEmbedFiddleReplaced();
+  else setTimeout(() => { if (sessionId) buildSchema(); }, 500);
 }
 
 // Bumped on every load request; a load whose decode or fetch finishes after a newer
@@ -1725,6 +1750,7 @@ let fiddleLoadGeneration = 0;
 
 async function loadFiddleFromUrl() {
   const generation = ++fiddleLoadGeneration;
+  if (EMBED && autorunWatcher) { autorunWatcher.disconnect(); autorunWatcher = null; } // a new link: the old autorun is void
   const isCurrent = () => generation === fiddleLoadGeneration;
   if (FiddleLink.isFiddleFragment(window.location.hash)) {
     const fiddle = await FiddleLink.decode(window.location.hash);
@@ -2109,14 +2135,18 @@ function initEmbed() {
   // The link carries the fragment of what is on screen, so edits to the query come along.
   const link = document.getElementById('embed-open');
   let linkTimer = null;
+  let linkSeq = 0;
   const syncLink = async () => {
+    const seq = ++linkSeq;
     try {
       const fragment = await FiddleLink.encode(currentFiddle());
+      if (seq !== linkSeq) return; // a newer edit or link is already encoding
       link.href = EmbedParams.playgroundUrl(document.baseURI, fragment);
     } catch (e) { /* too large to encode: keep the last link */ }
   };
   link.href = EmbedParams.playgroundUrl(document.baseURI, FiddleLink.isFiddleFragment(window.location.hash) ? window.location.hash.slice(1) : '');
   const scheduleLink = () => { clearTimeout(linkTimer); linkTimer = setTimeout(syncLink, 250); };
+  window.addEventListener('hashchange', () => { clearTimeout(linkTimer); linkSeq++; });
   queryEditor.view.dom.addEventListener('input', scheduleLink);
   queryEditor.view.dom.addEventListener('keyup', scheduleLink);
   fiddleReady.then((outcome) => {
@@ -2126,13 +2156,22 @@ function initEmbed() {
 
 // ?autorun=1 runs the query once, when the embed is on screen. An iframe that is scrolled out of
 // view, hidden or 1x1 never starts a session, so autorun cannot be used to open sessions unseen.
+// Best effort: where IntersectionObserver v2 exists (Chromium) a covered or transparent frame does not
+// count as visible either, and a frame too small to read is refused. The server limits stay the real guard.
+let autorunWatcher = null;
+const AUTORUN_MIN_W = 200;
+const AUTORUN_MIN_H = 120;
 function autorunWhenVisible() {
   const start = () => { if (!R.running && !embedStarting) runQuery(); };
-  if (typeof IntersectionObserver === 'undefined') { start(); return; }
+  if (typeof IntersectionObserver === 'undefined') return; // no way to tell: stay manual
+  const v2 = typeof IntersectionObserverEntry !== 'undefined' && 'isVisible' in IntersectionObserverEntry.prototype;
   const watcher = new IntersectionObserver((entries) => {
-    if (!entries.some((e) => e.isIntersecting && e.intersectionRatio >= 0.5)) return;
+    const seen = entries.some((e) => e.isIntersecting && e.intersectionRatio >= 0.5 && (!v2 || e.isVisible));
+    if (!seen || window.innerWidth < AUTORUN_MIN_W || window.innerHeight < AUTORUN_MIN_H) return;
     watcher.disconnect();
+    if (autorunWatcher === watcher) autorunWatcher = null;
     start();
-  }, { threshold: [0.5] });
+  }, v2 ? { threshold: [0.5], trackVisibility: true, delay: 200 } : { threshold: [0.5] });
+  autorunWatcher = watcher;
   watcher.observe(document.querySelector('.app'));
 }
