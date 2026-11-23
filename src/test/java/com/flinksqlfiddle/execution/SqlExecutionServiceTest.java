@@ -182,6 +182,148 @@ class SqlExecutionServiceTest {
         assertEquals(3, batchResult.rowCount());
     }
 
+    // --- views over unbounded tables (bean nhqw: the dimension presets deduplicate in a view) ---
+
+    private static final String UNBOUNDED_UPDATES = """
+            CREATE TEMPORARY TABLE tank_updates (
+                tank_id INT,
+                tank_name STRING,
+                proc_time AS PROCTIME()
+            ) WITH (
+                'connector' = 'faker',
+                'rows-per-second' = '1',
+                'fields.tank_id.expression' = '#{Number.numberBetween ''1'',''10''}',
+                'fields.tank_name.expression' = '#{Name.firstName}'
+            )""";
+
+    private static final String LATEST_TANKS = """
+            CREATE TEMPORARY VIEW tanks AS
+            SELECT tank_id, tank_name
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY tank_id ORDER BY proc_time DESC) AS rn
+                FROM tank_updates
+            )
+            WHERE rn = 1""";
+
+    @Test
+    void aViewOverAnUnboundedTableIsCreatedForStreamingOnly() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertEquals("Rank", service.explain(session, ExecutionMode.STREAMING, "SELECT * FROM tanks")
+                .nodes().stream().map(n -> n.kind()).filter("Rank"::equals).findFirst().orElse(null));
+        StreamingOnlyViewException batch = assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
+        assertEquals("tanks", batch.view());
+        assertTrue(batch.getMessage().contains("Streaming mode only"), batch.getMessage());
+        NotExplainableException explain = assertThrows(NotExplainableException.class,
+                () -> service.explain(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
+        assertEquals("STREAMING_ONLY_VIEW", explain.code());
+    }
+
+    @Test
+    void aViewOverAStreamingOnlyViewIsStreamingOnlyToo() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+        service.execute(session, ExecutionMode.STREAMING,
+                "CREATE TEMPORARY VIEW tank_names AS SELECT tank_name FROM tanks");
+
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tank_names"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tank_names"));
+    }
+
+    @Test
+    void buildingTheSchemaAgainKeepsTheViewStreamingOnly() {
+        FlinkSession session = new FlinkSession("test", factory);
+        for (int i = 0; i < 2; i++) {
+            service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+            service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+        }
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
+    }
+
+    @Test
+    void aViewRecreatedOverABoundedTableWorksInBatchAgain() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+        service.execute(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE bounded_tanks (tank_id INT, tank_name STRING) WITH (
+                    'connector' = 'datagen', 'number-of-rows' = '3',
+                    'fields.tank_id.kind' = 'sequence', 'fields.tank_id.start' = '1', 'fields.tank_id.end' = '3')
+                """);
+        service.execute(session, ExecutionMode.STREAMING, "CREATE TEMPORARY VIEW tanks AS SELECT * FROM bounded_tanks");
+
+        assertFalse(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertEquals(3, service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks").rowCount());
+    }
+
+    @Test
+    void aDroppedStreamingOnlyViewIsMissingInBothModes() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+        service.execute(session, ExecutionMode.STREAMING, "DROP TEMPORARY VIEW tanks");
+
+        assertFalse(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertThrows(TableNotFoundException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
+    }
+
+    @Test
+    void aViewWithAnotherErrorStillFails() {
+        FlinkSession session = new FlinkSession("test", factory);
+        assertThrows(TableNotFoundException.class, () -> service.execute(session, ExecutionMode.STREAMING,
+                "CREATE TEMPORARY VIEW v AS SELECT * FROM no_such_table"));
+        assertFalse(SqlExecutionService.isStreamingOnlyView(session, "v"));
+    }
+
+    @Test
+    void ddlObjectPathIsTheUnquotedNameParts() {
+        assertEquals(Optional.of(List.of("tanks")), SqlExecutionService.ddlObjectPath("CREATE TEMPORARY VIEW tanks AS SELECT 1"));
+        assertEquals(Optional.of(List.of("db", "my.view")), SqlExecutionService.ddlObjectPath(
+                "-- note\nCREATE VIEW IF NOT EXISTS db.`my.view` AS SELECT 1"));
+        assertEquals(Optional.of(List.of("t")), SqlExecutionService.ddlObjectPath("DROP TEMPORARY VIEW IF EXISTS t;"));
+        assertEquals(Optional.of(List.of("c", "d", "orders")), SqlExecutionService.ddlObjectPath("CREATE TABLE c.d.orders (id INT)"));
+        assertEquals(Optional.empty(), SqlExecutionService.ddlObjectPath("SELECT 1"));
+    }
+
+    /** Copilot's review: a view in another database with the same name is a different view. */
+    @Test
+    void streamingOnlyViewsAreKeyedByDatabaseToo() {
+        FlinkSession session = new FlinkSession("test", factory);
+        session.runOnPlannerThread(() -> {
+            session.getBatchEnv().executeSql("CREATE DATABASE other_db");
+            session.getStreamEnv().executeSql("CREATE DATABASE other_db");
+            return null;
+        });
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+
+        // The same name in other_db is missing, not streaming-only.
+        assertThrows(TableNotFoundException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM other_db.tanks"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM default_database.tanks"));
+
+        // Creating and dropping other_db.tanks leaves the default database's mark alone.
+        service.execute(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE bounded_tanks (tank_id INT) WITH (
+                    'connector' = 'datagen', 'number-of-rows' = '1')
+                """);
+        service.execute(session, ExecutionMode.STREAMING, "CREATE TEMPORARY VIEW other_db.tanks AS SELECT * FROM bounded_tanks");
+        service.execute(session, ExecutionMode.STREAMING, "DROP TEMPORARY VIEW other_db.tanks");
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
+    }
+
     @Test
     void dropStatementForCreateTable() {
         String sql = "CREATE TABLE orders (id INT) WITH ('connector' = 'datagen')";

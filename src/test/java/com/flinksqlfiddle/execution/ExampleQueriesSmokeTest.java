@@ -298,20 +298,21 @@ class ExampleQueriesSmokeTest {
     }
 
     // --- E-Commerce Streaming (Faker, multi-table join) ---
-    // Uses narrow ID ranges (1-5) so that bounded 20-row sources guarantee join matches.
+    // Uses narrow ID ranges (1-5) so that bounded 20-row sources guarantee join matches. The
+    // dimensions are update streams deduplicated in a view, as in the preset (bean nhqw).
 
     @Test
     void fakerEcommerceStreaming() {
         FlinkSession session = new FlinkSession("smoke-faker-ecom", factory);
 
         executeDdl(session, ExecutionMode.STREAMING, """
-                CREATE TEMPORARY TABLE products (
+                CREATE TEMPORARY TABLE product_updates (
                     product_id STRING,
                     `name` STRING,
                     brand STRING,
                     vendor STRING,
                     department STRING,
-                    PRIMARY KEY (product_id) NOT ENFORCED
+                    proc_time AS PROCTIME()
                 ) WITH (
                     'connector' = 'faker',
                     'number-of-rows' = '20',
@@ -322,14 +323,14 @@ class ExampleQueriesSmokeTest {
                     'fields.department.expression' = '#{Commerce.department}'
                 );
 
-                CREATE TEMPORARY TABLE customers (
+                CREATE TEMPORARY TABLE customer_updates (
                     customer_id INT,
                     `name` STRING,
                     address STRING,
                     postcode STRING,
                     city STRING,
                     email STRING,
-                    PRIMARY KEY (customer_id) NOT ENFORCED
+                    proc_time AS PROCTIME()
                 ) WITH (
                     'connector' = 'faker',
                     'number-of-rows' = '20',
@@ -340,6 +341,22 @@ class ExampleQueriesSmokeTest {
                     'fields.city.expression' = '#{Address.city}',
                     'fields.email.expression' = '#{Internet.emailAddress}'
                 );
+
+                CREATE TEMPORARY VIEW products AS
+                SELECT product_id, `name`, brand, vendor, department
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY proc_time DESC) AS rn
+                    FROM product_updates
+                )
+                WHERE rn = 1;
+
+                CREATE TEMPORARY VIEW customers AS
+                SELECT customer_id, `name`, address, postcode, city, email
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY proc_time DESC) AS rn
+                    FROM customer_updates
+                )
+                WHERE rn = 1;
 
                 CREATE TEMPORARY TABLE orders (
                     order_id STRING,
@@ -398,13 +415,13 @@ class ExampleQueriesSmokeTest {
         FlinkSession session = new FlinkSession("smoke-brew", factory);
 
         executeDdl(session, ExecutionMode.STREAMING, """
-                CREATE TEMPORARY TABLE tanks (
+                CREATE TEMPORARY TABLE tank_updates (
                     tank_id     INT,
                     tank_name   STRING,
                     tank_type   STRING,
                     capacity_liters INT,
                     location    STRING,
-                    PRIMARY KEY (tank_id) NOT ENFORCED
+                    proc_time   AS PROCTIME()
                 ) WITH (
                     'connector' = 'faker',
                     'number-of-rows' = '10',
@@ -415,13 +432,13 @@ class ExampleQueriesSmokeTest {
                     'fields.location.expression' = '#{Options.option ''Building A'',''Building B''}'
                 );
 
-                CREATE TEMPORARY TABLE recipes (
+                CREATE TEMPORARY TABLE recipe_updates (
                     recipe_id   INT,
                     beer_name   STRING,
                     style       STRING,
                     target_ibu  INT,
                     target_abv  DOUBLE,
-                    PRIMARY KEY (recipe_id) NOT ENFORCED
+                    proc_time   AS PROCTIME()
                 ) WITH (
                     'connector' = 'faker',
                     'number-of-rows' = '10',
@@ -431,6 +448,22 @@ class ExampleQueriesSmokeTest {
                     'fields.target_ibu.expression' = '#{Number.numberBetween ''10'',''100''}',
                     'fields.target_abv.expression' = '#{Number.randomDouble ''1'',''3'',''12''}'
                 );
+
+                CREATE TEMPORARY VIEW tanks AS
+                SELECT tank_id, tank_name, tank_type, capacity_liters, location
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY tank_id ORDER BY proc_time DESC) AS rn
+                    FROM tank_updates
+                )
+                WHERE rn = 1;
+
+                CREATE TEMPORARY VIEW recipes AS
+                SELECT recipe_id, beer_name, style, target_ibu, target_abv
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY recipe_id ORDER BY proc_time DESC) AS rn
+                    FROM recipe_updates
+                )
+                WHERE rn = 1;
 
                 CREATE TEMPORARY TABLE sensor_readings (
                     reading_id      STRING,
