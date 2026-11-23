@@ -1,7 +1,7 @@
 ---
 # flink-sql-playground-nhqw
 title: Faker dimension tables declare PRIMARY KEYs over insert-only data
-status: in-progress
+status: completed
 type: bug
 priority: normal
 created_at: 2026-11-22T21:44:27Z
@@ -31,3 +31,4 @@ Fix:
 - Job Graph: each join's dimension input is a `Rank` (rank 1) emitting `I,UB,UA`, where the join used to trust a declared unique key over `[I]`.
 - Views over unbounded tables used to fail Build Schema in the batch environment. They are now created for Streaming only, and BATCH answers `STREAMING_ONLY_VIEW`.
 - `DimensionPresetSmokeTest` replays both presets' changelogs. ADR 0009 and an AGENTS.md rule cover it.
+- Adversarial testing: Bob unavailable (no BOB_API_KEY); Copilot found two bugs (chained views, name collisions across databases), both fixed in #86.
