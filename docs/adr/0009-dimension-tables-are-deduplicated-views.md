@@ -54,7 +54,8 @@ runs every CREATE in both the batch and the streaming environment, and the batch
   `DimensionPresetSmokeTest` runs both presets as shipped and replays their changelogs: no key may
   be live twice.
 - `SqlExecutionService` creates a `CREATE VIEW` whose batch planning fails with the unbounded-source
-  refusal in the streaming environment only, and records the view's name on the `FlinkSession`.
+  refusal, or with a missing view that is itself streaming-only (a view over such a view), in the
+  streaming environment only, and records the view's name on the `FlinkSession`.
   A BATCH execute that misses such a view answers HTTP 400 with code `STREAMING_ONLY_VIEW`
   ("View 'tanks' reads an unbounded table, so it exists in Streaming mode only. Switch to Streaming
   to query it."), and a BATCH explain answers `NotExplainableException` with the same code, instead

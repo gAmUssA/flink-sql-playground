@@ -224,6 +224,19 @@ class SqlExecutionServiceTest {
     }
 
     @Test
+    void aViewOverAStreamingOnlyViewIsStreamingOnlyToo() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+        service.execute(session, ExecutionMode.STREAMING,
+                "CREATE TEMPORARY VIEW tank_names AS SELECT tank_name FROM tanks");
+
+        assertTrue(session.isStreamingOnlyView("tank_names"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tank_names"));
+    }
+
+    @Test
     void buildingTheSchemaAgainKeepsTheViewStreamingOnly() {
         FlinkSession session = new FlinkSession("test", factory);
         for (int i = 0; i < 2; i++) {

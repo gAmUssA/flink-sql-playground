@@ -318,6 +318,13 @@ public class SqlExecutionService {
         return matcher.find() && matcher.group(2).equalsIgnoreCase("VIEW");
     }
 
+    /** The batch failure is a missing view that this session has in Streaming only. */
+    private static boolean readsStreamingOnlyView(FlinkSession session, RuntimeException e, String sql) {
+        return TableNotFoundException.detect(e, sql)
+                .map(missing -> session.isStreamingOnlyView(missing.table()))
+                .orElse(false);
+    }
+
     private static boolean isUnboundedInBatch(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
             if (t instanceof ValidationException && t.getMessage() != null
@@ -382,9 +389,11 @@ public class SqlExecutionService {
                 session.getBatchEnv().executeSql(sql);
             } catch (RuntimeException e) {
                 // A view over an unbounded table (a deduplication over a faker or datagen
-                // stream) cannot be planned in batch mode. Create it for Streaming only and
-                // remember that, so a BATCH query on it says so instead of "not found".
-                if (!isCreateView(sql) || name.isEmpty() || !isUnboundedInBatch(e)) {
+                // stream) cannot be planned in batch mode, nor can a view over such a view.
+                // Create it for Streaming only and remember that, so a BATCH query on it says
+                // so instead of "not found".
+                if (!isCreateView(sql) || name.isEmpty()
+                        || !(isUnboundedInBatch(e) || readsStreamingOnlyView(session, e, sql))) {
                     throw e;
                 }
                 log.debug("View {} reads an unbounded table: streaming environment only", name.get());
