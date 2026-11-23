@@ -1,10 +1,11 @@
 ---
 # flink-sql-playground-har4
 title: Embed mode for shared fiddles
-status: todo
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-11-22T18:06:37Z
-updated_at: 2026-11-22T18:06:37Z
+updated_at: 2026-11-22T23:59:03Z
 parent: flink-sql-playground-e6yy
 ---
 

@@ -16,6 +16,7 @@ An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQ
 - **Batch and streaming modes** — switch between execution modes per query
 - **Built-in data generators** — `datagen` and custom `faker` connectors for realistic test data
 - **Shareable fiddles** — save and share SQL snippets via short URLs; when the server is unavailable, Share copies a self-contained link that carries the SQL in the URL fragment
+- **Embeddable** — drop a runnable fiddle into a blog post or slide with an `<iframe>` (see [Embedding a fiddle](#embedding-a-fiddle))
 - **Example queries** — 15 preloaded examples covering windows, joins, pattern matching, and more
 - **Security sandbox** — blocked UDF injection, connector whitelist, execution timeouts
 
@@ -64,6 +65,39 @@ docker compose up --build
 Open [http://localhost:9090](http://localhost:9090) in your browser.
 
 To stop: press `Ctrl+C` or run `docker compose down`.
+
+## Embedding a fiddle
+
+Share → **Copy embed code** copies an `<iframe>` for the fiddle on screen:
+
+```html
+<iframe src="https://<host>/embed.html#f=v1.…" title="Flink SQL fiddle" width="100%" height="480"
+        loading="lazy" style="border:1px solid #8884;border-radius:8px"
+        referrerpolicy="strict-origin-when-cross-origin" allow="clipboard-write"></iframe>
+```
+
+The embed shows the query editor, Run, and the Table, Changelog, Job Graph and Timeline tabs.
+The schema sits behind a toggle and cannot be edited. **Open in playground** opens the full app with
+the same fiddle. The SQL travels in the URL fragment, so the link works while the server sleeps and
+the fragment never reaches a server.
+
+| Param (before the `#`) | Effect |
+|---|---|
+| `autorun=1` | Runs the query once, when the embed is on screen. |
+| `tab=changelog` | Opens `table` (default), `changelog`, `graph` or `timeline`. |
+| `theme=cobalt` | `nebula`, `carbon` or `cobalt`; without it the embed follows the visitor's colour scheme. |
+
+Example: `https://<host>/embed.html?autorun=1&tab=changelog#f=v1.…`
+
+- **No session until Run.** A page with five embeds opens none on load. The first Run says "Waking up
+  the Flink cluster…" while an idle backend starts (up to about half a minute), builds the schema, then
+  runs the query.
+- **Size.** Give it at least 400 px of width and 400 px of height; 480 px is the default.
+- **Who may embed.** `embed.html` is the only page the backend lets other sites frame (`frame-ancestors *`);
+  the app and the API refuse framing. Set `EMBED_FRAME_ANCESTORS` (space-separated origins) to restrict it.
+  The decision is in [ADR 0008](docs/adr/0008-embed-mode.md).
+- Self-contained links are limited by URL length: a very large fiddle may be too long for some
+  tools to paste. The playground's own short link (`/f/<code>`) is not an embed URL.
 
 ## Running Tests
 

@@ -232,6 +232,7 @@ test('choosing a preset replaces both editors and Share sends their text', async
   let shared = null;
   page.on('request', (r) => { if (/\/api\/fiddles$/.test(r.url())) shared = JSON.parse(r.postData()); });
   await page.locator('#share-btn').click();
+  await page.getByRole('menuitem', { name: 'Copy link' }).click();
   await expect.poll(() => shared).not.toBeNull();
   expect(shared.query).toBe(preset.query);
   expect(shared.schema).toBe(preset.schema);

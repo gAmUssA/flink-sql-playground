@@ -1,0 +1,41 @@
+/* embed.html: the compact view for an <iframe>. Loaded after style.css; the results views
+   (rv-*) come from there unchanged. */
+.embed-app { display: flex !important; } /* not the grid of a phone held sideways */
+.embed-app [hidden] { display: none !important; }
+.embed-bar {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface) 50%, transparent);
+}
+.embed-bar .tb-spacer { flex: 1; min-width: 0; }
+.embed-mode { font-family: var(--mono); font-size: 11.5px; color: var(--text-2); white-space: nowrap; }
+.embed-bar .btn { white-space: nowrap; text-decoration: none; }
+.embed-bar .btn.is-on { background: var(--surface-3); border-color: var(--border-strong); color: var(--text); }
+.embed-open { gap: 6px; display: inline-flex; align-items: center; }
+.embed-editors { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; max-height: 55%; }
+.embed-editors .pane { flex: 0 0 auto; }
+#query-panel .pane-body { height: clamp(88px, 26vh, 190px); }
+#schema-panel .pane-body { height: clamp(72px, 22vh, 150px); }
+#schema-panel { border-bottom: 1px solid var(--border); }
+/* [data-mview] outranks style.css's phone rule `.app[data-mview=results] .results { flex: 1 1 auto }`, which
+   would let the results grow with their rows and push the status line out of the iframe. */
+.embed-app[data-mview] .results { flex: 1 1 0; min-height: 0; border-top: 1px solid var(--border); }
+.embed-app .results-head { padding-right: 8px; gap: 6px; }
+.embed-app .results-tabs { overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.embed-app .rtab { white-space: nowrap; }
+.embed-foot {
+  display: flex; align-items: center; gap: 12px; flex: 0 0 auto; min-height: 28px; padding: 4px 12px;
+  border-top: 1px solid var(--border); background: color-mix(in oklab, var(--surface) 50%, transparent);
+}
+.embed-foot .tb-status { display: inline-flex !important; /* style.css hides it on phones, where the app shows it in its status bar */ max-width: none; flex: 1 1 auto; min-width: 0; font-size: 12px; }
+.embed-app .rv-empty { min-height: 0; }
+@media (max-width: 420px) {
+  .embed-mode { display: none; }
+}
+@media (max-height: 360px) {
+  .embed-editors { max-height: 45%; }
+  #query-panel .pane-body { height: 72px; }
+}
+@media (pointer: coarse) {
+  .embed-bar .btn { min-height: 44px; min-width: 44px; }
+}

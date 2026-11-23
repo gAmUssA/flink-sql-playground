@@ -28,6 +28,8 @@ const ICONS = {
   bolt: '<path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z" fill="currentColor" stroke="none"/>',
   expand: '<path d="M9 21H5a2 2 0 0 1-2-2v-4"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
   minimize: '<path d="M9 3v4a2 2 0 0 1-2 2H3"/><path d="M21 9h-4a2 2 0 0 1-2-2V3"/><path d="M3 15h4a2 2 0 0 1 2 2v4"/><path d="M15 21v-4a2 2 0 0 1 2-2h4"/>',
+  ext: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  code: '<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   dot: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
@@ -109,6 +111,8 @@ function setTweak(key, val) {
 }
 
 /* ============================== App state ============================== */
+// embed.html is the compact view for an <iframe> (ADR 0008): no session until the first Run.
+const EMBED = document.documentElement.dataset.embed === '1';
 let sessionId = null;
 let schemaEditor = null;
 let queryEditor = null;
@@ -198,7 +202,7 @@ function setMode(mode) {
 // Narrower than 768px, or a short touch screen (a phone held sideways). css/style.css mirrors
 // this query for the phone @media block; layout-criterion.spec.js checks they agree.
 const PHONE_QUERY = '(max-width: 767px), (max-height: 500px) and (pointer: coarse)';
-function isPhoneLayout() { return !!(window.matchMedia && window.matchMedia(PHONE_QUERY).matches); }
+function isPhoneLayout() { return !EMBED && !!(window.matchMedia && window.matchMedia(PHONE_QUERY).matches); }
 
 const PHONE_PANELS = { schema: 'schema-panel', query: 'query-panel', results: 'results-panel' };
 
@@ -296,10 +300,13 @@ function scheduleEditorTables() {
   editorTablesTimer = setTimeout(updateEditorTables, 250);
 }
 
+let fiddleReady = Promise.resolve('none');
 function initEditors() {
   const first = (typeof EXAMPLES !== 'undefined' && EXAMPLES.length) ? EXAMPLES[0] : null;
   schemaEditor = FlinkEditor.create(document.getElementById('schema-editor'), {
     value: first ? first.schema : '', label: 'Schema (DDL) editor', onChange: scheduleEditorTables,
+    // An embed builds its schema once per session, so the schema is read-only there.
+    readOnly: EMBED,
     // The button is disabled while a build runs; the shortcut must not start a second one.
     onRun: () => { if (!document.getElementById('build-schema-btn').disabled) buildSchema(); }
   });
@@ -308,7 +315,7 @@ function initEditors() {
   });
   if (first) setMode(first.mode);
   updateEditorTables();
-  loadFiddleFromUrl();
+  fiddleReady = loadFiddleFromUrl();
   // Opening another fiddle link in the same tab changes only the fragment, with no reload.
   window.addEventListener('hashchange', () => {
     if (FiddleLink.isFiddleFragment(window.location.hash)) loadFiddleFromUrl();
@@ -317,10 +324,37 @@ function initEditors() {
 document.addEventListener('DOMContentLoaded', initEditors);
 
 /* ============================== Session ============================== */
-async function createSession() {
+// Resolves once the session exists (or failed: sessionId stays null). Callers share one request,
+// so a double Run or a second caller never opens a second session.
+let sessionRequest = null;
+function ensureSession() {
+  if (sessionId) return Promise.resolve();
+  if (!sessionRequest) sessionRequest = (EMBED ? createSessionWithRetry() : createSession()).finally(() => { sessionRequest = null; });
+  return sessionRequest;
+}
+
+// The Railway app sleeps when idle: the first request meets a cold start, which can answer 502/503
+// or time out for a while. An embed is often that first request, so it keeps trying for ~40 s.
+const WAKE_ATTEMPTS = 8;
+const WAKE_PAUSE_MS = Number(window.EMBED_WAKE_PAUSE_MS) || 5000; // the override is for browser tests
+async function createSessionWithRetry() {
+  for (let attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
+    setStatus('Waking up the Flink cluster…', 'compiling');
+    const outcome = await createSession({ quiet: true });
+    if (outcome !== 'retry' || attempt === WAKE_ATTEMPTS) {
+      if (outcome === 'retry') setStatus('The Flink cluster did not wake up. Press Run to try again.', 'error');
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, WAKE_PAUSE_MS));
+  }
+}
+
+// Resolves 'ok', 'retry' (the backend may still be waking) or 'failed' (retrying will not help).
+async function createSession({ quiet = false } = {}) {
   try {
     const res = await fetch(api('/api/sessions'), { method: 'POST' });
-    if (res.status === 429) { setStatus('Session limit reached — try later', 'error'); return; }
+    if (res.status === 429) { setStatus('Session limit reached — try later', 'error'); return 'failed'; }
+    if (quiet && [502, 503, 504].includes(res.status)) return 'retry';
     if (!res.ok) throw new Error('Failed to create session');
     const data = await res.json();
     sessionId = data.sessionId;
@@ -328,8 +362,11 @@ async function createSession() {
     setStateBadge('ready', 'ready');
     const el = document.getElementById('status-session');
     if (el) el.innerHTML = `${iconSvg('dot', 9)} session ${sessionId.substring(0, 8)}`;
+    return 'ok';
   } catch (err) {
+    if (quiet && err instanceof TypeError) return 'retry'; // fetch itself failed: network error or a CORS-less 502
     setStatus('Error: ' + err.message, 'error');
+    return 'failed';
   }
 }
 
@@ -415,9 +452,10 @@ function buildFailureText(result) {
     : result.error;
 }
 async function runSchemaBuild() {
+  if (EMBED && !sessionId) await ensureSession();
   if (!sessionId) { setStatus('No active session', 'error'); return { ok: false, error: 'No active session' }; }
   const btn = document.getElementById('build-schema-btn');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   setStatus('Building schema…', 'compiling');
   try {
     const schema = schemaEditor.getValue().trim();
@@ -445,7 +483,7 @@ async function runSchemaBuild() {
     setStatus('Schema error: ' + err.message, 'error');
     return { ok: false, error: err.message };
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -462,8 +500,54 @@ function setRunningUI(running) {
   if (activeTab === 'graph') renderActiveView();
 }
 
+/* ---- embed: the session starts on the first Run ---- */
+let embedStarting = false;      // a Run is creating the session or building the schema
+let embedSchemaBuilt = false;   // the schema editor's DDL ran in the current session
+let embedWaking = false;        // show the cold-start state in the results area
+
+function resetEmbedSession() { sessionId = null; embedSchemaBuilt = false; }
+
+// Makes the session and builds the schema if this Run needs either. Resolves true when the
+// query can run. Never creates more than one session, whatever the number of Runs.
+async function embedPrepare() {
+  embedStarting = true;
+  const btn = runButton();
+  btn.disabled = true;
+  try {
+    if (!sessionId) {
+      embedWaking = true;
+      resetResults(); R.err = null; renderActiveView();
+      await ensureSession();
+      embedWaking = false;
+      if (!sessionId) { renderActiveView(); return false; }
+    }
+    if (!embedSchemaBuilt) {
+      const built = await buildSchema();
+      if (!built.ok) {
+        // A session that expired between two Runs is replaced on the next press.
+        if (built.code === 'SESSION_NOT_FOUND') resetEmbedSession();
+        showError(built.code === 'SESSION_NOT_FOUND' ? 'The session expired. Press Run to start a new one.' : built.error);
+        setStatus('Schema error', 'error');
+        return false;
+      }
+      embedSchemaBuilt = true;
+    }
+    return true;
+  } finally {
+    embedWaking = false;
+    embedStarting = false;
+    btn.disabled = false;
+  }
+}
+
 async function runQuery() {
   if (R.running) { if (activeStreamController) activeStreamController.abort(); stopTimeline(); return; }
+  if (EMBED) {
+    if (embedStarting) return; // a second Run while the first waits for the cluster
+    const query = queryEditor.getValue().trim();
+    if (!query) { setStatus('No query to execute', 'ready'); return; }
+    if (!(await embedPrepare())) return;
+  }
   if (!sessionId) { setStatus('No active session', 'error'); return; }
   const query = queryEditor.getValue().trim();
   if (!query) { setStatus('No query to execute', 'ready'); return; }
@@ -693,6 +777,10 @@ function setActiveTab(tab) {
 }
 
 function showError(msg, info = null) {
+  if (EMBED && info && info.code === 'SESSION_NOT_FOUND') {
+    resetEmbedSession();
+    msg = 'The session expired. Press Run to start a new one.';
+  }
   R.err = msg || 'Unknown error';
   R.errInfo = info;
   renderActiveView();
@@ -821,6 +909,12 @@ function renderActiveView() {
   updatePhoneResultCount();
   const body = document.getElementById('results-container');
   if (!body) return;
+  if (embedWaking) {
+    body.innerHTML = emptyState('clock', 'Waking up the Flink cluster…', 'The first run after a quiet spell takes up to half a minute.');
+    body.setAttribute('aria-busy', 'true');
+    return;
+  }
+  body.removeAttribute('aria-busy');
   if (R.err) {
     body.innerHTML = isTableNotFound(R.errInfo) ? missingTableState(R.errInfo, R.err) : emptyState('info', 'Query failed', R.err, true);
     releaseResultsBar();
@@ -1527,14 +1621,76 @@ const SHARE_SAVE_TIMEOUT_MS = 5000;
 // Absolute URL for a site-relative path, honouring <base href> (the app may live under a subpath).
 function siteUrl(path) { return new URL(path, document.baseURI).href; }
 
-async function copyLink(url, copiedMessage) {
+async function copyLink(url, copiedMessage, what = 'link') {
   try { await navigator.clipboard.writeText(url); setStatus(copiedMessage, 'ready'); }
-  catch (e) { window.prompt('Copy this link:', url); setStatus('Fiddle link ready', 'ready'); }
+  catch (e) { window.prompt(`Copy this ${what}:`, url); setStatus(`Fiddle ${what} ready`, 'ready'); }
 }
+
+function currentFiddle() { return { schema: schemaEditor.getValue(), query: queryEditor.getValue(), mode: getMode() }; }
+
+// Embed code: an <iframe> for embed.html with the fiddle in the fragment. It never needs the
+// backend, so it works while the server sleeps, and the fragment never reaches a server.
+async function copyEmbedCode() {
+  if (!schemaEditor || !queryEditor) return;
+  try {
+    const fragment = await FiddleLink.encode(currentFiddle());
+    await copyLink(EmbedParams.iframeSnippet(EmbedParams.embedUrl(document.baseURI, fragment)), 'Embed code copied to clipboard', 'embed code');
+  } catch (err) {
+    setStatus('Embed code failed: ' + err.message, 'error');
+  }
+}
+
+/* ---- Share menu: copy link, copy embed code ---- */
+let shareMenu = null;
+function closeShareMenu({ restoreFocus = false } = {}) {
+  if (!shareMenu) return;
+  shareMenu.remove();
+  shareMenu = null;
+  const btn = document.getElementById('share-btn');
+  btn.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) btn.focus();
+}
+function toggleShareMenu() {
+  if (shareMenu) { closeShareMenu({ restoreFocus: true }); return; }
+  const btn = document.getElementById('share-btn');
+  const menu = document.createElement('div');
+  menu.className = 'share-menu';
+  menu.id = 'share-menu';
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Share');
+  menu.innerHTML = `<button type="button" role="menuitem" id="share-copy-link">${iconSvg('share', 14)} Copy link</button>`
+    + `<button type="button" role="menuitem" id="share-copy-embed">${iconSvg('code', 14)} Copy embed code</button>`;
+  document.body.appendChild(menu);
+  const r = btn.getBoundingClientRect();
+  menu.style.top = `${r.bottom + 6}px`;
+  menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8))}px`;
+  btn.setAttribute('aria-expanded', 'true');
+  shareMenu = menu;
+  menu.querySelector('button').focus();
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('button');
+    if (!item) return;
+    closeShareMenu({ restoreFocus: true });
+    if (item.id === 'share-copy-embed') copyEmbedCode(); else shareFiddle();
+  });
+  menu.addEventListener('keydown', (e) => {
+    const items = [...menu.querySelectorAll('button')];
+    const at = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { items[(at + 1) % items.length].focus(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { items[(at - 1 + items.length) % items.length].focus(); e.preventDefault(); }
+    else if (e.key === 'Tab') closeShareMenu();
+  });
+}
+document.addEventListener('click', (e) => {
+  if (shareMenu && !e.target.closest('#share-menu, #share-btn')) closeShareMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && shareMenu) closeShareMenu({ restoreFocus: true });
+});
 
 async function shareFiddle() {
   if (!schemaEditor || !queryEditor) return;
-  const fiddle = { schema: schemaEditor.getValue(), query: queryEditor.getValue(), mode: getMode() };
+  const fiddle = currentFiddle();
   try {
     const res = await fetch(api('/api/fiddles'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1559,7 +1715,8 @@ function applyFiddle(fiddle, message) {
   if (queryEditor) queryEditor.setValue(fiddle.query);
   setMode(fiddle.mode);
   setStatus(message, 'ready');
-  setTimeout(() => { if (sessionId) buildSchema(); }, 500);
+  // An embed builds its schema itself, on Run (embedPrepare): a second build here would fail on CREATE.
+  if (!EMBED) setTimeout(() => { if (sessionId) buildSchema(); }, 500);
 }
 
 // Bumped on every load request; a load whose decode or fetch finishes after a newer
@@ -1571,21 +1728,23 @@ async function loadFiddleFromUrl() {
   const isCurrent = () => generation === fiddleLoadGeneration;
   if (FiddleLink.isFiddleFragment(window.location.hash)) {
     const fiddle = await FiddleLink.decode(window.location.hash);
-    if (!isCurrent()) return;
-    if (fiddle) applyFiddle(fiddle, 'Fiddle loaded from link');
-    else setStatus('This fiddle link is damaged or from a newer version', 'error');
-    return;
+    if (!isCurrent()) return 'stale';
+    if (!fiddle) { setStatus('This fiddle link is damaged or from a newer version', 'error'); return 'failed'; }
+    applyFiddle(fiddle, 'Fiddle loaded from link');
+    return 'applied';
   }
-  const match = window.location.pathname.match(/\/f\/([a-f0-9]+)$/);
-  if (!match) return;
+  // An embed never asks the backend for a fiddle: it would wake the server just to load the page.
+  const match = EMBED ? null : window.location.pathname.match(/\/f\/([a-f0-9]+)$/);
+  if (!match) return 'none';
   try {
     const res = await fetch(api(`/api/fiddles/${match[1]}`));
-    if (!isCurrent()) return;
-    if (!res.ok) { setStatus('Fiddle not found', 'error'); return; }
+    if (!isCurrent()) return 'stale';
+    if (!res.ok) { setStatus('Fiddle not found', 'error'); return 'failed'; }
     const fiddle = await res.json();
-    if (!isCurrent()) return;
+    if (!isCurrent()) return 'stale';
     applyFiddle(fiddle, 'Fiddle loaded');
-  } catch (err) { if (isCurrent()) setStatus('Failed to load fiddle', 'error'); }
+    return 'applied';
+  } catch (err) { if (isCurrent()) setStatus('Failed to load fiddle', 'error'); return 'failed'; }
 }
 
 /* ============================== Build info ============================== */
@@ -1608,7 +1767,7 @@ async function loadBuildInfo() {
 /* ============================== Examples ============================== */
 function populateExamples() {
   const select = document.getElementById('example-select');
-  if (typeof EXAMPLES === 'undefined') return;
+  if (!select || typeof EXAMPLES === 'undefined') return;
   EXAMPLES.forEach((ex, i) => {
     const o = document.createElement('option');
     o.value = i; o.textContent = ex.title; select.appendChild(o);
@@ -1640,7 +1799,8 @@ function syncMaximizeIcons() {
 function togglePanelMaximize(panel) {
   const willMax = !panel.classList.contains('panel-maximized');
   document.querySelectorAll('.panel-maximized').forEach((p) => p.classList.remove('panel-maximized'));
-  document.getElementById('maxed-backdrop').hidden = !willMax;
+  const backdrop = document.getElementById('maxed-backdrop');
+  if (backdrop) backdrop.hidden = !willMax;
   if (willMax) panel.classList.add('panel-maximized');
   syncMaximizeIcons();
   requestAnimationFrame(() => { if (schemaEditor) schemaEditor.layout(); if (queryEditor) queryEditor.layout(); });
@@ -1649,7 +1809,7 @@ function initMaximize() {
   document.querySelectorAll('.panel-maximize-btn').forEach((btn) => {
     btn.addEventListener('click', () => { const p = btn.closest('.pane, .results'); if (p) togglePanelMaximize(p); });
   });
-  document.getElementById('maxed-backdrop').addEventListener('click', () => {
+  on('maxed-backdrop', 'click', () => {
     const m = document.querySelector('.panel-maximized'); if (m) togglePanelMaximize(m);
   });
   document.addEventListener('keydown', (e) => {
@@ -1795,23 +1955,30 @@ function escapeAttr(text) {
 
 /* ============================== Init ============================== */
 loadTweaks();
+// ?theme= picks a theme for this embed only; it is not saved as the visitor's own choice.
+if (EMBED) { const theme = EmbedParams.parse(window.location.search).theme; if (theme) tweaks.theme = theme; }
 applyTweaks();
+
+// Binds a handler to an element that the embed page leaves out.
+function on(id, type, handler) { const el = document.getElementById(id); if (el) el.addEventListener(type, handler); }
 
 document.addEventListener('DOMContentLoaded', () => {
   renderIcons();
   setRunningUI(false);
   applyTweaks();
   populateExamples();
-  createSession().then(warmUp);
-  loadBuildInfo();
+  // The full app opens a session at once and warms the engine. An embed waits for the first Run,
+  // so a page with five embeds opens no session, and none touches the backend, until someone runs one.
+  if (!EMBED) { createSession().then(warmUp); loadBuildInfo(); }
   initMaximize();
   renderActiveView();
 
-  document.getElementById('build-schema-btn').addEventListener('click', buildSchema);
-  document.getElementById('run-query-btn').addEventListener('click', runQuery);
-  document.getElementById('share-btn').addEventListener('click', shareFiddle);
-  document.getElementById('tweaks-btn').addEventListener('click', toggleTweaks);
-  document.getElementById('tour-btn').addEventListener('click', startTour);
+  on('build-schema-btn', 'click', buildSchema);
+  on('run-query-btn', 'click', runQuery);
+  on('share-btn', 'click', toggleShareMenu);
+  on('tweaks-btn', 'click', toggleTweaks);
+  on('tour-btn', 'click', startTour);
+  if (EMBED) initEmbed();
 
   document.querySelectorAll('#mode-segmented button').forEach((b) => {
     b.addEventListener('click', () => {
@@ -1866,10 +2033,10 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (!R.clSearch && x) x.remove();
     refreshChangelogRows();
   });
-  document.getElementById('theme-toggle').addEventListener('click', () => {
+  on('theme-toggle', 'click', () => {
     setTweak('theme', tweaks.theme === 'cobalt' ? 'nebula' : 'cobalt');
   });
-  document.getElementById('schema-browser-toggle').addEventListener('click', (e) => {
+  on('schema-browser-toggle', 'click', (e) => {
     if (isPhoneLayout()) { setTablesDrawer(false, { restoreFocus: true }); return; }
     const collapsed = document.getElementById('schema-browser').classList.toggle('collapsed');
     e.currentTarget.title = collapsed ? 'Expand tables' : 'Collapse';
@@ -1880,12 +2047,12 @@ document.addEventListener('DOMContentLoaded', () => {
     b.addEventListener('click', () => setPhoneView(b.dataset.mview));
     b.addEventListener('keydown', onPhoneTabKey);
   });
-  syncPhoneSemantics();
-  document.getElementById('tables-drawer-btn').addEventListener('click', () => {
+  if (!EMBED) syncPhoneSemantics();
+  on('tables-drawer-btn', 'click', () => {
     setTablesDrawer(!document.querySelector('.app').classList.contains('drawer-open'));
   });
   // Tapping the backdrop closes the drawer like Esc does, focus back on the Tables button.
-  document.getElementById('drawer-backdrop').addEventListener('click', () => setTablesDrawer(false, { restoreFocus: true }));
+  on('drawer-backdrop', 'click', () => setTablesDrawer(false, { restoreFocus: true }));
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.querySelector('.app').classList.contains('drawer-open')) setTablesDrawer(false, { restoreFocus: true });
   });
@@ -1896,13 +2063,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('focusout', (e) => {
     if (!(e.relatedTarget && e.relatedTarget.closest('.cm-editor'))) appEl.classList.remove('editor-focused');
   });
-  if (window.matchMedia) window.matchMedia(PHONE_QUERY).addEventListener('change', (e) => {
+  if (!EMBED && window.matchMedia) window.matchMedia(PHONE_QUERY).addEventListener('change', (e) => {
     if (!e.matches) setTablesDrawer(false);
     syncPhoneSemantics();
   });
 
   // Tables window: drop affordance + inline confirm + card collapse (delegated)
-  document.getElementById('schema-browser-list').addEventListener('click', (e) => {
+  on('schema-browser-list', 'click', (e) => {
     const drop = e.target.closest('.tbl-drop');
     if (drop) { e.stopPropagation(); confirmingDrop = drop.dataset.drop; renderSchemaBrowser(); return; }
     if (e.target.closest('[data-drop-cancel]')) { confirmingDrop = null; renderSchemaBrowser(); return; }
@@ -1921,3 +2088,51 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape' && confirmingDrop) { confirmingDrop = null; renderSchemaBrowser(); }
   });
 });
+
+/* ============================== Embed (embed.html) ============================== */
+// The compact view: editor, Run, results. Wires the schema toggle, the "Open in playground" link,
+// and the ?autorun=1 / ?tab= params. See docs/adr/0008-embed-mode.md.
+function initEmbed() {
+  const params = EmbedParams.parse(window.location.search);
+  if (params.tab) setActiveTab(params.tab);
+
+  const toggle = document.getElementById('embed-schema-toggle');
+  const panel = document.getElementById('schema-panel');
+  toggle.addEventListener('click', () => {
+    const open = panel.hidden;
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.classList.toggle('is-on', open);
+    if (open && schemaEditor) schemaEditor.layout();
+  });
+
+  // The link carries the fragment of what is on screen, so edits to the query come along.
+  const link = document.getElementById('embed-open');
+  let linkTimer = null;
+  const syncLink = async () => {
+    try {
+      const fragment = await FiddleLink.encode(currentFiddle());
+      link.href = EmbedParams.playgroundUrl(document.baseURI, fragment);
+    } catch (e) { /* too large to encode: keep the last link */ }
+  };
+  link.href = EmbedParams.playgroundUrl(document.baseURI, FiddleLink.isFiddleFragment(window.location.hash) ? window.location.hash.slice(1) : '');
+  const scheduleLink = () => { clearTimeout(linkTimer); linkTimer = setTimeout(syncLink, 250); };
+  queryEditor.view.dom.addEventListener('input', scheduleLink);
+  queryEditor.view.dom.addEventListener('keyup', scheduleLink);
+  fiddleReady.then((outcome) => {
+    if (params.autorun && outcome !== 'failed' && outcome !== 'stale') autorunWhenVisible();
+  });
+}
+
+// ?autorun=1 runs the query once, when the embed is on screen. An iframe that is scrolled out of
+// view, hidden or 1x1 never starts a session, so autorun cannot be used to open sessions unseen.
+function autorunWhenVisible() {
+  const start = () => { if (!R.running && !embedStarting) runQuery(); };
+  if (typeof IntersectionObserver === 'undefined') { start(); return; }
+  const watcher = new IntersectionObserver((entries) => {
+    if (!entries.some((e) => e.isIntersecting && e.intersectionRatio >= 0.5)) return;
+    watcher.disconnect();
+    start();
+  }, { threshold: [0.5] });
+  watcher.observe(document.querySelector('.app'));
+}

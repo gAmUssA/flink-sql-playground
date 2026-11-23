@@ -137,6 +137,13 @@ Features:
 - Rate limiting (`rows-per-second`) and bounded mode (`number-of-rows`)
 - Supports all Flink SQL types including ARRAY, MAP, MULTISET
 
+## Embed mode
+
+`embed.html` is a compact page for an `<iframe>`: editor, Run, results. It runs `js/app.js` with
+`data-embed="1"`, opens no session on load and creates one on the first Run (`embedPrepare`). The
+backend lets other sites frame this one path and no other (`EmbedFraming`, `SecurityHeadersTest`).
+See [ADR 0008](adr/0008-embed-mode.md).
+
 ## Frontend
 
 Vanilla HTML/CSS/JavaScript with no build step.

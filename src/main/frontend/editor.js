@@ -157,11 +157,12 @@ function sqlSupport(tables) {
 
 /**
  * Creates an editor in `parent`. Options: value (initial text), onRun (called on Mod-Enter),
- * onChange (called with the text after each edit), label (accessible name).
+ * onChange (called with the text after each edit), label (accessible name), readOnly
+ * (the text can be selected and copied but not edited).
  * Returns {getValue, setValue, setTables, layout, focus, view}; setTables takes the
  * [{name, columns: [{name, type}]}] list that autocomplete offers.
  */
-export function create(parent, { value = '', onRun = null, onChange = null, label = 'SQL editor' } = {}) {
+export function create(parent, { value = '', onRun = null, onChange = null, label = 'SQL editor', readOnly = false } = {}) {
   let tables = [];
   const runKeymap = Prec.highest(keymap.of([{
     key: 'Mod-Enter', preventDefault: true,
@@ -183,6 +184,7 @@ export function create(parent, { value = '', onRun = null, onChange = null, labe
         EditorView.updateListener.of((update) => { if (onChange && update.docChanged) onChange(update.state.doc.toString()); }),
         syntaxHighlighting(highlight),
         theme,
+        EditorState.readOnly.of(readOnly),
         EditorView.contentAttributes.of({ 'aria-label': label, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' }),
       ],
     }),
