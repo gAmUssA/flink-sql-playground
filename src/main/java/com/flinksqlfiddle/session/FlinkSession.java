@@ -3,7 +3,9 @@ package com.flinksqlfiddle.session;
 import com.flinksqlfiddle.flink.FlinkEnvironmentFactory;
 import org.apache.flink.table.api.TableEnvironment;
 
+import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +30,10 @@ public class FlinkSession {
     private volatile TableEnvironment streamEnv;
     private final Object batchLock = new Object();
     private final Object streamLock = new Object();
+
+    // Views created in the streaming environment only: they read an unbounded table, which the
+    // batch environment refuses to plan. Keyed by the view's own name (the last name part).
+    private final Set<String> streamingOnlyViews = ConcurrentHashMap.newKeySet();
 
     /**
      * Creates a session with lazy environment initialization.
@@ -88,6 +94,20 @@ public class FlinkSession {
 
     public void close() {
         plannerExecutor.shutdownNow();
+    }
+
+    /** Records that view {@code name} exists in the streaming environment only. */
+    public void markStreamingOnlyView(String name) {
+        streamingOnlyViews.add(name);
+    }
+
+    /** Forgets {@code name}: it was dropped, or created again in both environments. */
+    public void clearStreamingOnlyView(String name) {
+        streamingOnlyViews.remove(name);
+    }
+
+    public boolean isStreamingOnlyView(String name) {
+        return name != null && streamingOnlyViews.contains(name);
     }
 
     public String getSessionId() {
