@@ -154,7 +154,7 @@ public class SqlExecutionService {
     private static RuntimeException streamingOnlyViewOr(FlinkSession session, ExecutionMode mode,
                                                         TableNotFoundException e) {
         if (mode == ExecutionMode.BATCH && session.runOnPlannerThread(
-                () -> session.isStreamingOnlyView(viewKey(session.getBatchEnv(), e.path())))) {
+                () -> isStreamingOnlyView(session, session.getBatchEnv(), e.path()))) {
             return new StreamingOnlyViewException(e.table(), e);
         }
         return e;
@@ -311,14 +311,29 @@ public class SqlExecutionService {
         return parts.isEmpty() || parts.size() > 3 ? Optional.empty() : Optional.of(List.copyOf(parts));
     }
 
+    /** True when a CREATE or DROP statement says TEMPORARY. */
+    private static boolean isTemporary(String sql) {
+        String normalized = stripLeadingComments(sql);
+        Matcher matcher = CREATE_TABLE_OR_VIEW_PATTERN.matcher(normalized);
+        if (!matcher.find()) {
+            matcher = DROP_TABLE_OR_VIEW_PATTERN.matcher(normalized);
+            if (!matcher.find()) {
+                return false;
+            }
+        }
+        return matcher.group(1) != null;
+    }
+
     /**
-     * The key a streaming-only view is recorded under: its catalog, database and name, the missing
-     * parts filled in from {@code tEnv}'s current catalog and database, as Flink resolves them. So
-     * {@code tanks}, {@code default_database.tanks} and {@code other_db.tanks} are told apart.
-     * Call on the session's planner thread.
+     * The key a streaming-only view is recorded under: temporary or not, then its catalog, database
+     * and name, the missing parts filled in from {@code tEnv}'s current catalog and database, as Flink
+     * resolves them. So {@code tanks}, {@code default_database.tanks} and {@code other_db.tanks} are
+     * told apart, and so are a temporary view and a permanent one of the same name: dropping one
+     * leaves the other. Call on the session's planner thread.
      */
-    static String viewKey(TableEnvironment tEnv, List<String> parts) {
-        List<String> full = new ArrayList<>(3);
+    static String viewKey(TableEnvironment tEnv, boolean temporary, List<String> parts) {
+        List<String> full = new ArrayList<>(4);
+        full.add(temporary ? "temporary" : "permanent");
         if (parts.size() < 3) {
             full.add(tEnv.getCurrentCatalog());
         }
@@ -333,11 +348,25 @@ public class SqlExecutionService {
     @VisibleForTesting
     static boolean isStreamingOnlyView(FlinkSession session, String name) {
         List<String> parts = ddlObjectPath("DROP VIEW " + name).orElseThrow();
-        return session.runOnPlannerThread(() -> session.isStreamingOnlyView(viewKey(session.getStreamEnv(), parts)));
+        return session.runOnPlannerThread(() -> isStreamingOnlyView(session, session.getStreamEnv(), parts));
+    }
+
+    /**
+     * A query names a view without saying whether it is temporary; Flink resolves a temporary view
+     * first. Either kind being streaming-only means the name exists in Streaming only.
+     */
+    private static boolean isStreamingOnlyView(FlinkSession session, TableEnvironment tEnv, List<String> parts) {
+        return session.isStreamingOnlyView(viewKey(tEnv, true, parts))
+                || session.isStreamingOnlyView(viewKey(tEnv, false, parts));
     }
 
     private static boolean isDrop(String sql) {
         return DROP_TABLE_OR_VIEW_PATTERN.matcher(stripLeadingComments(sql)).find();
+    }
+
+    private static boolean isDropView(String sql) {
+        Matcher matcher = DROP_TABLE_OR_VIEW_PATTERN.matcher(stripLeadingComments(sql));
+        return matcher.find() && matcher.group(2).equalsIgnoreCase("VIEW");
     }
 
     private static boolean isCreateView(String sql) {
@@ -348,7 +377,7 @@ public class SqlExecutionService {
     /** The batch failure is a missing view that this session has in Streaming only. */
     private static boolean readsStreamingOnlyView(FlinkSession session, RuntimeException e, String sql) {
         return TableNotFoundException.detect(e, sql)
-                .map(missing -> session.isStreamingOnlyView(viewKey(session.getBatchEnv(), missing.path())))
+                .map(missing -> isStreamingOnlyView(session, session.getBatchEnv(), missing.path()))
                 .orElse(false);
     }
 
@@ -398,18 +427,25 @@ public class SqlExecutionService {
     private QueryResult executeDdlOnBothEnvironments(FlinkSession session, String sql) {
         long startTime = System.currentTimeMillis();
         session.runOnPlannerThread(() -> {
+            Optional<String> name = ddlObjectPath(sql)
+                    .map(parts -> viewKey(session.getStreamEnv(), isTemporary(sql), parts));
             // Drop any prior table or view of the same name first so re-execution is idempotent.
             dropStatementFor(sql).ifPresent(drop -> {
                 log.debug("Executing idempotent DROP: {}", drop);
                 session.getBatchEnv().executeSql(drop);
                 session.getStreamEnv().executeSql(drop);
+                if (isDropView(drop)) {
+                    // The old view is gone from both environments, so is its mark.
+                    name.ifPresent(session::clearStreamingOnlyView);
+                }
             });
-            Optional<String> name = ddlObjectPath(sql).map(parts -> viewKey(session.getStreamEnv(), parts));
+            // A mark is cleared only once the statement has run: a CREATE or DROP that fails
+            // leaves the view, and the view keeps its mark.
             boolean streamingOnly = name.map(session::isStreamingOnlyView).orElse(false);
-            name.ifPresent(session::clearStreamingOnlyView);
             if (streamingOnly && isDrop(sql)) {
                 // The batch environment never had it: a plain DROP VIEW would fail there.
                 session.getStreamEnv().executeSql(sql);
+                name.ifPresent(session::clearStreamingOnlyView);
                 return null;
             }
             try {
@@ -429,6 +465,8 @@ public class SqlExecutionService {
                 return null;
             }
             session.getStreamEnv().executeSql(sql);
+            // It ran in both environments: whatever the name is now, it is not streaming-only.
+            name.ifPresent(session::clearStreamingOnlyView);
             return null;
         });
         long executionTimeMs = System.currentTimeMillis() - startTime;

@@ -32,7 +32,7 @@ public class FlinkSession {
     private final Object streamLock = new Object();
 
     // Views created in the streaming environment only: they read an unbounded table, which the
-    // batch environment refuses to plan. Keyed by catalog, database and name
+    // batch environment refuses to plan. Keyed by temporary or not, catalog, database and name
     // (SqlExecutionService.viewKey).
     private final Set<String> streamingOnlyViews = ConcurrentHashMap.newKeySet();
 

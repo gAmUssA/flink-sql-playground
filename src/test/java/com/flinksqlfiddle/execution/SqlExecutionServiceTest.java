@@ -324,6 +324,51 @@ class SqlExecutionServiceTest {
                 () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
     }
 
+    /** Bob's review: a temporary view and a permanent one of the same name are different views. */
+    @Test
+    void droppingATemporaryViewLeavesThePermanentOneStreamingOnly() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES.replace("TEMPORARY ", ""));
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS.replace("TEMPORARY ", ""));
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+
+        // There is no temporary tanks: this drops nothing, and the permanent view keeps its mark.
+        service.execute(session, ExecutionMode.STREAMING, "DROP TEMPORARY VIEW IF EXISTS tanks");
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
+
+        service.execute(session, ExecutionMode.STREAMING, "DROP VIEW tanks");
+        assertFalse(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+    }
+
+    /** Bob's review: a DROP that fails leaves the view, so it must leave the view's mark too. */
+    @Test
+    void aFailedDropKeepsTheViewStreamingOnly() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+
+        // tanks is a view, not a table: Flink refuses this DROP.
+        assertThrows(RuntimeException.class,
+                () -> service.execute(session, ExecutionMode.STREAMING, "DROP TEMPORARY TABLE tanks"));
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
+    }
+
+    /** A CREATE that fails in the streaming environment leaves the view there, and its mark. */
+    @Test
+    void aFailedCreateOfTheSameNameKeepsTheViewStreamingOnly() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+
+        assertThrows(RuntimeException.class, () -> service.execute(session, ExecutionMode.STREAMING,
+                "CREATE TEMPORARY TABLE tanks (tank_id INT) WITH ('connector' = 'datagen')"));
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+    }
+
     @Test
     void dropStatementForCreateTable() {
         String sql = "CREATE TABLE orders (id INT) WITH ('connector' = 'datagen')";
