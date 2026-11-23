@@ -61,6 +61,14 @@ test('build produces a site with base, config, CSP and 404 fallback', () => {
     assert.doesNotMatch(index, /jsdelivr/);
     assert.doesNotMatch(index, /frame-ancestors/);
     assert.equal(fs.readFileSync(path.join(out, '404.html'), 'utf8'), index);
+    // embed.html is rewritten like index.html: its own base, the backend in connect-src, and a page
+    // that still loads the embed script.
+    assert.ok(result.files.includes('embed.html'));
+    assert.ok(result.files.includes('js/embed-params.js'));
+    const embed = fs.readFileSync(path.join(out, 'embed.html'), 'utf8');
+    assert.match(embed, /<base href="\/flink-sql-playground\/" \/>/);
+    assert.match(embed, /connect-src 'self' https:\/\/api\.example\.com/);
+    assert.match(embed, /data-embed="1"/);
     assert.equal(fs.readFileSync(path.join(out, 'js/config.js'), 'utf8').trim().split('\n').pop(),
       'window.API_BASE = "https://api.example.com";');
     assert.throws(() => site.build(out, '/flink-sql-playground/', API), /already exists/);

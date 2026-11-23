@@ -30,6 +30,13 @@ module.exports = defineConfig({
     ...['chromium', 'webkit'].map((browserName) => ({
       name: `layout-criterion-${browserName}`, testMatch: /layout-criterion\.spec\.js/, use: { browserName },
     })),
+    // The embed page inside an iframe, on a desktop window and on phones.
+    ...['chromium', 'webkit'].map((browserName) => ({
+      name: `embed-${browserName}`, testMatch: /embed\.spec\.js/, use: { browserName, viewport: { width: 1000, height: 800 } },
+    })),
+    ...['chromium', 'webkit'].map((browserName) => ({
+      name: `embed-phone-${browserName}`, testMatch: /embed\.spec\.js/, use: { ...devices['iPhone 13'], browserName, viewport: { width: 390, height: 844 } },
+    })),
     { name: 'desktop-chromium', testMatch: /(desktop|editor|results-bars|job-graph|timeline|table-not-found)\.spec\.js/, use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } } },
     { name: 'desktop-webkit', testMatch: /(editor|results-bars|job-graph|timeline|table-not-found)\.spec\.js/, use: { browserName: 'webkit', viewport: { width: 1280, height: 800 } } },
   ],

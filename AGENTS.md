@@ -56,6 +56,13 @@ npx playwright test   # browser tests, static server + stubbed API, no backend
   must keep it.
 - Lighthouse (CI thresholds): `node scripts/serve-static.js 8790 &` then
   `node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95 performance=85 transfer-kb=400`.
+- `embed.html` is the compact iframe page (ADR 0008). It shares `js/app.js`, which runs in embed mode
+  when `<html data-embed="1">`: no session on load, `embedPrepare()` builds the session and the schema on
+  Run. Anything new in `app.js` that runs at load or touches an element must work when the topbar,
+  sidebar, tour and tweaks are missing (use `on(id, …)`), and must not call the API before a Run.
+  Framing is allowed only for the exact path `/embed.html` (`EmbedFraming`); keep it that way.
+  Embed browser tests frame the page from a second local server (Chromium refuses a
+  route-fulfilled host), and `E2E_PORT` applies to them.
 - Shipped example queries (`js/examples.js`) are executed by `ExampleQueriesSmokeTest`,
   planned by `ExplainSmokeTest` (the Gradle `dumpPresets` task exports them to JSON with
   `scripts/dump-presets.mjs`; smokeTest depends on it), and their table qualifiers are

@@ -16,7 +16,7 @@ class StaticCacheHeadersTest {
 
     @Test
     void pageAndAssetsAreRevalidatedOnEveryLoad() {
-        for (String path : new String[] {"/", "/f/abc123", "/js/app.js", "/js/fiddle-link.js", "/css/style.css"}) {
+        for (String path : new String[] {"/", "/f/abc123", "/js/app.js", "/embed.html", "/js/fiddle-link.js", "/js/embed-params.js", "/css/style.css", "/css/embed.css"}) {
             given()
                     .when().get(path)
                     .then().statusCode(200)

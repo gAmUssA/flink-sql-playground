@@ -85,6 +85,27 @@ unavailable at build time.
 
 For persistent fiddle storage, add the Supabase env vars below.
 
+### Embeds and framing
+
+`/embed.html` is the one page other sites may frame; every other path, the API included, sends
+`X-Frame-Options: DENY` and `frame-ancestors 'none'`. The rule is code (`EmbedFraming`) plus
+`application.properties`, so a merge deploys it and **no Railway service setting changes**
+(`railway config apply` is not needed). Optional variable, set in the Railway dashboard:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `EMBED_FRAME_ANCESTORS` | `*` | Space-separated origins that may frame `/embed.html`, e.g. `https://blog.example.com https://*.example.org`. |
+
+GitHub Pages serves `embed.html` as well and sends no headers, so it can be framed as it is
+and nothing needs configuring there. After a deploy, check both:
+
+```bash
+curl -sI https://<backend>/embed.html | grep -i -E 'x-frame|content-security'   # no x-frame-options, frame-ancestors *
+curl -sI https://<backend>/            | grep -i -E 'x-frame|content-security'   # DENY, frame-ancestors 'none'
+```
+
+See [ADR 0008](docs/adr/0008-embed-mode.md).
+
 ## Fly.io
 
 ```bash
