@@ -32,7 +32,8 @@ public class FlinkSession {
     private final Object streamLock = new Object();
 
     // Views created in the streaming environment only: they read an unbounded table, which the
-    // batch environment refuses to plan. Keyed by the view's own name (the last name part).
+    // batch environment refuses to plan. Keyed by catalog, database and name
+    // (SqlExecutionService.viewKey).
     private final Set<String> streamingOnlyViews = ConcurrentHashMap.newKeySet();
 
     /**
@@ -96,18 +97,18 @@ public class FlinkSession {
         plannerExecutor.shutdownNow();
     }
 
-    /** Records that view {@code name} exists in the streaming environment only. */
-    public void markStreamingOnlyView(String name) {
-        streamingOnlyViews.add(name);
+    /** Records that the view with this key exists in the streaming environment only. */
+    public void markStreamingOnlyView(String key) {
+        streamingOnlyViews.add(key);
     }
 
-    /** Forgets {@code name}: it was dropped, or created again in both environments. */
-    public void clearStreamingOnlyView(String name) {
-        streamingOnlyViews.remove(name);
+    /** Forgets the view with this key: it was dropped, or created again in both environments. */
+    public void clearStreamingOnlyView(String key) {
+        streamingOnlyViews.remove(key);
     }
 
-    public boolean isStreamingOnlyView(String name) {
-        return name != null && streamingOnlyViews.contains(name);
+    public boolean isStreamingOnlyView(String key) {
+        return key != null && streamingOnlyViews.contains(key);
     }
 
     public String getSessionId() {

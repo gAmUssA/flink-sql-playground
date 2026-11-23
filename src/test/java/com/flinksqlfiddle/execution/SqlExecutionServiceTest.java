@@ -211,7 +211,7 @@ class SqlExecutionServiceTest {
         service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
         service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
 
-        assertTrue(session.isStreamingOnlyView("tanks"));
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
         assertEquals("Rank", service.explain(session, ExecutionMode.STREAMING, "SELECT * FROM tanks")
                 .nodes().stream().map(n -> n.kind()).filter("Rank"::equals).findFirst().orElse(null));
         StreamingOnlyViewException batch = assertThrows(StreamingOnlyViewException.class,
@@ -231,7 +231,7 @@ class SqlExecutionServiceTest {
         service.execute(session, ExecutionMode.STREAMING,
                 "CREATE TEMPORARY VIEW tank_names AS SELECT tank_name FROM tanks");
 
-        assertTrue(session.isStreamingOnlyView("tank_names"));
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tank_names"));
         assertThrows(StreamingOnlyViewException.class,
                 () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tank_names"));
     }
@@ -243,7 +243,7 @@ class SqlExecutionServiceTest {
             service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
             service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
         }
-        assertTrue(session.isStreamingOnlyView("tanks"));
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
         assertThrows(StreamingOnlyViewException.class,
                 () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
     }
@@ -260,7 +260,7 @@ class SqlExecutionServiceTest {
                 """);
         service.execute(session, ExecutionMode.STREAMING, "CREATE TEMPORARY VIEW tanks AS SELECT * FROM bounded_tanks");
 
-        assertFalse(session.isStreamingOnlyView("tanks"));
+        assertFalse(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
         assertEquals(3, service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks").rowCount());
     }
 
@@ -271,7 +271,7 @@ class SqlExecutionServiceTest {
         service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
         service.execute(session, ExecutionMode.STREAMING, "DROP TEMPORARY VIEW tanks");
 
-        assertFalse(session.isStreamingOnlyView("tanks"));
+        assertFalse(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
         assertThrows(TableNotFoundException.class,
                 () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
     }
@@ -281,17 +281,47 @@ class SqlExecutionServiceTest {
         FlinkSession session = new FlinkSession("test", factory);
         assertThrows(TableNotFoundException.class, () -> service.execute(session, ExecutionMode.STREAMING,
                 "CREATE TEMPORARY VIEW v AS SELECT * FROM no_such_table"));
-        assertFalse(session.isStreamingOnlyView("v"));
+        assertFalse(SqlExecutionService.isStreamingOnlyView(session, "v"));
     }
 
     @Test
-    void ddlObjectNameIsTheUnquotedLastNamePart() {
-        assertEquals(Optional.of("tanks"), SqlExecutionService.ddlObjectName("CREATE TEMPORARY VIEW tanks AS SELECT 1"));
-        assertEquals(Optional.of("my view"), SqlExecutionService.ddlObjectName(
-                "-- note\nCREATE VIEW IF NOT EXISTS db.`my view` AS SELECT 1"));
-        assertEquals(Optional.of("t"), SqlExecutionService.ddlObjectName("DROP TEMPORARY VIEW IF EXISTS t;"));
-        assertEquals(Optional.of("orders"), SqlExecutionService.ddlObjectName("CREATE TABLE orders (id INT)"));
-        assertEquals(Optional.empty(), SqlExecutionService.ddlObjectName("SELECT 1"));
+    void ddlObjectPathIsTheUnquotedNameParts() {
+        assertEquals(Optional.of(List.of("tanks")), SqlExecutionService.ddlObjectPath("CREATE TEMPORARY VIEW tanks AS SELECT 1"));
+        assertEquals(Optional.of(List.of("db", "my.view")), SqlExecutionService.ddlObjectPath(
+                "-- note\nCREATE VIEW IF NOT EXISTS db.`my.view` AS SELECT 1"));
+        assertEquals(Optional.of(List.of("t")), SqlExecutionService.ddlObjectPath("DROP TEMPORARY VIEW IF EXISTS t;"));
+        assertEquals(Optional.of(List.of("c", "d", "orders")), SqlExecutionService.ddlObjectPath("CREATE TABLE c.d.orders (id INT)"));
+        assertEquals(Optional.empty(), SqlExecutionService.ddlObjectPath("SELECT 1"));
+    }
+
+    /** Copilot's review: a view in another database with the same name is a different view. */
+    @Test
+    void streamingOnlyViewsAreKeyedByDatabaseToo() {
+        FlinkSession session = new FlinkSession("test", factory);
+        session.runOnPlannerThread(() -> {
+            session.getBatchEnv().executeSql("CREATE DATABASE other_db");
+            session.getStreamEnv().executeSql("CREATE DATABASE other_db");
+            return null;
+        });
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+
+        // The same name in other_db is missing, not streaming-only.
+        assertThrows(TableNotFoundException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM other_db.tanks"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM default_database.tanks"));
+
+        // Creating and dropping other_db.tanks leaves the default database's mark alone.
+        service.execute(session, ExecutionMode.STREAMING, """
+                CREATE TEMPORARY TABLE bounded_tanks (tank_id INT) WITH (
+                    'connector' = 'datagen', 'number-of-rows' = '1')
+                """);
+        service.execute(session, ExecutionMode.STREAMING, "CREATE TEMPORARY VIEW other_db.tanks AS SELECT * FROM bounded_tanks");
+        service.execute(session, ExecutionMode.STREAMING, "DROP TEMPORARY VIEW other_db.tanks");
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
     }
 
     @Test

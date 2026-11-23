@@ -55,7 +55,8 @@ runs every CREATE in both the batch and the streaming environment, and the batch
   be live twice.
 - `SqlExecutionService` creates a `CREATE VIEW` whose batch planning fails with the unbounded-source
   refusal, or with a missing view that is itself streaming-only (a view over such a view), in the
-  streaming environment only, and records the view's name on the `FlinkSession`.
+  streaming environment only, and records it on the `FlinkSession` by catalog, database and name
+  (missing parts filled in from the current catalog and database), so `other_db.tanks` is not `tanks`.
   A BATCH execute that misses such a view answers HTTP 400 with code `STREAMING_ONLY_VIEW`
   ("View 'tanks' reads an unbounded table, so it exists in Streaming mode only. Switch to Streaming
   to query it."), and a BATCH explain answers `NotExplainableException` with the same code, instead

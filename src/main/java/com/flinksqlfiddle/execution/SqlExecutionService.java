@@ -82,8 +82,8 @@ public class SqlExecutionService {
                     + "((?:`(?:[^`]|``)*`|[^\\s.`(;]+)(?:\\s*\\.\\s*(?:`(?:[^`]|``)*`|[^\\s.`(;]+))*)",
             Pattern.CASE_INSENSITIVE);
 
-    // The last part of a possibly qualified, possibly quoted name: `a`.`b c` -> b c, db.t -> t.
-    private static final Pattern LAST_NAME_PART = Pattern.compile("(?:`((?:[^`]|``)*)`|([^\\s.`]+))\\s*$");
+    // One part of a possibly qualified, possibly quoted name: `a`.`b c` -> a, b c.
+    private static final Pattern NAME_PART = Pattern.compile("`((?:[^`]|``)*)`|([^\\s.`]+)");
 
     // Flink's refusal to plan an unbounded source in batch mode (DynamicSourceUtils).
     private static final String UNBOUNDED_IN_BATCH = "in batch mode is not allowed";
@@ -153,7 +153,8 @@ public class SqlExecutionService {
      */
     private static RuntimeException streamingOnlyViewOr(FlinkSession session, ExecutionMode mode,
                                                         TableNotFoundException e) {
-        if (mode == ExecutionMode.BATCH && session.isStreamingOnlyView(e.table())) {
+        if (mode == ExecutionMode.BATCH && session.runOnPlannerThread(
+                () -> session.isStreamingOnlyView(viewKey(session.getBatchEnv(), e.path())))) {
             return new StreamingOnlyViewException(e.table(), e);
         }
         return e;
@@ -292,8 +293,8 @@ public class SqlExecutionService {
         return Optional.of("DROP " + temporary + kind + " IF EXISTS " + matcher.group(3));
     }
 
-    /** The unquoted last name part of the table or view a CREATE or DROP statement names. */
-    static Optional<String> ddlObjectName(String sql) {
+    /** The unquoted name parts of the table or view a CREATE or DROP statement names, as written. */
+    static Optional<List<String>> ddlObjectPath(String sql) {
         String normalized = stripLeadingComments(sql);
         Matcher matcher = CREATE_TABLE_OR_VIEW_PATTERN.matcher(normalized);
         if (!matcher.find()) {
@@ -302,11 +303,37 @@ public class SqlExecutionService {
                 return Optional.empty();
             }
         }
-        Matcher last = LAST_NAME_PART.matcher(matcher.group(3));
-        if (!last.find()) {
-            return Optional.empty();
+        List<String> parts = new ArrayList<>();
+        Matcher part = NAME_PART.matcher(matcher.group(3));
+        while (part.find()) {
+            parts.add(part.group(1) != null ? part.group(1).replace("``", "`") : part.group(2));
         }
-        return Optional.of(last.group(1) != null ? last.group(1).replace("``", "`") : last.group(2));
+        return parts.isEmpty() || parts.size() > 3 ? Optional.empty() : Optional.of(List.copyOf(parts));
+    }
+
+    /**
+     * The key a streaming-only view is recorded under: its catalog, database and name, the missing
+     * parts filled in from {@code tEnv}'s current catalog and database, as Flink resolves them. So
+     * {@code tanks}, {@code default_database.tanks} and {@code other_db.tanks} are told apart.
+     * Call on the session's planner thread.
+     */
+    static String viewKey(TableEnvironment tEnv, List<String> parts) {
+        List<String> full = new ArrayList<>(3);
+        if (parts.size() < 3) {
+            full.add(tEnv.getCurrentCatalog());
+        }
+        if (parts.size() < 2) {
+            full.add(tEnv.getCurrentDatabase());
+        }
+        full.addAll(parts);
+        return String.join("\u0000", full);
+    }
+
+    /** True when {@code name} (simple or qualified, as SQL would write it) is a streaming-only view. */
+    @VisibleForTesting
+    static boolean isStreamingOnlyView(FlinkSession session, String name) {
+        List<String> parts = ddlObjectPath("DROP VIEW " + name).orElseThrow();
+        return session.runOnPlannerThread(() -> session.isStreamingOnlyView(viewKey(session.getStreamEnv(), parts)));
     }
 
     private static boolean isDrop(String sql) {
@@ -321,7 +348,7 @@ public class SqlExecutionService {
     /** The batch failure is a missing view that this session has in Streaming only. */
     private static boolean readsStreamingOnlyView(FlinkSession session, RuntimeException e, String sql) {
         return TableNotFoundException.detect(e, sql)
-                .map(missing -> session.isStreamingOnlyView(missing.table()))
+                .map(missing -> session.isStreamingOnlyView(viewKey(session.getBatchEnv(), missing.path())))
                 .orElse(false);
     }
 
@@ -377,7 +404,7 @@ public class SqlExecutionService {
                 session.getBatchEnv().executeSql(drop);
                 session.getStreamEnv().executeSql(drop);
             });
-            Optional<String> name = ddlObjectName(sql);
+            Optional<String> name = ddlObjectPath(sql).map(parts -> viewKey(session.getStreamEnv(), parts));
             boolean streamingOnly = name.map(session::isStreamingOnlyView).orElse(false);
             name.ifPresent(session::clearStreamingOnlyView);
             if (streamingOnly && isDrop(sql)) {
@@ -396,7 +423,7 @@ public class SqlExecutionService {
                         || !(isUnboundedInBatch(e) || readsStreamingOnlyView(session, e, sql))) {
                     throw e;
                 }
-                log.debug("View {} reads an unbounded table: streaming environment only", name.get());
+                log.debug("View {} reads an unbounded table: streaming environment only", name.get().replace('\u0000', '.'));
                 session.getStreamEnv().executeSql(sql);
                 session.markStreamingOnlyView(name.get());
                 return null;
