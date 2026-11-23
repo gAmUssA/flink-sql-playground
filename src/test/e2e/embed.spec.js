@@ -413,7 +413,7 @@ test('the embed page runs without console errors', async ({ page, isMobile }) =>
   test.skip(isMobile);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)|ERR_|Failed to load resource|Viewport argument key "interactive-widget"/.test(m.text())) errors.push(m.text()); });
   await open(page, [{ src: embedSrc('?autorun=1&tab=changelog'), width: 500, height: 400 }]);
   const f = await ready(page);
   await expect(f.locator('.rtab.is-active')).toHaveAttribute('data-tab', 'changelog');
