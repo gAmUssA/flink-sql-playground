@@ -18,3 +18,4 @@ No shipped preset runs USE, so the presets are not affected.
 - [ ] Reproduce in a smoke test: USE db2 in Streaming, CREATE a dedup view, then BATCH SELECT and a BATCH CREATE in each mode
 - [ ] Decide: sync USE / USE CATALOG to both environments (like DDL), or key lookups by the env that created the view
 - [ ] Also from the same review, unchecked: marks surviving DROP DATABASE ... CASCADE and ALTER VIEW ... RENAME TO
+- [ ] From Bob's review of the marks fix (finding 4): a temporary streaming-only view over a permanent bounded view of the same name. BATCH resolves the permanent one, so the two modes query different definitions with no STREAMING_ONLY_VIEW answer. Same "the environments diverge" family as USE.

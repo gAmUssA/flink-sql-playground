@@ -365,8 +365,31 @@ class SqlExecutionServiceTest {
         service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
 
         assertThrows(RuntimeException.class, () -> service.execute(session, ExecutionMode.STREAMING,
-                "CREATE TEMPORARY TABLE tanks (tank_id INT) WITH ('connector' = 'datagen')"));
+                "CREATE TEMPORARY TABLE tanks (tank_id INT) WITH ('connector' = 'datagen', 'number-of-rows' = '1')"));
         assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        // Bob's second review: the batch environment must not have got a table tanks meanwhile.
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
+    }
+
+    /** The reverse of the temporary/permanent case: a permanent DROP leaves a temporary view. */
+    @Test
+    void aPermanentDropLeavesATemporaryStreamingOnlyView() {
+        FlinkSession session = new FlinkSession("test", factory);
+        service.execute(session, ExecutionMode.STREAMING, UNBOUNDED_UPDATES);
+        service.execute(session, ExecutionMode.STREAMING, LATEST_TANKS);
+
+        // Flink may refuse a permanent DROP while a temporary view shadows the name; either way the
+        // temporary view stays, in Streaming only.
+        try {
+            service.execute(session, ExecutionMode.STREAMING, "DROP VIEW IF EXISTS tanks");
+        } catch (RuntimeException refused) {
+            // expected on Flink 2.3
+        }
+        assertTrue(SqlExecutionService.isStreamingOnlyView(session, "tanks"));
+        assertFalse(service.explain(session, ExecutionMode.STREAMING, "SELECT * FROM tanks").nodes().isEmpty());
+        assertThrows(StreamingOnlyViewException.class,
+                () -> service.execute(session, ExecutionMode.BATCH, "SELECT * FROM tanks"));
     }
 
     @Test

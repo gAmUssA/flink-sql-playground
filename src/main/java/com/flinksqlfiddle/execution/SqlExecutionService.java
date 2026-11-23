@@ -448,6 +448,15 @@ public class SqlExecutionService {
                 name.ifPresent(session::clearStreamingOnlyView);
                 return null;
             }
+            if (streamingOnly && !isCreateView(sql)) {
+                // A CREATE TABLE over a streaming-only view's name: only the streaming environment
+                // has the view, so run the statement there first. It fails there ("already exists")
+                // before it creates a table of that name in the batch environment alone.
+                session.getStreamEnv().executeSql(sql);
+                session.getBatchEnv().executeSql(sql);
+                name.ifPresent(session::clearStreamingOnlyView);
+                return null;
+            }
             try {
                 session.getBatchEnv().executeSql(sql);
             } catch (RuntimeException e) {

@@ -63,8 +63,12 @@ runs every CREATE in both the batch and the streaming environment, and the batch
   ("View 'tanks' reads an unbounded table, so it exists in Streaming mode only. Switch to Streaming
   to query it."), and a BATCH explain answers `NotExplainableException` with the same code, instead
   of `TABLE_NOT_FOUND` (ADR 0007), whose Build Schema and run offer would loop. Any other batch
-  error still fails the CREATE. A CREATE or DROP of the same name clears the mark once it has run;
-  one that fails leaves the view and its mark. A DROP of a streaming-only view runs in the
+  error still fails the CREATE. A CREATE or DROP of the same name clears the mark once it has run.
+  A DROP that fails leaves the view and its mark. A CREATE VIEW first drops the old view in both
+  environments (re-running Build Schema must not stop at "already exists"), so the mark goes
+  with it even if the new CREATE then fails. A CREATE TABLE over a streaming-only view's name
+  runs in the streaming environment first, where it fails before the batch environment gets a
+  table of that name. A DROP of a streaming-only view runs in the
   streaming environment only. `USE` is not synced between the environments yet (bean 5q2j).
 
 ## Consequences
