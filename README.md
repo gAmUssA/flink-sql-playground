@@ -29,7 +29,7 @@ shuffled between them, the changelog each one emits (`+I`, `-U`/`+U`), and what 
 ("state freed by watermark" for a window aggregate, "state grows with keys" for a regular join).
 Details: [ADR 0004](docs/adr/0004-real-job-graph-from-explain.md).
 
-![Job Graph tab: a window aggregate frees its state, the joins after it keep state per key](docs/media/job-graph.gif)
+![Job Graph tab: a window aggregate frees its state, a Rank keeps the latest row per tank, the joins after it emit updates and keep state per key](docs/media/job-graph.gif)
 
 ### Watermark Timeline: who misses the window
 
