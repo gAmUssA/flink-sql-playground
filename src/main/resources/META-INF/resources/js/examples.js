@@ -167,14 +167,15 @@ ORDER BY amount DESC;`
     {
         title: "E-Commerce Streaming (Faker)",
         mode: "STREAMING",
-        schema: `-- Products dimension table (upsert, keyed on product_id)
-CREATE TEMPORARY TABLE products (
+        schema: `-- Product updates. Faker draws a random product_id for every row, so each product
+-- comes back again and again with new values: these are events, not a keyed table.
+CREATE TEMPORARY TABLE product_updates (
     product_id  STRING,
     \`name\`   STRING,
     brand       STRING,
     vendor      STRING,
     department  STRING,
-    PRIMARY KEY (product_id) NOT ENFORCED
+    proc_time   AS PROCTIME()
 ) WITH (
     'connector' = 'faker',
     'rows-per-second' = '50',
@@ -185,15 +186,15 @@ CREATE TEMPORARY TABLE products (
     'fields.department.expression' = '#{Commerce.department}'
 );
 
--- Customers dimension table (upsert, keyed on customer_id)
-CREATE TEMPORARY TABLE customers (
+-- Customer updates, the same way: many rows per customer_id.
+CREATE TEMPORARY TABLE customer_updates (
     customer_id INT,
     \`name\`   STRING,
     address     STRING,
     postcode    STRING,
     city        STRING,
     email       STRING,
-    PRIMARY KEY (customer_id) NOT ENFORCED
+    proc_time   AS PROCTIME()
 ) WITH (
     'connector' = 'faker',
     'rows-per-second' = '50',
@@ -204,6 +205,28 @@ CREATE TEMPORARY TABLE customers (
     'fields.city.expression' = '#{Address.city}',
     'fields.email.expression' = '#{Internet.emailAddress}'
 );
+
+-- Products: the latest row per product_id (Flink's deduplication pattern; the Job
+-- Graph shows it as a Rank). It is an updating table: when a product_id gets a new row,
+-- a join retracts (-U) what it built from the old row and emits (+U) the new one.
+CREATE TEMPORARY VIEW products AS
+SELECT product_id, \`name\`, brand, vendor, department
+FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY proc_time DESC) AS rn
+    FROM product_updates
+)
+WHERE rn = 1;
+
+-- Customers: the latest row per customer_id (Flink's deduplication pattern; the Job
+-- Graph shows it as a Rank). It is an updating table: when a customer_id gets a new row,
+-- a join retracts (-U) what it built from the old row and emits (+U) the new one.
+CREATE TEMPORARY VIEW customers AS
+SELECT customer_id, \`name\`, address, postcode, city, email
+FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY proc_time DESC) AS rn
+    FROM customer_updates
+)
+WHERE rn = 1;
 
 -- Orders fact table (append mode)
 CREATE TEMPORARY TABLE orders (
@@ -236,7 +259,9 @@ CREATE TEMPORARY TABLE clicks (
     'fields.user_agent.expression' = '#{Internet.userAgent}',
     'fields.view_time.expression' = '#{Number.numberBetween ''10'',''120''}'
 );`,
-        query: `-- Join orders with customers and products for a real-time sales dashboard
+        query: `-- Join orders with the latest customer and product rows for a sales dashboard.
+-- customers and products are views that change, so the result changes too: watch
+-- the Changelog tab for -U/+U when a customer or product row is replaced.
 SELECT
     o.order_id,
     c.\`name\` AS customer_name,
@@ -251,14 +276,15 @@ JOIN products p ON o.product_id = p.product_id;`
     {
         title: "Brewmaster Monitoring (Faker)",
         mode: "STREAMING",
-        schema: `-- Brewery tank inventory (dimension, upsert)
-CREATE TEMPORARY TABLE tanks (
+        schema: `-- Tank updates. Faker draws a random tank_id for every row, so each tank comes back
+-- again and again with new values: these are events, not a keyed table.
+CREATE TEMPORARY TABLE tank_updates (
     tank_id         INT,
     tank_name       STRING,
     tank_type       STRING,
     capacity_liters INT,
     location        STRING,
-    PRIMARY KEY (tank_id) NOT ENFORCED
+    proc_time       AS PROCTIME()
 ) WITH (
     'connector' = 'faker',
     'rows-per-second' = '1',
@@ -269,14 +295,14 @@ CREATE TEMPORARY TABLE tanks (
     'fields.location.expression' = '#{Options.option ''Building A - East'',''Building A - West'',''Building B - Cellar'',''Outdoor Yard''}'
 );
 
--- Beer recipes (dimension, upsert)
-CREATE TEMPORARY TABLE recipes (
+-- Recipe updates, the same way: many rows per recipe_id.
+CREATE TEMPORARY TABLE recipe_updates (
     recipe_id   INT,
     beer_name   STRING,
     style       STRING,
     target_ibu  INT,
     target_abv  DOUBLE,
-    PRIMARY KEY (recipe_id) NOT ENFORCED
+    proc_time   AS PROCTIME()
 ) WITH (
     'connector' = 'faker',
     'rows-per-second' = '1',
@@ -286,6 +312,28 @@ CREATE TEMPORARY TABLE recipes (
     'fields.target_ibu.expression' = '#{Number.numberBetween ''10'',''100''}',
     'fields.target_abv.expression' = '#{Number.randomDouble ''1'',''3'',''12''}'
 );
+
+-- Tanks: the latest row per tank_id (Flink's deduplication pattern; the Job
+-- Graph shows it as a Rank). It is an updating table: when a tank_id gets a new row,
+-- a join retracts (-U) what it built from the old row and emits (+U) the new one.
+CREATE TEMPORARY VIEW tanks AS
+SELECT tank_id, tank_name, tank_type, capacity_liters, location
+FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY tank_id ORDER BY proc_time DESC) AS rn
+    FROM tank_updates
+)
+WHERE rn = 1;
+
+-- Recipes: the latest row per recipe_id (Flink's deduplication pattern; the Job
+-- Graph shows it as a Rank). It is an updating table: when a recipe_id gets a new row,
+-- a join retracts (-U) what it built from the old row and emits (+U) the new one.
+CREATE TEMPORARY VIEW recipes AS
+SELECT recipe_id, beer_name, style, target_ibu, target_abv
+FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY recipe_id ORDER BY proc_time DESC) AS rn
+    FROM recipe_updates
+)
+WHERE rn = 1;
 
 -- IoT sensor readings from tanks (the core stream!)
 CREATE TEMPORARY TABLE sensor_readings (
@@ -311,8 +359,8 @@ CREATE TEMPORARY TABLE sensor_readings (
 -- per window and forgets its rows. (Join first and GROUP BY window_start afterwards,
 -- and it is no longer a window: a plain aggregation that updates forever. The Job
 -- Graph tab shows the difference: WindowAggregate vs GroupAggregate.) The two joins
--- after it are regular joins, so they still keep state and re-emit a window's row
--- when a tank or recipe row changes.
+-- after it are regular joins: they keep state per key, and when a tank or recipe
+-- row changes they retract a window's row (-U) and emit it again (+U).
 WITH per_tank AS (
     SELECT window_start, window_end, tank_id, recipe_id,
         COUNT(*)           AS readings,

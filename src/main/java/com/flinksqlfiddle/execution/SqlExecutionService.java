@@ -76,6 +76,18 @@ public class SqlExecutionService {
                     + "((?:`(?:[^`]|``)*`|[^\\s.`(]+)(?:\\s*\\.\\s*(?:`(?:[^`]|``)*`|[^\\s.`(]+))*)",
             Pattern.CASE_INSENSITIVE);
 
+    // DROP [TEMPORARY] TABLE|VIEW [IF EXISTS] name.
+    private static final Pattern DROP_TABLE_OR_VIEW_PATTERN = Pattern.compile(
+            "^\\s*DROP\\s+(TEMPORARY\\s+)?(TABLE|VIEW)\\s+(?:IF\\s+EXISTS\\s+)?"
+                    + "((?:`(?:[^`]|``)*`|[^\\s.`(;]+)(?:\\s*\\.\\s*(?:`(?:[^`]|``)*`|[^\\s.`(;]+))*)",
+            Pattern.CASE_INSENSITIVE);
+
+    // One part of a possibly qualified, possibly quoted name: `a`.`b c` -> a, b c.
+    private static final Pattern NAME_PART = Pattern.compile("`((?:[^`]|``)*)`|([^\\s.`]+)");
+
+    // Flink's refusal to plan an unbounded source in batch mode (DynamicSourceUtils).
+    private static final String UNBOUNDED_IN_BATCH = "in batch mode is not allowed";
+
     private static final Map<RowKind, String> ROW_KIND_LABELS = Map.of(
             RowKind.INSERT, "+I",
             RowKind.UPDATE_BEFORE, "-U",
@@ -128,7 +140,24 @@ public class SqlExecutionService {
                 ? session.getBatchEnv()
                 : session.getStreamEnv();
 
-        return executeOnSessionThread(session, tEnv, sql);
+        try {
+            return executeOnSessionThread(session, tEnv, sql);
+        } catch (TableNotFoundException e) {
+            throw streamingOnlyViewOr(session, mode, e);
+        }
+    }
+
+    /**
+     * A BATCH statement that misses a view the session has in Streaming only gets a
+     * {@link StreamingOnlyViewException}: building the schema again would not create it.
+     */
+    private static RuntimeException streamingOnlyViewOr(FlinkSession session, ExecutionMode mode,
+                                                        TableNotFoundException e) {
+        if (mode == ExecutionMode.BATCH && session.runOnPlannerThread(
+                () -> session.isStreamingOnlyView(viewKey(session.getBatchEnv(), e.path())))) {
+            return new StreamingOnlyViewException(e.table(), e);
+        }
+        return e;
     }
 
     /**
@@ -166,6 +195,12 @@ public class SqlExecutionService {
         String text;
         try {
             text = planning(sql, () -> session.runOnPlannerThread(() -> explainText(tEnv, mode, sql)));
+        } catch (TableNotFoundException e) {
+            RuntimeException translated = streamingOnlyViewOr(session, mode, e);
+            if (translated instanceof StreamingOnlyViewException) {
+                throw new NotExplainableException(translated.getMessage(), "STREAMING_ONLY_VIEW");
+            }
+            throw e;
         } catch (ValidationException | SqlParserException e) {
             throw new NotExplainableException(e.getMessage(), "INVALID_SQL");
         }
@@ -258,6 +293,75 @@ public class SqlExecutionService {
         return Optional.of("DROP " + temporary + kind + " IF EXISTS " + matcher.group(3));
     }
 
+    /** The unquoted name parts of the table or view a CREATE or DROP statement names, as written. */
+    static Optional<List<String>> ddlObjectPath(String sql) {
+        String normalized = stripLeadingComments(sql);
+        Matcher matcher = CREATE_TABLE_OR_VIEW_PATTERN.matcher(normalized);
+        if (!matcher.find()) {
+            matcher = DROP_TABLE_OR_VIEW_PATTERN.matcher(normalized);
+            if (!matcher.find()) {
+                return Optional.empty();
+            }
+        }
+        List<String> parts = new ArrayList<>();
+        Matcher part = NAME_PART.matcher(matcher.group(3));
+        while (part.find()) {
+            parts.add(part.group(1) != null ? part.group(1).replace("``", "`") : part.group(2));
+        }
+        return parts.isEmpty() || parts.size() > 3 ? Optional.empty() : Optional.of(List.copyOf(parts));
+    }
+
+    /**
+     * The key a streaming-only view is recorded under: its catalog, database and name, the missing
+     * parts filled in from {@code tEnv}'s current catalog and database, as Flink resolves them. So
+     * {@code tanks}, {@code default_database.tanks} and {@code other_db.tanks} are told apart.
+     * Call on the session's planner thread.
+     */
+    static String viewKey(TableEnvironment tEnv, List<String> parts) {
+        List<String> full = new ArrayList<>(3);
+        if (parts.size() < 3) {
+            full.add(tEnv.getCurrentCatalog());
+        }
+        if (parts.size() < 2) {
+            full.add(tEnv.getCurrentDatabase());
+        }
+        full.addAll(parts);
+        return String.join("\u0000", full);
+    }
+
+    /** True when {@code name} (simple or qualified, as SQL would write it) is a streaming-only view. */
+    @VisibleForTesting
+    static boolean isStreamingOnlyView(FlinkSession session, String name) {
+        List<String> parts = ddlObjectPath("DROP VIEW " + name).orElseThrow();
+        return session.runOnPlannerThread(() -> session.isStreamingOnlyView(viewKey(session.getStreamEnv(), parts)));
+    }
+
+    private static boolean isDrop(String sql) {
+        return DROP_TABLE_OR_VIEW_PATTERN.matcher(stripLeadingComments(sql)).find();
+    }
+
+    private static boolean isCreateView(String sql) {
+        Matcher matcher = CREATE_TABLE_OR_VIEW_PATTERN.matcher(stripLeadingComments(sql));
+        return matcher.find() && matcher.group(2).equalsIgnoreCase("VIEW");
+    }
+
+    /** The batch failure is a missing view that this session has in Streaming only. */
+    private static boolean readsStreamingOnlyView(FlinkSession session, RuntimeException e, String sql) {
+        return TableNotFoundException.detect(e, sql)
+                .map(missing -> session.isStreamingOnlyView(viewKey(session.getBatchEnv(), missing.path())))
+                .orElse(false);
+    }
+
+    private static boolean isUnboundedInBatch(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof ValidationException && t.getMessage() != null
+                    && t.getMessage().contains(UNBOUNDED_IN_BATCH)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static boolean isDdl(String sql) {
         return DDL_PATTERN.matcher(stripLeadingComments(sql)).find();
     }
@@ -300,7 +404,30 @@ public class SqlExecutionService {
                 session.getBatchEnv().executeSql(drop);
                 session.getStreamEnv().executeSql(drop);
             });
-            session.getBatchEnv().executeSql(sql);
+            Optional<String> name = ddlObjectPath(sql).map(parts -> viewKey(session.getStreamEnv(), parts));
+            boolean streamingOnly = name.map(session::isStreamingOnlyView).orElse(false);
+            name.ifPresent(session::clearStreamingOnlyView);
+            if (streamingOnly && isDrop(sql)) {
+                // The batch environment never had it: a plain DROP VIEW would fail there.
+                session.getStreamEnv().executeSql(sql);
+                return null;
+            }
+            try {
+                session.getBatchEnv().executeSql(sql);
+            } catch (RuntimeException e) {
+                // A view over an unbounded table (a deduplication over a faker or datagen
+                // stream) cannot be planned in batch mode, nor can a view over such a view.
+                // Create it for Streaming only and remember that, so a BATCH query on it says
+                // so instead of "not found".
+                if (!isCreateView(sql) || name.isEmpty()
+                        || !(isUnboundedInBatch(e) || readsStreamingOnlyView(session, e, sql))) {
+                    throw e;
+                }
+                log.debug("View {} reads an unbounded table: streaming environment only", name.get().replace('\u0000', '.'));
+                session.getStreamEnv().executeSql(sql);
+                session.markStreamingOnlyView(name.get());
+                return null;
+            }
             session.getStreamEnv().executeSql(sql);
             return null;
         });

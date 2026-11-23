@@ -3,6 +3,7 @@ package com.flinksqlfiddle.api;
 import com.flinksqlfiddle.api.dto.ErrorResponse;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
 import com.flinksqlfiddle.execution.NotExplainableException;
+import com.flinksqlfiddle.execution.StreamingOnlyViewException;
 import com.flinksqlfiddle.execution.TableNotFoundException;
 import com.flinksqlfiddle.fiddle.FiddleNotFoundException;
 import com.flinksqlfiddle.security.ForbiddenSqlException;
@@ -83,6 +84,14 @@ public class GlobalExceptionHandler {
         log.debug("Table not found: {}", e.table());
         return RestResponse.status(RestResponse.Status.BAD_REQUEST,
                 new ErrorResponse(e.getMessage(), "TABLE_NOT_FOUND", e.table(), e.path(), e.suggestion()));
+    }
+
+    /** A BATCH statement on a view that reads an unbounded table: it exists in Streaming only. */
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleStreamingOnlyView(StreamingOnlyViewException e) {
+        log.debug("Streaming-only view in batch: {}", e.view());
+        return RestResponse.status(RestResponse.Status.BAD_REQUEST,
+                new ErrorResponse(e.getMessage(), "STREAMING_ONLY_VIEW", e.view(), null, null));
     }
 
     @ServerExceptionMapper
