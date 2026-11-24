@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Runs `claude` on Vik's claude.ai subscription only. Every variable that would switch it to an
+# API key, a gateway, Bedrock or Vertex is removed from its environment, and before it runs,
+# `claude auth status` must say authMethod claude.ai with the first-party API and no API-key
+# source (that also catches an apiKeyHelper in settings). Otherwise exit 3 and run nothing.
+# All arguments pass through; give the prompt on stdin (claude's variadic tool flags swallow a
+# trailing one).
+set -o pipefail
+clean=(env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL
+       -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY
+       -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_BEDROCK_BASE_URL -u ANTHROPIC_VERTEX_PROJECT_ID
+       -u ANTHROPIC_FOUNDRY_API_KEY -u AWS_BEARER_TOKEN_BEDROCK)
+
+"${clean[@]}" claude auth status --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    s = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+ok = s.get("loggedIn") and s.get("authMethod") == "claude.ai" and s.get("apiProvider") == "firstParty" and not s.get("apiKeySource")
+sys.exit(0 if ok else 1)' || {
+  echo "claude-sub: claude is not on the claude.ai subscription here; stop and ask Vik (claude /login)" >&2
+  exit 3
+}
+exec "${clean[@]}" claude "$@"

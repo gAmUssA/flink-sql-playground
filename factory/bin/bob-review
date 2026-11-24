@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# One Bob review in a visible Rex block, read-only, on Vik's IBM subscription.
+#
+#   bob-review <workspace-dir> <prompt-file> <raw-out> <label> [timeout-seconds=1200]
+#
+# Starts `bob chat --mode ask` (headless `bob run` needs BOB_API_KEY, which we don't use), answers
+# the folder-trust prompt with "Don't trust", sends the prompt as one line, waits until the screen
+# shows a line <<<REVIEW>>> and later a line <<<END>>>, saves `rex capture` to <raw-out>, and
+# quits Bob. Exit 0 when done, 4 on timeout (the capture is saved either way).
+set -u
+ws=$1 prompt=$2 out=$3 label=$4 limit=${5:-1200}
+cd "$ws" || exit 1
+block=$(rex run --focus=false --keep-open --interactive --label "$label" --json -- \
+  bob chat --mode ask --max-cost 1 --disable-mcp --disable-subagents --workspace "$ws" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["block_ids"][0])') || exit 1
+echo "$block" > "$out.block"
+
+screen() { rex capture -b "$block" --trim --unwrap 2>/dev/null; }
+
+for _ in $(seq 1 30); do                       # Bob's first screen: trust this folder?
+  s=$(screen)
+  if grep -q "Don't trust" <<<"$s"; then
+    rex send -b "$block" '3'; sleep 1.5; rex send-key -b "$block" enter; break  # 3 = Don't trust (Bob 2.0.7)
+  fi
+  grep -q "Ask Mode" <<<"$s" && break
+  sleep 2
+done
+sleep 4
+rex send -b "$block" "$(tr '\n' ' ' < "$prompt")"; sleep 2; rex send-key -b "$block" enter
+
+status=4
+for _ in $(seq 1 $((limit / 10))); do
+  sleep 10
+  if screen | python3 -c '
+import re, sys
+lines = [re.sub(r"^[\s│┃|•●⏺>]*", "", l).strip() for l in sys.stdin.read().splitlines()]
+start = max((i for i, l in enumerate(lines) if l == "<<<REVIEW>>>"), default=-1)
+sys.exit(0 if start >= 0 and "<<<END>>>" in lines[start:] else 1)'; then
+    status=0; break
+  fi
+done
+screen > "$out"
+rex send-key -b "$block" ctrl+c; sleep 1; rex send-key -b "$block" ctrl+c   # twice to quit
+exit $status

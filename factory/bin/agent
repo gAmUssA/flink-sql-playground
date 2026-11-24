@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Runs one factory agent for one job in its own Rex block, waits for it, and saves its file.
+#
+#   agent <job> spec                   → jobs/<job>/spec.md          (Claude, read-only)
+#   agent <job> build <round>          → commits + jobs/<job>/build.md (Claude, session resumed per round)
+#   agent <job> review-<role> <round>  → jobs/<job>/round-<n>/review-<role>.md (Copilot or Bob, read-only)
+#   agent <job> approve <round>        → jobs/<job>/decision.md      (Claude, read-only, fresh)
+#   agent <job> reviewers <round>      prints who reviews what: code=copilot security=copilot ux=bob ui=bob
+#
+# Exit 0 when the file is saved and well formed, 2 when the agent's answer is malformed, 3 when
+# Claude is not on the subscription, 4 on a reviewer timeout, anything else when the runner failed.
+# It never touches board.json: the orchestrator does.
+set -uo pipefail
+job=$1 agent=$2 round=${3:-1}
+[[ $job =~ ^[a-z0-9][a-z0-9-]{1,60}$ ]] || { echo "agent: job id must be lowercase letters, digits and dashes" >&2; exit 1; }
+[[ $round =~ ^[0-9]+$ ]] || { echo "agent: round must be a number" >&2; exit 1; }
+q() { printf '%q' "$1"; }   # quote a value for the generated zsh scripts
+F=$(cd "$(dirname "$0")/.." && pwd)
+REPO=$(cd "$(git -C "$F" rev-parse --git-common-dir)/.." && pwd)
+F=${FACTORY_HOME:-$REPO/factory}   # the main checkout's factory folder, even when called from a worktree
+J=$F/jobs/$job WT=$REPO/.claude/worktrees/$job
+mkdir -p "$J/.raw" "$J/.run"
+NEEDS_HUMAN='^(\.railway/|Dockerfile|\.github/|build\.gradle\.kts|gradle\.properties|settings\.gradle|gradle/|gradlew(\.bat)?$|buildSrc/|scripts/|\.npmrc$|package(-lock)?\.json|src/main/resources/db/|src/main/resources/application.*\.properties|.*SqlSecurityValidator|.*EmbedFraming|\.claude/|factory/|AGENTS\.md$|CLAUDE\.md$|\.gitignore$)'
+
+runner_for() {   # odd rounds: Copilot reviews code + security, Bob ux + ui; even rounds swap
+  local role=$1 n=$2 first=copilot second=bob
+  (( n % 2 == 0 )) && { first=bob; second=copilot; }
+  case $role in code|security) echo $first ;; *) echo $second ;; esac
+}
+
+body() { awk 'BEGIN{n=0} /^---$/{n++; next} n>=2' "$1"; }   # an agent file without its frontmatter
+
+in_block() {     # in_block <label> <script>: run the script in a visible Rex block, wait, return its status
+  local b
+  b=$(rex run --focus=false --keep-open --interactive --label "$1" --json -- zsh "$2" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["block_ids"][0])') || return 1
+  echo "$b" > "$2.block"
+  rex wait "$b"
+}
+
+claude_run() {   # claude_run <label> <system-prompt-file> <prompt-file> <raw-out> <tools> [extra args...]
+  local label=$1 sys=$2 prompt=$3 out=$4 tools=$5; shift 5
+  local script=$J/.run/$(basename "$out" .out).zsh extra="" arg
+  for arg in "$@"; do extra+=" $(q "$arg")"; done
+  {
+    echo "setopt pipefail; cd $(q "$WT") || exit 1"
+    echo "$(q "$F/bin/claude-sub") -p --permission-mode dontAsk --append-system-prompt \"\$(cat $(q "$sys"))\"$extra --allowedTools $tools --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' 'Bash(railway:*)' 'Bash(git reset:*)' 'Bash(node:*)' 'Bash(npm:*)' 'Bash(curl:*)' < $(q "$prompt") | tee $(q "$out")"
+  } > "$script"
+  in_block "$label" "$script"
+}
+
+READ_TOOLS="Read Grep Glob 'Bash(beans show:*)' 'Bash(beans list:*)' 'Bash(git log:*)' 'Bash(git diff:*)' 'Bash(git show:*)' 'Bash(rg:*)' 'Bash(ls:*)'"
+# No node, npx, npm or "VAR=… anything" prefixes: each would run any command. The orchestrator runs
+# npm ci; Playwright is allowed as the one exact command builder.md names.
+BUILD_TOOLS="Read Grep Glob Edit Write 'Bash(./gradlew:*)' 'Bash(CI=1 E2E_PORT=8791 npx playwright test:*)' 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git status:*)' 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git show:*)' 'Bash(git restore:*)' 'Bash(git mv:*)' 'Bash(git rm:*)' 'Bash(beans:*)' 'Bash(rg:*)' 'Bash(ls:*)' 'Bash(mkdir:*)'"
+
+case $agent in
+  reviewers)
+    echo "code=$(runner_for code "$round") security=$(runner_for security "$round") ux=$(runner_for ux "$round") ui=$(runner_for ui "$round")"
+    ;;
+
+  spec)
+    bean=$(python3 "$F/bin/board.py" show "$job" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["bean"])')
+    printf 'Job %s. Bean %s. Write the spec as your instructions say.\n' "$job" "$bean" > "$J/.run/spec.txt"
+    claude_run "factory $job spec" "$F/agents/spec-writer.md" "$J/.run/spec.txt" "$J/.raw/spec.out" "$READ_TOOLS" --name "spec-$job" || exit $?
+    python3 "$F/bin/extract.py" "$J/.raw/spec.out" SPEC --first '^# ' > "$J/spec.md.tmp" && mv "$J/spec.md.tmp" "$J/spec.md"
+    ;;
+
+  build)
+    sid_file=$J/.builder-session
+    if (( round == 1 )); then
+      uuidgen | tr A-Z a-z > "$sid_file"
+      session=(--session-id "$(cat "$sid_file")")
+      printf 'Job %s, round 1. The spec is %s/spec.md. Write %s/build.md.\n' "$job" "$J" "$J" > "$J/.run/build-1.txt"
+    else
+      session=(--resume "$(cat "$sid_file")")
+      prev=$J/round-$((round - 1))
+      printf 'Round %s. The reviews of round %s are in %s/, and human-note.md there if Vik sent one (it overrides the reviews). Work through them as your instructions say and append "## Round %s" to %s/build.md.\n' \
+        "$round" "$((round - 1))" "$prev" "$round" "$J" > "$J/.run/build-$round.txt"
+    fi
+    claude_run "factory $job builder r$round" "$F/agents/builder.md" "$J/.run/build-$round.txt" "$J/.raw/build-$round.out" "$BUILD_TOOLS" \
+      "${session[@]}" --name "builder-$job" --add-dir "$J" || exit $?
+    [[ -s $J/build.md ]] || { echo "agent: builder wrote no build.md" >&2; exit 2; }
+    ! grep -q '^BLOCKED:' "$J/build.md" || { echo "agent: builder is BLOCKED" >&2; exit 2; }
+    ;;
+
+  review-*)
+    role=${agent#review-} R=$J/round-$round
+    runner=$(runner_for "$role" "$round")
+    mkdir -p "$R"
+    contract="Output, between a line <<<REVIEW>>> and a line <<<END>>>, nothing after it: first line VERDICT: PASS or VERDICT: CHANGES. Then findings most-severe-first, each with severity (blocker, major or minor), file and line, a concrete failing input or statement sequence, why it fails, and verified or unverified. Say CHANGES only for a blocker or major finding; minor ones are notes under PASS. Do not modify anything."
+    if [[ $runner == copilot ]]; then
+      { body "$F/agents/$agent.md"; printf '\nJob %s, review round %s. The spec is %s/spec.md and the build notes %s/build.md. The change is `git diff origin/main...HEAD` in this worktree.\n\n%s\n' \
+          "$job" "$round" "$J" "$J" "$contract"; } > "$J/.run/$agent-$round.txt"
+      script=$J/.run/$agent-$round.zsh
+      cat > "$script" <<EOF
+cd $(q "$WT") || exit 1
+copilot -p "\$(cat $(q "$J/.run/$agent-$round.txt"))" --add-dir $(q "$J") \\
+  --allow-tool 'shell(git diff:*)' --allow-tool 'shell(git log:*)' --allow-tool 'shell(git show:*)' \\
+  --allow-tool 'shell(rg:*)' --deny-tool 'shell(node:*)' --deny-tool 'shell(npx:*)' --deny-tool 'shell(npm:*)' \\
+  --deny-tool 'shell(git push:*)' --deny-tool 'shell(git commit:*)' --deny-tool 'shell(git reset:*)' \\
+  --deny-tool 'shell(rm:*)' --deny-tool 'write' \\
+  --share $(q "$J/.raw/$agent-$round.md")
+EOF
+      in_block "factory $job $role r$round copilot" "$script" || exit $?
+      raw=$J/.raw/$agent-$round.md
+    else
+      ctx=$R/context-$role; mkdir -p "$ctx"   # one folder per reviewer: two Bob reviews run at once
+      refs=$(python3 "$F/bin/context.py" "$WT" "$ctx") || exit 1
+      cp "$J/spec.md" "$J/build.md" "$ctx/"
+      { body "$F/agents/$agent.md"; printf '\nJob %s, review round %s. Read @spec.md (the spec), @build.md (the build notes) and the change: %s\n\n%s\n' \
+          "$job" "$round" "$refs" "$contract"; } > "$J/.run/$agent-$round.txt"
+      "$F/bin/bob-review" "$ctx" "$J/.run/$agent-$round.txt" "$J/.raw/$agent-$round.txt" "factory $job $role r$round bob" || exit $?
+      raw=$J/.raw/$agent-$round.txt
+    fi
+    python3 "$F/bin/extract.py" "$raw" REVIEW --first '^VERDICT: (PASS|CHANGES)$' > "$R/.review-$role.tmp" \
+      && mv "$R/.review-$role.tmp" "$R/review-$role.md"
+    ;;
+
+  approve)
+    printf 'Job %s. The job folder is %s: spec.md, build.md, round-1/ to round-%s/. Paths that need a human (a regex over `git diff --name-only origin/main...HEAD`): %s\n' \
+      "$job" "$J" "$round" "$NEEDS_HUMAN" > "$J/.run/approve.txt"
+    claude_run "factory $job approver" "$F/agents/approver.md" "$J/.run/approve.txt" "$J/.raw/approve.out" "$READ_TOOLS" \
+      --name "approver-$job" --add-dir "$J" || exit $?
+    python3 "$F/bin/extract.py" "$J/.raw/approve.out" DECISION --first '^(APPROVE|ESCALATE)$' > "$J/decision.md.tmp" \
+      && mv "$J/decision.md.tmp" "$J/decision.md"
+    ;;
+
+  needs-human-paths)   # prints CLEAN and exits 0, or lists the paths and exits 10; any other exit is an error
+    paths=$(git -C "$WT" diff --no-renames --name-only origin/main...HEAD) || { echo "agent: git diff failed" >&2; exit 1; }
+    hits=$(grep -E "$NEEDS_HUMAN" <<<"$paths")
+    if [[ -n $hits ]]; then echo "$hits"; exit 10; fi
+    echo CLEAN
+    ;;
+
+  *) sed -n '2,13p' "$0"; exit 1 ;;
+esac

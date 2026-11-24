@@ -141,7 +141,14 @@ There is no manual deploy step. **Merging to `main` deploys.**
   (tests passed, skipped), and a **Follow-ups** list. Advisory review findings that are not
   fixed go into a new issue and are linked, not dropped.
 - Worktrees for parallel agents live under `.claude/worktrees/` (gitignored).
-- Adversarial reviews are run by GitHub Copilot, headless in a visible Rex block, read-only. From
+- **The factory** (`/factory`, `.claude/skills/factory/`, `factory/README.md`) takes a bean through
+  spec, build, a four-way review (security, ux, ui, code), approval, PR, CI and merge. Claude writes the
+  spec and the code; Copilot and Bob only review, alternating roles per round; every agent runs in its
+  own Rex block, and Claude only on the claude.ai subscription (`factory/bin/claude-sub`). An APPROVE
+  merges after green CI, which deploys; red CI or a risky path (deploy, CI, dependencies, migrations, the
+  SQL guard, embed framing, the factory) waits for a human. Dashboard: `static-web-server -p 8799 -d
+  factory --compression false` (not 8790, which Playwright reuses).
+- Outside the factory, adversarial reviews are run by GitHub Copilot, headless in a visible Rex block, read-only. From
   the worktree, with the prompt in a file (it names the diff, `git diff origin/main...<branch>`,
   what to try to break, and asks for findings most-severe-first ending with `DONE`):
 

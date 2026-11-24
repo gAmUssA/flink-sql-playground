@@ -25,7 +25,10 @@ Thumbs.db
 .tessl
 .cursor
 .codex
-.claude
+# .claude is local, except the skills this repo ships (/factory)
+!.claude/
+.claude/*
+!.claude/skills/
 .agents
 /.env
 
