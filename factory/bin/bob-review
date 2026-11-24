@@ -4,9 +4,13 @@
 #   bob-review <workspace-dir> <prompt-file> <raw-out> <label> [timeout-seconds=1200]
 #
 # Starts `bob chat --mode ask` (headless `bob run` needs BOB_API_KEY, which we don't use), answers
-# the folder-trust prompt with "Don't trust", sends the prompt as one line, waits until the screen
-# shows a line <<<REVIEW>>> and later a line <<<END>>>, saves `rex capture` to <raw-out>, and
-# quits Bob. Exit 0 when done, 4 on timeout (the capture is saved either way).
+# the folder-trust prompt with "Don't trust", sends the prompt as one line (without "@file"
+# references, which open a file picker), presses Enter until the input box no longer holds the
+# prompt (Escape first when a dialog is open), waits until the screen shows a line <<<REVIEW>>> and
+# later a line <<<END>>>, saves `rex capture` to <raw-out>, and quits Bob.
+# Exit 0 when done, 4 on timeout (the capture is saved either way), 5 when Bob never accepted the
+# prompt after four Enter presses, or the typed prompt never showed in the input box (the capture is
+# saved, Bob is quit).
 set -u
 ws=$1 prompt=$2 out=$3 label=$4 limit=${5:-1200}
 cd "$ws" || exit 1
@@ -16,21 +20,51 @@ block=$(rex run --focus=false --keep-open --interactive --label "$label" --json 
 echo "$block" > "$out.block"
 
 screen() { rex capture -b "$block" --trim --unwrap 2>/dev/null; }
+pause() { sleep "${BOB_REVIEW_PAUSE:-$1}"; }   # BOB_REVIEW_PAUSE=0 lets the stubbed test run fast
 
 for _ in $(seq 1 30); do                       # Bob's first screen: trust this folder?
   s=$(screen)
   if grep -q "Don't trust" <<<"$s"; then
-    rex send -b "$block" '3'; sleep 1.5; rex send-key -b "$block" enter; break  # 3 = Don't trust (Bob 2.0.7)
+    rex send -b "$block" '3'; pause 1.5; rex send-key -b "$block" enter; break  # 3 = Don't trust (Bob 2.0.7)
   fi
   grep -q "Ask Mode" <<<"$s" && break
-  sleep 2
+  pause 2
 done
-sleep 4
-rex send -b "$block" "$(tr '\n' ' ' < "$prompt")"; sleep 2; rex send-key -b "$block" enter
+pause 4
+# No "@file" references: Bob's TUI opens a file picker on "@path", and that popup swallowed Enter, so
+# the prompt sat unsent in the input box for 20 minutes (2026-11-24). Bob reads the plain relative
+# paths with its own tools. Only an "@" that starts a word goes; "a@b.com" and "/@types/node" stay.
+text=$(tr '\n' ' ' < "$prompt" | sed -E 's/(^|[[:space:]({["=,:;])@([^[:space:]])/\1\2/g')
+rex send -b "$block" "$text"; pause 2
+head=${text:0:40}
+typed=0
+for _ in $(seq 1 10); do                          # keys sent before Bob's input box exists are dropped: wait for the text
+  screen | grep -E '^ *[│┃|]? *❯ ' | tail -1 | grep -qF -- "$head" && { typed=1; break; }
+  pause 2
+done
+if (( typed == 0 )); then
+  screen > "$out"; rex send-key -b "$block" ctrl+c; pause 1; rex send-key -b "$block" ctrl+c
+  echo "bob-review: the prompt never showed in Bob's input box; capture in $out" >&2
+  exit 5
+fi
+sent=0
+for _ in 1 2 3 4; do                              # press Enter until the input box no longer holds the prompt
+  s=$(screen)
+  # A dialog or popup (file picker, "Press Esc to close") takes the Enter; dismiss it first.
+  grep -qiE 'Press Esc|Esc to (close|cancel|dismiss)' <<<"$s" && { rex send-key -b "$block" escape; pause 1; }
+  rex send-key -b "$block" enter; pause 5
+  last=$(screen | grep -E '^ *[│┃|]? *❯ ' | tail -1)
+  if ! grep -qF -- "$head" <<<"$last"; then sent=1; break; fi
+done
+if (( sent == 0 )); then                          # never submitted: fail now, not after the 20 minute timeout
+  screen > "$out"; rex send-key -b "$block" ctrl+c; pause 1; rex send-key -b "$block" ctrl+c
+  echo "bob-review: Bob never accepted the prompt after 4 Enter presses; capture in $out" >&2
+  exit 5
+fi
 
 status=4
 for _ in $(seq 1 $((limit / 10))); do
-  sleep 10
+  pause 10
   if screen | python3 -c '
 import re, sys
 lines = [re.sub(r"^[\s│┃|•●⏺>]*", "", l).strip() for l in sys.stdin.read().splitlines()]
@@ -40,5 +74,5 @@ sys.exit(0 if start >= 0 and "<<<END>>>" in lines[start:] else 1)'; then
   fi
 done
 screen > "$out"
-rex send-key -b "$block" ctrl+c; sleep 1; rex send-key -b "$block" ctrl+c   # twice to quit
+rex send-key -b "$block" ctrl+c; pause 1; rex send-key -b "$block" ctrl+c   # twice to quit
 exit $status

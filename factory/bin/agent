@@ -6,17 +6,22 @@
 #   agent <job> review-<role> <round>  → jobs/<job>/round-<n>/review-<role>.md (Copilot or Bob, read-only)
 #   agent <job> approve <round>        → jobs/<job>/decision.md      (Claude, read-only, fresh)
 #   agent <job> reviewers <round>      prints who reviews what: code=copilot security=copilot ux=bob ui=bob
+#   agent <job> needs-human-paths      CLEAN (exit 0) or the risky paths (exit 10)
+#   agent <job> close-blocks           closes the job's Rex blocks; refuses unless its stage is merged or needs-human
 #
 # Exit 0 when the file is saved and well formed, 2 when the agent's answer is malformed, 3 when
-# Claude is not on the subscription, 4 on a reviewer timeout, anything else when the runner failed.
+# Claude is not on the subscription, 4 on a reviewer timeout, 5 when Bob never accepted the prompt,
+# anything else when the runner failed.
 # It never touches board.json: the orchestrator does.
 set -uo pipefail
 job=$1 agent=$2 round=${3:-1}
 [[ $job =~ ^[a-z0-9][a-z0-9-]{1,60}$ ]] || { echo "agent: job id must be lowercase letters, digits and dashes" >&2; exit 1; }
 [[ $round =~ ^[0-9]+$ ]] || { echo "agent: round must be a number" >&2; exit 1; }
 q() { printf '%q' "$1"; }   # quote a value for the generated zsh scripts
-F=$(cd "$(dirname "$0")/.." && pwd)
-REPO=$(cd "$(git -C "$F" rev-parse --git-common-dir)/.." && pwd)
+F=$(cd "$(dirname "$0")/.." && pwd -P)
+# --git-common-dir is relative to the directory git runs in (".git" from the repo root), so resolve it
+# from inside $F, not from the caller's cwd.
+REPO=$(cd "$F" && cd "$(git rev-parse --git-common-dir)/.." && pwd -P) || { echo "agent: $F is not in a git checkout" >&2; exit 1; }
 F=${FACTORY_HOME:-$REPO/factory}   # the main checkout's factory folder, even when called from a worktree
 J=$F/jobs/$job WT=$REPO/.claude/worktrees/$job
 mkdir -p "$J/.raw" "$J/.run"
@@ -113,7 +118,10 @@ EOF
       "$F/bin/bob-review" "$ctx" "$J/.run/$agent-$round.txt" "$J/.raw/$agent-$round.txt" "factory $job $role r$round bob" || exit $?
       raw=$J/.raw/$agent-$round.txt
     fi
-    python3 "$F/bin/extract.py" "$raw" REVIEW --first '^VERDICT: (PASS|CHANGES)$' > "$R/.review-$role.tmp" \
+    # --last for Copilot --share files only: two differing blocks there mean the last is the answer
+    # (ADR 0010). Claude and Bob files keep "differing blocks are malformed".
+    last=(); [[ $runner == copilot ]] && last=(--last)
+    python3 "$F/bin/extract.py" "$raw" REVIEW --first '^VERDICT: (PASS|CHANGES)$' ${last[@]+"${last[@]}"} > "$R/.review-$role.tmp" \
       && mv "$R/.review-$role.tmp" "$R/review-$role.md"
     ;;
 
@@ -133,5 +141,19 @@ EOF
     echo CLEAN
     ;;
 
-  *) sed -n '2,13p' "$0"; exit 1 ;;
+  close-blocks)   # closes the Rex blocks this job opened, once it is merged or needs-human
+    stage=$(python3 "$F/bin/board.py" show "$job" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)[0].get("stage",""))' 2>/dev/null)
+    case $stage in
+      merged|needs-human) ;;
+      *) echo "agent: not closing blocks of $job: its stage is '${stage:-unknown}', want merged or needs-human" >&2; exit 1 ;;
+    esac
+    shopt -s nullglob
+    for f in "$J"/.run/*.zsh.block "$J"/.raw/*.txt.block; do
+      id=$(<"$f")
+      [[ -n $id ]] && rex block close "$id" >/dev/null 2>&1   # already gone is fine
+    done
+    exit 0
+    ;;
+
+  *) sed -n '2,15p' "$0"; exit 1 ;;
 esac

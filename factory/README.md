@@ -57,7 +57,8 @@ factory/
   agents/                         one file per agent: what it reads, does and writes
     spec-writer.md  builder.md  review-security.md  review-ux.md  review-ui.md  review-code.md  approver.md
   bin/
-    agent        runs one agent for one job in a Rex block and saves its file
+    agent        runs one agent for one job in a Rex block and saves its file;
+                 `agent <job> close-blocks` closes the job's blocks once it is merged or needs-human
     claude-sub   runs claude on the claude.ai subscription only
     bob-review   drives Bob's chat TUI through Rex (Bob has no usable headless mode here)
     board.py     the only writer of board.json
@@ -85,7 +86,13 @@ static-web-server -p 8799 -d factory --compression false   # http://localhost:87
 Not 8790: the Playwright suite reuses a server on that port. Jobs move across the columns;
 each review round is a row of chips (role · reviewer: C for Copilot, B for Bob) that turn green or
 amber as verdicts land; needs-human cards are red. Click a card to read its files. Each agent's
-Rex block is labelled `factory <job> <agent>` and stays open after it finishes.
+Rex block is labelled `factory <job> <agent>` and stays open after it finishes, until
+`agent <job> close-blocks`.
+
+## Tests
+
+`factory/tests/run.sh` runs the script tests (Python `unittest` for `extract.py`, bash with a stubbed
+`rex` and `bob` for `agent` and `bob-review`). It is not part of `./gradlew build` or CI.
 
 ## Requirements
 
