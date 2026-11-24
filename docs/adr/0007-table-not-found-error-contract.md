@@ -69,3 +69,40 @@ upgrades, and only the backend sees the exception chain and the statement togeth
   not match); run it after any Flink bump, together with `ExplainSmokeTest`.
 - New endpoints that plan user SQL should go through the same planning wrapper, so they answer
   `TABLE_NOT_FOUND` too.
+
+## Addendum: DROP of a missing object is `OBJECT_NOT_FOUND` (2026-11-24)
+
+`DROP [TEMPORARY] TABLE|VIEW` without `IF EXISTS` answered 500 `INTERNAL_ERROR` for a missing
+object, or one of the other kind. Measured on the MiniCluster, in both modes: a plain
+`ValidationException` (nothing wraps it), worded `Table with identifier '…' does not exist.`,
+`View with identifier '…' does not exist.` or `Temporary table or view with identifier '…' does not
+exist.` None matches the patterns above, so the catch-all mapped it.
+
+- **A dedicated code, not `TABLE_NOT_FOUND`.** `ObjectNotFoundException` maps to 400
+  `OBJECT_NOT_FOUND` with `error` only. `TABLE_NOT_FOUND` makes the UI offer **Build Schema and
+  run**; rebuilding cannot make a DROP succeed and could drop a table the build just created (the
+  loop ADR 0009 avoided for `STREAMING_ONLY_VIEW`). `app.js` needs no change: any code other than
+  `TABLE_NOT_FOUND` renders as "Query failed" with Flink's message. `table-not-found.spec.js` pins
+  that, for a name the schema editor declares.
+- Detection is the same trust rule: planner validation exceptions only, anchored full-message
+  match, and only for a DROP of a table or view that is not `IF EXISTS`
+  (`SqlExecutionService.executeDdlOnBothEnvironments`, on the planner thread). Anything else,
+  including a runtime failure with similar words, stays 500.
+- A view dropped as TABLE, or a table as VIEW, gets a hint after Flink's message:
+  `Use DROP [TEMPORARY] VIEW to drop a view.` Flink words that case as a plain "does not exist".
+  The hint reads the streaming environment's catalog (it has every object) and is given only for
+  an unqualified name, or one qualified with the current catalog and database; otherwise Flink's
+  message stands alone.
+- A plain `DROP VIEW tv` / `DROP TABLE tt` of a *temporary* object fails differently: `Temporary view
+  with identifier '…' exists. Drop it first before removing the permanent view.` It is detected too
+  (second anchored pattern), and the hint says `Use DROP TEMPORARY VIEW`. The reverse, `DROP TEMPORARY
+  …` of a permanent object, gets `Use DROP VIEW` / `Use DROP TABLE`. `error` carries the matching
+  validation exception's own text, even when something wraps it.
+  `IF EXISTS` does not exempt a DROP from this: Flink checks for the shadowing temporary object first,
+  so `DROP VIEW IF EXISTS tv` of a temporary `tv` is `OBJECT_NOT_FOUND` too.
+- Batch runs first, so a DROP that fails there leaves both environments as they were. A failure in
+  the second (streaming) environment can leave them apart; the one known case is a permanent view and a
+  streaming-only temporary view of the same name, dropped with a plain `DROP VIEW`. That divergence
+  predates this change. The hint is best effort: if reading the catalog fails, Flink's message stands alone.
+  `DropMissingSmokeTest` runs the real shapes; run it after a Flink bump.
+- Explain and the timeline probe do not plan DDL: they already answer 400 (`NOT_EXPLAINABLE`).

@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -427,59 +428,117 @@ public class SqlExecutionService {
     private QueryResult executeDdlOnBothEnvironments(FlinkSession session, String sql) {
         long startTime = System.currentTimeMillis();
         session.runOnPlannerThread(() -> {
-            Optional<String> name = ddlObjectPath(sql)
-                    .map(parts -> viewKey(session.getStreamEnv(), isTemporary(sql), parts));
-            // Drop any prior table or view of the same name first so re-execution is idempotent.
-            dropStatementFor(sql).ifPresent(drop -> {
-                log.debug("Executing idempotent DROP: {}", drop);
-                session.getBatchEnv().executeSql(drop);
-                session.getStreamEnv().executeSql(drop);
-                if (isDropView(drop)) {
-                    // The old view is gone from both environments, so is its mark.
-                    name.ifPresent(session::clearStreamingOnlyView);
-                }
-            });
-            // A mark is cleared only once the statement has run: a CREATE or DROP that fails
-            // leaves the view, and the view keeps its mark.
-            boolean streamingOnly = name.map(session::isStreamingOnlyView).orElse(false);
-            if (streamingOnly && isDrop(sql)) {
-                // The batch environment never had it: a plain DROP VIEW would fail there.
-                session.getStreamEnv().executeSql(sql);
-                name.ifPresent(session::clearStreamingOnlyView);
-                return null;
-            }
-            if (streamingOnly && !isCreateView(sql)) {
-                // A CREATE TABLE over a streaming-only view's name: only the streaming environment
-                // has the view, so run the statement there first. It fails there ("already exists")
-                // before it creates a table of that name in the batch environment alone.
-                session.getStreamEnv().executeSql(sql);
-                session.getBatchEnv().executeSql(sql);
-                name.ifPresent(session::clearStreamingOnlyView);
-                return null;
-            }
             try {
-                session.getBatchEnv().executeSql(sql);
+                return syncDdl(session, sql);
             } catch (RuntimeException e) {
-                // A view over an unbounded table (a deduplication over a faker or datagen
-                // stream) cannot be planned in batch mode, nor can a view over such a view.
-                // Create it for Streaming only and remember that, so a BATCH query on it says
-                // so instead of "not found".
-                if (!isCreateView(sql) || name.isEmpty()
-                        || !(isUnboundedInBatch(e) || readsStreamingOnlyView(session, e, sql))) {
-                    throw e;
+                // A DROP of a missing object (or of the other kind) is the user's mistake, not a fault.
+                // IF EXISTS does not exempt a DROP: Flink refuses a plain DROP of a temporary object
+                // before it looks at IF EXISTS. Planner thread: the hint reads the session's catalog.
+                if (isDrop(sql)) {
+                    Optional<ObjectNotFoundException> missing = ObjectNotFoundException.detect(e);
+                    if (missing.isPresent()) {
+                        throw missing.get().withHint(safeDropHint(session.getStreamEnv(), sql));
+                    }
                 }
-                log.debug("View {} reads an unbounded table: streaming environment only", name.get().replace('\u0000', '.'));
-                session.getStreamEnv().executeSql(sql);
-                session.markStreamingOnlyView(name.get());
-                return null;
+                throw e;
             }
-            session.getStreamEnv().executeSql(sql);
-            // It ran in both environments: whatever the name is now, it is not streaming-only.
-            name.ifPresent(session::clearStreamingOnlyView);
-            return null;
         });
         long executionTimeMs = System.currentTimeMillis() - startTime;
         return new QueryResult(List.of(), List.of(), List.of(), List.of(), executionTimeMs, false);
+    }
+
+    /**
+     * When a DROP names an object of the other kind, says which DROP to use: Flink words that
+     * case as a plain "does not exist". The streaming environment is the one that has every object.
+     * Only an unqualified name, or one qualified with the current catalog and database, is looked
+     * up; anything else gets no hint. Call on the session's planner thread.
+     */
+    private static String dropHint(TableEnvironment tEnv, String sql) {
+        Optional<List<String>> path = ddlObjectPath(sql);
+        Matcher drop = DROP_TABLE_OR_VIEW_PATTERN.matcher(stripLeadingComments(sql));
+        if (path.isEmpty() || !drop.find()) {
+            return null;
+        }
+        List<String> parts = path.get();
+        int n = parts.size();
+        if ((n == 3 && !parts.get(0).equals(tEnv.getCurrentCatalog()))
+                || (n >= 2 && !parts.get(n - 2).equals(tEnv.getCurrentDatabase()))) {
+            return null;
+        }
+        String name = parts.get(n - 1);
+        boolean isView = List.of(tEnv.listViews()).contains(name);
+        boolean isTable = !isView && List.of(tEnv.listTables()).contains(name);
+        if (!isView && !isTable) {
+            return null;
+        }
+        boolean temporary = List.of(isView ? tEnv.listTemporaryViews() : tEnv.listTemporaryTables()).contains(name);
+        // What the object is, and so which DROP drops it: the kind and the TEMPORARY keyword both count.
+        String right = "DROP " + (temporary ? "TEMPORARY " : "") + (isView ? "VIEW" : "TABLE");
+        String statement = "DROP " + (drop.group(1) != null ? "TEMPORARY " : "") + drop.group(2).toUpperCase(Locale.ROOT);
+        return statement.equals(right) ? null : "Use " + right + " to drop a " + (isView ? "view." : "table.");
+    }
+
+    /** The hint is optional: a catalog failure while computing it must not turn a 400 into a 500. */
+    private static String safeDropHint(TableEnvironment tEnv, String sql) {
+        try {
+            return dropHint(tEnv, sql);
+        } catch (RuntimeException e) {
+            log.debug("No hint for {}: {}", SqlText.truncate(sql), e.toString());
+            return null;
+        }
+    }
+
+    private Void syncDdl(FlinkSession session, String sql) {
+        Optional<String> name = ddlObjectPath(sql)
+                .map(parts -> viewKey(session.getStreamEnv(), isTemporary(sql), parts));
+        // Drop any prior table or view of the same name first so re-execution is idempotent.
+        dropStatementFor(sql).ifPresent(drop -> {
+            log.debug("Executing idempotent DROP: {}", drop);
+            session.getBatchEnv().executeSql(drop);
+            session.getStreamEnv().executeSql(drop);
+            if (isDropView(drop)) {
+                // The old view is gone from both environments, so is its mark.
+                name.ifPresent(session::clearStreamingOnlyView);
+            }
+        });
+        // A mark is cleared only once the statement has run: a CREATE or DROP that fails
+        // leaves the view, and the view keeps its mark.
+        boolean streamingOnly = name.map(session::isStreamingOnlyView).orElse(false);
+        if (streamingOnly && isDrop(sql)) {
+            // The batch environment never had it: a plain DROP VIEW would fail there.
+            session.getStreamEnv().executeSql(sql);
+            name.ifPresent(session::clearStreamingOnlyView);
+            return null;
+        }
+        if (streamingOnly && !isCreateView(sql)) {
+            // A CREATE TABLE over a streaming-only view's name: only the streaming environment
+            // has the view, so run the statement there first. It fails there ("already exists")
+            // before it creates a table of that name in the batch environment alone.
+            session.getStreamEnv().executeSql(sql);
+            session.getBatchEnv().executeSql(sql);
+            name.ifPresent(session::clearStreamingOnlyView);
+            return null;
+        }
+        try {
+            session.getBatchEnv().executeSql(sql);
+        } catch (RuntimeException e) {
+            // A view over an unbounded table (a deduplication over a faker or datagen
+            // stream) cannot be planned in batch mode, nor can a view over such a view.
+            // Create it for Streaming only and remember that, so a BATCH query on it says
+            // so instead of "not found".
+            if (!isCreateView(sql) || name.isEmpty()
+                    || !(isUnboundedInBatch(e) || readsStreamingOnlyView(session, e, sql))) {
+                throw e;
+            }
+            log.debug("View {} reads an unbounded table: streaming environment only", name.get().replace('\u0000', '.'));
+            session.getStreamEnv().executeSql(sql);
+            session.markStreamingOnlyView(name.get());
+            return null;
+        }
+        session.getStreamEnv().executeSql(sql);
+        // It ran in both environments: whatever the name is now, it is not streaming-only.
+        name.ifPresent(session::clearStreamingOnlyView);
+        return null;
     }
 
     /**

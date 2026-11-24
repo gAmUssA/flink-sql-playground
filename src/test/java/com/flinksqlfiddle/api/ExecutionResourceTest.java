@@ -4,6 +4,7 @@ import com.flinksqlfiddle.execution.ExecutionMode;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
 import com.flinksqlfiddle.execution.QueryResult;
 import com.flinksqlfiddle.execution.NotExplainableException;
+import com.flinksqlfiddle.execution.ObjectNotFoundException;
 import com.flinksqlfiddle.execution.SqlExecutionService;
 import com.flinksqlfiddle.execution.TableNotFoundException;
 import com.flinksqlfiddle.execution.plan.ExplainResult;
@@ -239,6 +240,54 @@ class ExecutionResourceTest {
                 .body("table", is("Users"))
                 .body("suggestion", is("users"))
                 .body("error", is(message));
+    }
+
+    private static final String DROP_MISSING =
+            "Table with identifier 'default_catalog.default_database.nope' does not exist.";
+
+    @Test
+    void executeOfDropOfAMissingObjectIsABadRequestWithItsOwnCode() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        when(executionService.execute(any(FlinkSession.class), any(ExecutionMode.class), any(String.class)))
+                .thenThrow(new ObjectNotFoundException(DROP_MISSING, null));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"DROP TABLE nope\", \"mode\": \"BATCH\"}")
+                .when().post(EXECUTE_URL)
+                .then().statusCode(400)
+                .body("code", is("OBJECT_NOT_FOUND"))
+                .body("error", is(DROP_MISSING))
+                .body("$", not(hasKey("table")));
+    }
+
+    @Test
+    void streamOfDropOfAMissingObjectFailsBeforeStreaming() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        when(executionService.prepareStream(eq(session), any()))
+                .thenThrow(new ObjectNotFoundException(DROP_MISSING + " Use DROP VIEW to drop a view.", null));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"DROP TABLE v\", \"mode\": \"STREAMING\"}")
+                .when().post("/api/sessions/test-session/execute/stream")
+                .then().statusCode(400)
+                .body(containsString("\"code\":\"OBJECT_NOT_FOUND\""))
+                .body(containsString("Use DROP VIEW to drop a view."));
+    }
+
+    @Test
+    void aRealFaultStillAnswers500() {
+        FlinkSession session = mock(FlinkSession.class);
+        when(sessionManager.getSession("test-session")).thenReturn(session);
+        when(executionService.execute(any(FlinkSession.class), any(ExecutionMode.class), any(String.class)))
+                .thenThrow(new IllegalStateException(DROP_MISSING));
+
+        given().contentType("application/json")
+                .body("{\"sql\": \"DROP TABLE nope\", \"mode\": \"BATCH\"}")
+                .when().post(EXECUTE_URL)
+                .then().statusCode(500)
+                .body("code", is("INTERNAL_ERROR"));
     }
 
     @Test

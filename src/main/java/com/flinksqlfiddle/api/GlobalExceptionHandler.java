@@ -3,6 +3,7 @@ package com.flinksqlfiddle.api;
 import com.flinksqlfiddle.api.dto.ErrorResponse;
 import com.flinksqlfiddle.execution.ExecutionTimeoutException;
 import com.flinksqlfiddle.execution.NotExplainableException;
+import com.flinksqlfiddle.execution.ObjectNotFoundException;
 import com.flinksqlfiddle.execution.StreamingOnlyViewException;
 import com.flinksqlfiddle.execution.TableNotFoundException;
 import com.flinksqlfiddle.fiddle.FiddleNotFoundException;
@@ -84,6 +85,17 @@ public class GlobalExceptionHandler {
         log.debug("Table not found: {}", e.table());
         return RestResponse.status(RestResponse.Status.BAD_REQUEST,
                 new ErrorResponse(e.getMessage(), "TABLE_NOT_FOUND", e.table(), e.path(), e.suggestion()));
+    }
+
+    /**
+     * A DROP of a table or view the session does not have, or has as the other kind. A user error:
+     * 400, with a code of its own so the UI never offers "Build Schema and run" for it.
+     */
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleObjectNotFound(ObjectNotFoundException e) {
+        log.debug("Drop of a missing object: {}", e.getMessage());
+        return RestResponse.status(RestResponse.Status.BAD_REQUEST,
+                new ErrorResponse(e.getMessage(), "OBJECT_NOT_FOUND"));
     }
 
     /** A BATCH statement on a view that reads an unbounded table: it exists in Streaming only. */

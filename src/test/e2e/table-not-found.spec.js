@@ -241,6 +241,61 @@ test('a table name is text, never markup', async ({ page }) => {
   expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
 });
 
+// A DROP of a missing object (API code OBJECT_NOT_FOUND) shows Flink's message and nothing to build:
+// rebuilding the schema cannot make a DROP succeed, even when the schema editor declares the name.
+for (const mode of ['BATCH', 'STREAMING']) {
+  test(`${mode}: DROP of a missing table shows Flink's message, with no build offer and no internal error`, async ({ page }) => {
+    await open(page);
+    const sql = executed(page);
+    // "orders" is declared in the schema editor: a TABLE_NOT_FOUND would offer to build it.
+    await run(page, 'DROP TABLE orders', mode);
+    const empty = page.locator('#results-container .rv-empty');
+    await expect(empty.locator('.rv-empty-label')).toHaveText('Query failed');
+    await expect(empty.locator('.rv-empty-hint')).toHaveText("Table with identifier 'default_catalog.default_database.orders' does not exist.");
+    await expect(page.locator(NF)).toHaveCount(0);
+    await expect(page.locator('[data-nf-build]')).toHaveCount(0);
+    await expect(page.locator('#results-container')).not.toContainText(/internal/i);
+    await expect(page.locator('#results-container')).not.toContainText('Build Schema');
+    expect(sql).toEqual(['DROP TABLE orders']);
+  });
+}
+
+test('a view dropped as TABLE shows the hint after Flink\'s message', async ({ page }) => {
+  await open(page);
+  await run(page, '-- stub: drop is view\nDROP TABLE v');
+  await expect(page.locator('#results-container .rv-empty-hint'))
+    .toHaveText("Table with identifier 'default_catalog.default_database.v' does not exist. Use DROP VIEW to drop a view.");
+});
+
+test('dropping a built table twice: the first succeeds, the second says it does not exist', async ({ page }) => {
+  await open(page);
+  await run(page, 'CREATE TABLE x (id INT) WITH (\'connector\' = \'datagen\')');
+  await run(page, 'DROP TABLE x');
+  await expect(page.locator('#results-container .rv-empty.is-error')).toHaveCount(0);
+  await run(page, 'DROP TABLE x');
+  await expect(page.locator('#results-container .rv-empty-hint'))
+    .toHaveText("Table with identifier 'default_catalog.default_database.x' does not exist.");
+});
+
+test('DROP ... IF EXISTS of a missing table still succeeds', async ({ page }) => {
+  await open(page);
+  await run(page, 'DROP TABLE IF EXISTS orders');
+  await expect(page.locator('#results-container .rv-empty.is-error')).toHaveCount(0);
+});
+
+for (const theme of ['nebula', 'carbon', 'cobalt']) {
+  test(`${theme}: the failed-DROP message reaches 4.5:1`, async ({ page }) => {
+    await open(page, { theme });
+    await run(page, 'DROP TABLE orders');
+    await expect(page.locator('#results-container .rv-empty-hint')).toBeVisible();
+    await settleAnimations(page);
+    const results = await page.evaluate((fn) => new Function(`return (${fn})`)()(
+      ['.rv-empty-label', '.rv-empty-hint']
+        .map((sel) => ({ what: sel, el: document.querySelector(`#results-container .rv-empty ${sel}`) }))), measureContrast.toString());
+    expect(results.filter((m) => m.ratio < 4.5), `${theme}: text below 4.5:1`).toEqual([]);
+  });
+}
+
 for (const theme of ['nebula', 'carbon', 'cobalt']) {
   test(`${theme}: the missing-table state reaches 4.5:1`, async ({ page }) => {
     await open(page, { theme });
