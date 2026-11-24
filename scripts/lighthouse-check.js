@@ -15,7 +15,8 @@
  */
 'use strict';
 
-const { chromium } = require('@playwright/test');
+// Heavy dependencies (@playwright/test, lighthouse, chrome-launcher, puppeteer-core) are loaded
+// inside the functions that need them, so the pure helpers load with plain node (jsTest in CI).
 
 // The themes and the key js/app.js keeps the user's choice under (TWEAKS_KEY).
 const THEMES = ['nebula', 'carbon', 'cobalt'];
@@ -72,6 +73,7 @@ const RUNS = 3;
 
 /** One Lighthouse run in its own Chrome, so runs share no cache, storage or process state. */
 async function auditOnce(url, minimums, includePerformance, theme) {
+  const { chromium } = require('@playwright/test');
   const { default: lighthouse } = await import('lighthouse');
   const chromeLauncher = await import('chrome-launcher');
   const chrome = await chromeLauncher.launch({ chromePath: chromium.executablePath(), chromeFlags: ['--headless=new', '--no-sandbox'] });
