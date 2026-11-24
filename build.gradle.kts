@@ -112,6 +112,10 @@ dependencies {
     // Caffeine cache (used directly by SessionManager, not via any cache abstraction)
     implementation("com.github.ben-manes.caffeine:caffeine:3.3.1")
 
+    // Rate limiting (ADR 0010): Bucket4j core, buckets kept in Caffeine. The quarkus-bucket4j
+    // extension was rejected: its 429 has an empty body and its bucket store has no size cap.
+    implementation("com.bucket4j:bucket4j_jdk17-core:8.14.0")
+
     // Apache Flink
     implementation("org.apache.flink:flink-streaming-java:$flinkVersion")
     implementation("org.apache.flink:flink-clients:$flinkVersion")
