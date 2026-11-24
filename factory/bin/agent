@@ -48,6 +48,7 @@ instance_id() { rex whoami --json 2>/dev/null | python3 -c 'import json,sys; pri
 launch() {
   local label=$1 name=$2 cwd=$3 b rc=0 inst now; shift 3
   inst=$(instance_id)
+  [[ -n $inst ]] || echo "agent: warning: rex whoami gave no instance_id, so a Rex restart cannot be told from a normal exit" >&2
   b=$(rex run --focus=false --keep-open --shell=none --cwd "$cwd" --label "$label" --json -- "$@" | block_json) || return 1
   echo "$b" > "$J/.run/$name.block"; echo "$inst" > "$J/.run/$name.instance"
   rex wait "$b" || rc=$?
