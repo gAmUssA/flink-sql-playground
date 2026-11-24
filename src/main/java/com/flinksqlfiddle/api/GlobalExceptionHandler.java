@@ -7,6 +7,7 @@ import com.flinksqlfiddle.execution.ObjectNotFoundException;
 import com.flinksqlfiddle.execution.StreamingOnlyViewException;
 import com.flinksqlfiddle.execution.TableNotFoundException;
 import com.flinksqlfiddle.fiddle.FiddleNotFoundException;
+import com.flinksqlfiddle.ratelimit.RateLimitedException;
 import com.flinksqlfiddle.security.ForbiddenSqlException;
 import com.flinksqlfiddle.session.SessionLimitExceededException;
 import com.flinksqlfiddle.session.SessionNotFoundException;
@@ -57,6 +58,21 @@ public class GlobalExceptionHandler {
         // 429 Too Many Requests
         return RestResponse.ResponseBuilder.<ErrorResponse>create(429)
                 .entity(new ErrorResponse(e.getMessage(), "SESSION_LIMIT_EXCEEDED"))
+                .build();
+    }
+
+    /**
+     * A client used up its rate-limit bucket (ADR 0010). Same shape as SESSION_LIMIT_EXCEEDED,
+     * code {@code RATE_LIMITED}, plus {@code Retry-After} in whole seconds, at least 1.
+     */
+    @ServerExceptionMapper
+    public RestResponse<ErrorResponse> handleRateLimited(RateLimitedException e) {
+        log.debug("Rate limited: retry in {}s", e.retryAfterSeconds());
+        return RestResponse.ResponseBuilder.<ErrorResponse>create(429)
+                .header("Retry-After", Long.toString(e.retryAfterSeconds()))
+                // Always JSON, whatever the limited route produces (text, NDJSON stream).
+                .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON_TYPE)
+                .entity(new ErrorResponse(e.getMessage(), "RATE_LIMITED"))
                 .build();
     }
 

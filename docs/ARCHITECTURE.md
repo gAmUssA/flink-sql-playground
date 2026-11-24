@@ -144,6 +144,13 @@ Features:
 backend lets other sites frame this one path and no other (`EmbedFraming`, `SecurityHeadersTest`).
 See [ADR 0008](adr/0008-embed-mode.md).
 
+## Rate limiting
+
+A shared per-client limit exists for endpoints that opt in with `@RateLimited` (`com.flinksqlfiddle.ratelimit`):
+Bucket4j core, one bucket per tier and client IP in a size-capped Caffeine cache. A rejection is HTTP 429
+`{"error", "code": "RATE_LIMITED"}` with `Retry-After`. `quarkus.http.proxy.*` makes the client IP the
+`X-Forwarded-For` address. No production endpoint is limited yet. See [ADR 0010](adr/0010-shared-rate-limit.md).
+
 ## Frontend
 
 Vanilla HTML/CSS/JavaScript with no build step.

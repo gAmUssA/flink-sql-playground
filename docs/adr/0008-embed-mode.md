@@ -90,6 +90,8 @@ checked against fixed lists and never written into the page.
   navigates to the same app.
 - Any site can frame the embed and so can start sessions on the visitor's behalf. Rate limits per
   origin are not in place; if abuse shows up, restrict with `EMBED_FRAME_ANCESTORS` or add a limit.
+  The shared per-IP limit (keyed on client address, not origin) is in [ADR 0010](0010-shared-rate-limit.md);
+  bean `on62` applies it to the embed.
 - On Pages, `index.html` is frameable and cannot be fixed there. It exposes the same app a visitor
   could open directly, with the same limits; nothing on it is more dangerous than on the embed
   except the drop-table button, which only affects that visitor's own session.
