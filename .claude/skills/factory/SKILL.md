@@ -106,7 +106,7 @@ reviewer timeout (rerun once).
      `gh pr merge <n> --squash --match-head-commit <sha>`, wait until the app's build-info reports
      the merge commit (AGENTS.md "Deploy"), `stage=merged`. Red: `pr.ci=red`, `stage=needs-human`.
 7. **Clean up** after `merged`: pull `main`, `git worktree remove $WT`, delete the local branch,
-   close the job's Rex blocks (`rex block close "factory <job> …"`, labels in `$J/.run/*.block`).
+   close the job's Rex blocks with `$F/bin/agent <job> close-blocks` (it refuses while the job is still running).
    Job files stay in `$J` (gitignored); the PR carries the record.
 
 `/factory approve <job>`: the job must be `needs-human` with an open PR. Check CI on the head
