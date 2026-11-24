@@ -55,7 +55,7 @@ launch() {
   local v=""
   if [[ -n ${LAUNCH_WATCH:-} ]] && py=$(command -v python3); then
     v=$(rex run --focus=false --keep-open --shell=none --split=below --ratio 35 -b "$b" --label "$label view" --json -- \
-          "$py" "$F/bin/stream-view.py" "$LAUNCH_WATCH" 2>/dev/null | block_json) && echo "$v" > "$J/.run/$name.view.block" || v=""
+          "$py" "$F/bin/stream-view.py" "$LAUNCH_WATCH" 2>/dev/null | block_json 2>/dev/null) && echo "$v" > "$J/.run/$name.view.block" || v=""
     [[ -n $v ]] || echo "agent: warning: could not open the live view pane for $name; the run goes on without it" >&2
   fi
   rex wait "$b" || rc=$?

@@ -160,6 +160,11 @@ check "live view: a rerun removes the previous answer file" "[[ ! -e \"\$J/.raw/
 "$agent" tj spec >/dev/null 2>&1; rc=$?
 check "live view: a run with no stream is exit 2, not a quiet success (rc=$rc)" "(( rc == 2 )) && [[ ! -s \"\$J/.raw/spec.out\" ]]"
 
+# --- close-blocks also closes a live-view pane
+rm -f "$J"/.run/* "$J"/capture-*.txt; echo block:agentblk > "$J/.run/spec.block"; echo block:viewblk > "$J/.run/spec.view.block"; board set tj stage=needs-human; : > "$REX_LOG"
+"$agent" tj close-blocks >/dev/null 2>&1
+check "close-blocks: the live-view pane is closed with the agent block" "grep -q '^block close block:agentblk' \"\$REX_LOG\" && grep -q '^block close block:viewblk' \"\$REX_LOG\""
+
 # --- state: running, exited, failed, closed, lost
 rm -f "$J"/.run/*.block "$J"/.run/*.instance "$J"/capture-*.txt
 echo block:running > "$J/.run/a.block"; echo block:ok > "$J/.run/b.block"; echo block:bad > "$J/.run/c.block"
