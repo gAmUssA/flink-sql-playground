@@ -53,7 +53,10 @@ def describe(event):
     elif kind == "user":
         for part in parts(event):
             if part.get("type") == "tool_result" and part.get("is_error"):
-                lines.append("  ✗ " + short(part.get("content", "")))
+                body = part.get("content", "")
+                if isinstance(body, list):   # text blocks: show their text, not a Python list
+                    body = " ".join(str(b.get("text", "")) if isinstance(b, dict) else str(b) for b in body)
+                lines.append("  ✗ " + short(body))
     elif kind == "result":
         state = "failed" if event.get("is_error") else "done"
         lines.append("■ %s, %s turns, $%.2f" % (state, short(event.get("num_turns", "?")), number(event.get("total_cost_usd"))))
@@ -67,6 +70,7 @@ def main(argv):
     if len(argv) != 2:
         sys.exit(__doc__)
     path = argv[1]
+    print("waiting for the agent…", flush=True)
     while not os.path.exists(path):
         time.sleep(0.3)
     with open(path, encoding="utf-8", errors="replace") as stream:

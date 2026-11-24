@@ -143,7 +143,8 @@ printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"
 rm -f "$J"/.run/*; : > "$REX_LOG"; rm -f "$REX_STATE/whoami"
 REX_STREAM_SRC=$tmp/stream.jsonl REX_STREAM_FILE=$J/.raw/spec.jsonl "$agent" tj spec >/dev/null 2>&1
 vl=$(tr '\n' ' ' < "$REX_LOG")
-check "live view: claude runs with stream-json and verbose into <name>.jsonl" "[[ \$vl == *'--output-format stream-json --verbose'*'.raw/spec.jsonl'* ]]"
+agentrun=$(grep '^run ' "$REX_LOG" | grep -v -- '--split' | tr '\n' ' ')
+check "live view: run-agent is told to write the stream to <name>.jsonl, before claude's own flags" "[[ \$agentrun == *'bin/run-agent '*'/.run/spec.txt '*'/.raw/spec.jsonl '*'bin/claude-sub '*'--output-format stream-json --verbose'* ]]"
 check "live view: a split pane below runs stream-view.py on that file" "[[ \$vl == *'--split=below'*'stream-view.py'*'.raw/spec.jsonl'* ]]"
 check "live view: the view block is closed when the run ends" "grep -q '^block close block:run1' \"\$REX_LOG\""
 check "live view: the answer file is the result text" "[[ \$(cat \"\$J/.raw/spec.out\") == 'the answer text' ]]"
@@ -190,7 +191,9 @@ check "close-blocks: after a Rex restart the saved capture stays" "[[ \$(cat \"\
 # --- an exited-0 Claude run with an empty answer file is flagged
 rm -f "$J"/.run/* "$J"/.raw/*.out; echo block:ok > "$J/.run/spec.block"; : > "$J/.raw/spec.out"
 check "state: exited 0 with an empty answer says so" "\"\$agent\" tj state | grep -qx 'spec exited 0 (empty output)'"
-echo text > "$J/.raw/spec.out"
+rm -f "$J/.raw/spec.out"; : > "$J/.raw/spec.jsonl"
+check "state: exited 0 with a stream but no answer file says so" "\"\$agent\" tj state | grep -qx 'spec exited 0 (empty output)'"
+rm -f "$J/.raw/spec.jsonl"; echo text > "$J/.raw/spec.out"
 check "state: exited 0 with an answer is plain" "\"\$agent\" tj state | grep -qx 'spec exited 0'"
 rm -f "$J/.raw/spec.out" "$J/.run/spec.block"
 

@@ -207,7 +207,8 @@ case $agent in
       [[ $n == *.view ]] && continue   # the live-view pane of a run is not an agent
       inst=$(cat "$J/.run/$n.instance" 2>/dev/null || true)
       if [[ -n $inst && -n $inst_now && $inst != "$inst_now" ]]; then echo "$n lost (Rex restarted)"; continue; fi
-      empty=0; [[ -e $J/.raw/$n.out && ! -s $J/.raw/$n.out ]] && empty=1   # a Claude run whose answer file is empty
+      # A Claude run (it has a stream or an answer file) whose answer file is missing or empty: exit 0, no answer.
+      empty=0; if [[ -e $J/.raw/$n.jsonl || -e $J/.raw/$n.out ]] && [[ ! -s $J/.raw/$n.out ]]; then empty=1; fi
       if proc=$(rex block call process -b "$id" 2>/dev/null); then
         python3 -c '
 import json, sys

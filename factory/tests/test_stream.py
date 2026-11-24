@@ -20,6 +20,18 @@ class StreamTest(unittest.TestCase):
         done = run("stream-result.py", self.write(SAMPLE))
         self.assertEqual((done.returncode, done.stdout), (0, "# Title\nthe answer\n"))
 
+    def test_a_missing_stream_file_is_exit_2_without_a_traceback(self):
+        done = run("stream-result.py", "/nonexistent/stream.jsonl")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("never started", done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+
+    def test_view_shows_text_blocks_of_a_tool_error_as_text(self):
+        event = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": [{"type": "text", "text": "no such file"}]}]}}
+        done = run("stream-view.py", self.write(json.dumps(event) + "\n" + json.dumps({"type": "result", "result": "x"}) + "\n"))
+        self.assertIn("  ✗ no such file", done.stdout)
+        self.assertIn("waiting for the agent", done.stdout)
+
     def test_no_result_event_is_exit_2(self):
         cut = "".join(SAMPLE.splitlines(True)[:-1])
         done = run("stream-result.py", self.write(cut))
@@ -44,7 +56,8 @@ class StreamTest(unittest.TestCase):
         done = run("stream-view.py", self.write(SAMPLE))
         self.assertEqual(done.returncode, 0)
         lines = done.stdout.splitlines()
-        self.assertEqual(lines[0], "▸ Bash ./gradlew test")
+        self.assertEqual(lines[0], "waiting for the agent…")
+        self.assertEqual(lines[1], "▸ Bash ./gradlew test")
         self.assertIn("  ✗ denied: not allowed", lines)
         self.assertIn("· Reading the spec now.", lines)
         self.assertEqual(lines[-1], "■ done, 3 turns, $0.12")

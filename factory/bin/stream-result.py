@@ -14,7 +14,12 @@ def main(argv):
     if len(argv) != 2:
         sys.exit(__doc__)
     result = None
-    with open(argv[1], encoding="utf-8", errors="replace") as stream:
+    try:
+        stream = open(argv[1], encoding="utf-8", errors="replace")
+    except OSError:
+        print("stream-result: %s does not exist (the agent never started; see its pane or capture)" % argv[1], file=sys.stderr)
+        sys.exit(2)
+    with stream:
         for line in stream:
             try:
                 event = json.loads(line)
