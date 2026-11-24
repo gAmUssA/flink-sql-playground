@@ -1,3 +1,4 @@
 # Runtime state of the factory: local to the orchestrator
 board.json
 jobs/
+board.json.lock

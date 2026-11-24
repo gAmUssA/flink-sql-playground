@@ -5,14 +5,14 @@
 
 Agents print their document between a line <<<MARK>>> and a line <<<END>>>. The raw file is
 a `claude -p` transcript, a Copilot --share file or a `rex capture` of Bob's TUI, so the last
-such block wins (the prompt itself may quote the markers) and TUI decoration is stripped:
-a leading "• ", box-drawing borders and trailing padding. Exit 2 when no block is found or the
+block must appear exactly once on lines of its own (prompts mention the markers only inline),
+and TUI decoration is stripped: a leading "• ", box-drawing borders and trailing padding. Exit 2 when no block is found or the
 first line does not match REGEX.
 """
 import re, sys
 
-BORDER = re.compile(r"^[\s│┃|•●⏺>]*")  # what Bob's and Copilot's TUIs put before a line
-TRAIL = re.compile(r"[\s│┃|]*$")
+BORDER = re.compile(r"^[\s│┃•●⏺]*")  # what Bob's and Copilot's TUIs put before a line
+TRAIL = re.compile(r"[\s│┃]*$")
 
 
 def main(argv):
@@ -24,14 +24,13 @@ def main(argv):
     # Copilot's --share file is markdown and escapes "<" and ">" as "\<" and "\>".
     clean = [TRAIL.sub("", BORDER.sub("", line)).replace("\\<", "<").replace("\\>", ">") for line in lines]
     starts = [i for i, line in enumerate(clean) if line.strip() == f"<<<{mark}>>>"]
-    if not starts:
-        print(f"extract.py: no <<<{mark}>>> line in {raw}", file=sys.stderr)
+    ends = [i for i, line in enumerate(clean) if line.strip() == "<<<END>>>"]
+    # Exactly one block, on lines of its own. A document that quotes another marker block (a
+    # CHANGES review quoting a PASS one) is malformed, not "the last block wins".
+    if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
+        print(f"extract.py: want one <<<{mark}>>> ... <<<END>>> block in {raw}, found {len(starts)} start and {len(ends)} end lines", file=sys.stderr)
         sys.exit(2)
-    start = starts[-1] + 1
-    end = next((i for i in range(start, len(clean)) if clean[i].strip() == "<<<END>>>"), None)
-    if end is None:
-        print(f"extract.py: <<<{mark}>>> has no <<<END>>> in {raw}", file=sys.stderr)
-        sys.exit(2)
+    start, end = starts[0] + 1, ends[0]
     body = clean[start:end]
     while body and not body[0].strip():
         body.pop(0)

@@ -12,12 +12,15 @@
 # It never touches board.json: the orchestrator does.
 set -uo pipefail
 job=$1 agent=$2 round=${3:-1}
+[[ $job =~ ^[a-z0-9][a-z0-9-]{1,60}$ ]] || { echo "agent: job id must be lowercase letters, digits and dashes" >&2; exit 1; }
+[[ $round =~ ^[0-9]+$ ]] || { echo "agent: round must be a number" >&2; exit 1; }
+q() { printf '%q' "$1"; }   # quote a value for the generated zsh scripts
 F=$(cd "$(dirname "$0")/.." && pwd)
 REPO=$(cd "$(git -C "$F" rev-parse --git-common-dir)/.." && pwd)
 F=${FACTORY_HOME:-$REPO/factory}   # the main checkout's factory folder, even when called from a worktree
 J=$F/jobs/$job WT=$REPO/.claude/worktrees/$job
 mkdir -p "$J/.raw" "$J/.run"
-NEEDS_HUMAN='^(\.railway/|Dockerfile|\.github/|build\.gradle\.kts|gradle\.properties|settings\.gradle|gradle/|package(-lock)?\.json|src/main/resources/db/|src/main/resources/application.*\.properties|.*SqlSecurityValidator|.*EmbedFraming|\.claude/skills/factory/|factory/(agents|bin)/)'
+NEEDS_HUMAN='^(\.railway/|Dockerfile|\.github/|build\.gradle\.kts|gradle\.properties|settings\.gradle|gradle/|package(-lock)?\.json|src/main/resources/db/|src/main/resources/application.*\.properties|.*SqlSecurityValidator|.*EmbedFraming|\.claude/|factory/|AGENTS\.md$|CLAUDE\.md$|\.gitignore$)'
 
 runner_for() {   # odd rounds: Copilot reviews code + security, Bob ux + ui; even rounds swap
   local role=$1 n=$2 first=copilot second=bob
@@ -37,16 +40,19 @@ in_block() {     # in_block <label> <script>: run the script in a visible Rex bl
 
 claude_run() {   # claude_run <label> <system-prompt-file> <prompt-file> <raw-out> <tools> [extra args...]
   local label=$1 sys=$2 prompt=$3 out=$4 tools=$5; shift 5
-  local script=$J/.run/$(basename "$out" .out).zsh
+  local script=$J/.run/$(basename "$out" .out).zsh extra="" arg
+  for arg in "$@"; do extra+=" $(q "$arg")"; done
   {
-    echo "setopt pipefail; cd '$WT' || exit 1"
-    echo "'$F/bin/claude-sub' -p --permission-mode dontAsk --append-system-prompt \"\$(cat '$sys')\" $* --allowedTools $tools --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' 'Bash(railway:*)' 'Bash(git reset:*)' < '$prompt' | tee '$out'"
+    echo "setopt pipefail; cd $(q "$WT") || exit 1"
+    echo "$(q "$F/bin/claude-sub") -p --permission-mode dontAsk --append-system-prompt \"\$(cat $(q "$sys"))\"$extra --allowedTools $tools --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' 'Bash(railway:*)' 'Bash(git reset:*)' 'Bash(node:*)' 'Bash(npm:*)' 'Bash(curl:*)' < $(q "$prompt") | tee $(q "$out")"
   } > "$script"
   in_block "$label" "$script"
 }
 
 READ_TOOLS="Read Grep Glob 'Bash(beans show:*)' 'Bash(beans list:*)' 'Bash(git log:*)' 'Bash(git diff:*)' 'Bash(git show:*)' 'Bash(rg:*)' 'Bash(ls:*)'"
-BUILD_TOOLS="Read Grep Glob Edit Write 'Bash(./gradlew:*)' 'Bash(npm:*)' 'Bash(npx:*)' 'Bash(node:*)' 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git status:*)' 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git show:*)' 'Bash(git restore:*)' 'Bash(git mv:*)' 'Bash(git rm:*)' 'Bash(beans:*)' 'Bash(rg:*)' 'Bash(ls:*)' 'Bash(mkdir:*)' 'Bash(E2E_PORT=*)' 'Bash(CI=1 *)'"
+# No node, npx, npm or "VAR=… anything" prefixes: each would run any command. The orchestrator runs
+# npm ci; Playwright is allowed as the one exact command builder.md names.
+BUILD_TOOLS="Read Grep Glob Edit Write 'Bash(./gradlew:*)' 'Bash(CI=1 E2E_PORT=8791 npx playwright test:*)' 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git status:*)' 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git show:*)' 'Bash(git restore:*)' 'Bash(git mv:*)' 'Bash(git rm:*)' 'Bash(beans:*)' 'Bash(rg:*)' 'Bash(ls:*)' 'Bash(mkdir:*)'"
 
 case $agent in
   reviewers)
@@ -69,7 +75,7 @@ case $agent in
     else
       session=(--resume "$(cat "$sid_file")")
       prev=$J/round-$((round - 1))
-      printf 'Round %s. The reviews of round %s are in %s/ (and human-note.md there, if any). Work through them as your instructions say and append "## Round %s" to %s/build.md.\n' \
+      printf 'Round %s. The reviews of round %s are in %s/, and human-note.md there if Vik sent one (it overrides the reviews). Work through them as your instructions say and append "## Round %s" to %s/build.md.\n' \
         "$round" "$((round - 1))" "$prev" "$round" "$J" > "$J/.run/build-$round.txt"
     fi
     claude_run "factory $job builder r$round" "$F/agents/builder.md" "$J/.run/build-$round.txt" "$J/.raw/build-$round.out" "$BUILD_TOOLS" \
@@ -88,13 +94,13 @@ case $agent in
           "$job" "$round" "$J" "$J" "$contract"; } > "$J/.run/$agent-$round.txt"
       script=$J/.run/$agent-$round.zsh
       cat > "$script" <<EOF
-cd '$WT'
-copilot -p "\$(cat '$J/.run/$agent-$round.txt')" --add-dir '$J' \\
+cd $(q "$WT") || exit 1
+copilot -p "\$(cat $(q "$J/.run/$agent-$round.txt"))" --add-dir $(q "$J") \\
   --allow-tool 'shell(git diff:*)' --allow-tool 'shell(git log:*)' --allow-tool 'shell(git show:*)' \\
-  --allow-tool 'shell(node:*)' --allow-tool 'shell(rg:*)' \\
+  --allow-tool 'shell(rg:*)' --deny-tool 'shell(node:*)' --deny-tool 'shell(npx:*)' --deny-tool 'shell(npm:*)' \\
   --deny-tool 'shell(git push:*)' --deny-tool 'shell(git commit:*)' --deny-tool 'shell(git reset:*)' \\
   --deny-tool 'shell(rm:*)' --deny-tool 'write' \\
-  --share '$J/.raw/$agent-$round.md'
+  --share $(q "$J/.raw/$agent-$round.md")
 EOF
       in_block "factory $job $role r$round copilot" "$script" || exit $?
       raw=$J/.raw/$agent-$round.md
@@ -107,7 +113,7 @@ EOF
       "$F/bin/bob-review" "$ctx" "$J/.run/$agent-$round.txt" "$J/.raw/$agent-$round.txt" "factory $job $role r$round bob" || exit $?
       raw=$J/.raw/$agent-$round.txt
     fi
-    python3 "$F/bin/extract.py" "$raw" REVIEW --first '^VERDICT: (PASS|CHANGES)' > "$R/.review-$role.tmp" \
+    python3 "$F/bin/extract.py" "$raw" REVIEW --first '^VERDICT: (PASS|CHANGES)$' > "$R/.review-$role.tmp" \
       && mv "$R/.review-$role.tmp" "$R/review-$role.md"
     ;;
 
@@ -120,8 +126,11 @@ EOF
       && mv "$J/decision.md.tmp" "$J/decision.md"
     ;;
 
-  needs-human-paths)
-    git -C "$WT" diff --name-only origin/main...HEAD | grep -E "$NEEDS_HUMAN"
+  needs-human-paths)   # prints CLEAN and exits 0, or lists the paths and exits 10; any other exit is an error
+    paths=$(git -C "$WT" diff --no-renames --name-only origin/main...HEAD) || { echo "agent: git diff failed" >&2; exit 1; }
+    hits=$(grep -E "$NEEDS_HUMAN" <<<"$paths")
+    if [[ -n $hits ]]; then echo "$hits"; exit 10; fi
+    echo CLEAN
     ;;
 
   *) sed -n '2,13p' "$0"; exit 1 ;;

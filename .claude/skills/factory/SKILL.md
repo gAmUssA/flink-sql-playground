@@ -58,7 +58,9 @@ subscription only; it strips API-key, gateway and Bedrock variables and stops on
 - **Needs a human, whatever the approver says**: red CI (a pre-existing red check too: say so,
   e.g. the Lighthouse embed flake, issue #87); a diff touching
   `^(\.railway/|Dockerfile|\.github/|build\.gradle\.kts|gradle\.properties|settings\.gradle|gradle/|package(-lock)?\.json|src/main/resources/db/|src/main/resources/application.*\.properties|.*SqlSecurityValidator|.*EmbedFraming|\.claude/skills/factory/|factory/(agents|bin)/)`;
-  a builder that wrote `BLOCKED:`; a reviewer that can't run twice.
+  a builder that wrote `BLOCKED:`; a reviewer that can't run twice. These are guardrails, not a
+  sandbox: the builder runs `./gradlew`, so code it writes can run anything. What protects `main`
+  is that only this orchestrator pushes and merges, after four reviews and CI.
 - Push only with `zsh -ic 'git push-external -u origin <branch>'`, then check `git ls-remote` shows
   the head (a push can exit 0 and push nothing). Merge with `--match-head-commit`.
 - Never answer another agent's permission prompt; never `railway config apply`; never give Copilot
@@ -85,9 +87,11 @@ reviewer timeout (rerun once).
    When all four `$J/round-<n>/review-*.md` exist:
    - all PASS → step 5;
    - any CHANGES and n < 3 → `board.py set <job> stage=build`, `$F/bin/agent <job> build <n+1>`, then round n+1;
-   - any CHANGES at n = 3 → `stage=needs-human note="CHANGES after 3 rounds"`.
+   - any CHANGES at n ≥ 3 → push and open the PR as in step 6 (body: spec, build notes and the
+     open findings), `stage=needs-human note="CHANGES after <n> rounds"`. Stop.
 5. **Approve.** `stage=approve`, `$F/bin/agent <job> approve <n>` → `$J/decision.md`. Then
-   `$F/bin/agent <job> needs-human-paths`: any output overrides an APPROVE.
+   `$F/bin/agent <job> needs-human-paths`: only exit 0 with `CLEAN` lets an APPROVE through;
+   exit 10 (paths listed) or any other exit means needs-human.
 6. **PR.** Push, check `ls-remote`, `gh pr create --body-file` with the `## PR body` section of
    `decision.md`. `board.py set <job> stage=pr pr.number=<n> pr.url=<url> pr.ci=pending`.
    - ESCALATE or a rule hit: `stage=needs-human note="<why>"`, tell Vik what to look at. Stop.
@@ -102,7 +106,9 @@ reviewer timeout (rerun once).
 commit; if it is red only from a known pre-existing failure, say which and merge only if Vik's
 command was for that. Then step 6's merge and deploy check, then step 7.
 
-`/factory rework <job> <note>`: write the note to `$J/round-<n+1>/human-note.md`, resume the
-builder pointing at it, then run review round n+1 and continue the loop.
+`/factory rework <job> <note>`: write the note to `$J/round-<n>/human-note.md` (n is the job's
+current round), run `$F/bin/agent <job> build <n+1>` (it reads round n's folder, note first),
+then review round n+1 and continue the loop. A rework round may go past 3; CHANGES then goes
+straight back to needs-human.
 
 Report to Vik at every `needs-human` and at `merged`: job, PR link, rounds, what each reviewer found.

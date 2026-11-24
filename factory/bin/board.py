@@ -7,9 +7,10 @@
   board.py review <job> <n> <role> PASS|CHANGES
   board.py show   [<job>]
 
-Writes are atomic (temp file + rename), so the dashboard never reads half a file.
+Writes are atomic (temp file + rename), so the dashboard never reads half a file, and each
+command holds board.json.lock from load to save, so two writers can't lose each other's update.
 """
-import json, os, sys, tempfile
+import fcntl, json, os, sys, tempfile
 from datetime import datetime, timezone
 
 BOARD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "board.json")
@@ -75,7 +76,10 @@ def pairs(args):
 def main(argv):
     if len(argv) < 2:
         sys.exit(__doc__)
-    cmd, board = argv[1], load()
+    cmd = argv[1]
+    lock = open(BOARD + ".lock", "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    board = load()
     if cmd == "show":
         jobs = [job(board, argv[2])] if len(argv) > 2 else board["jobs"]
         print(json.dumps(jobs, indent=2))

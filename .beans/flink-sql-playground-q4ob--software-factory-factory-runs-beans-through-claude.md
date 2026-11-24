@@ -31,3 +31,7 @@ Decisions (Vik, 2026-11-24):
 - review-code r1 (Copilot) and review-ux r1 (Bob) in parallel on a one-line commit: Bob PASS (nothing user-visible), Copilot CHANGES (the commit does not implement the spec, which is right). Copilot's `--share` file escapes `<` as `\<`; `extract.py` unescapes it.
 - Dashboard on static-web-server :8799: cards, round chips, file dialog; no horizontal scroll at 1400 px dark or 390 px light.
 - Not exercised yet: a full builder round with its tool allow-list, the approver, PR/CI/merge. The first real job will.
+
+## Copilot review of the factory (2026-11-24)
+
+12 findings, all fixed in the second commit: `node`/`npx`/`npm` and `VAR=… anything` prefixes off every allow-list; one marker block exactly (a quoted PASS inside a CHANGES review no longer wins); strict verdict lines; renames and the factory, AGENTS.md, .claude and .gitignore count as needs-human paths, and that check now answers CLEAN or fails loudly; job ids validated and every path `%q`-quoted in generated scripts; `claude-sub` checks `claude auth status` (authMethod claude.ai, first-party, no API-key source) before it runs; rework notes land where the builder reads; CHANGES after round 3 opens a PR and goes to needs-human; dashboard escapes round numbers and can't stall on a stray `#` line; board.py locks; table pipes survive extraction.

@@ -126,7 +126,7 @@ function render() {
 }
 
 function card(j) {
-  const rounds = (j.rounds || []).map((r) => `<div class="round"><span class="n">R${r.n}</span>${
+  const rounds = (j.rounds || []).map((r) => `<div class="round"><span class="n">R${esc(r.n)}</span>${
     ROLES.filter((role) => role in (r.reviews || {})).map((role) => {
       const v = r.reviews[role], who = (r.reviewers || {})[role] || "";
       return `<span class="chip ${esc(v)}" title="${esc(role)} by ${esc(who)}: ${esc(v)}">${esc(role)} · ${esc(who.slice(0, 1).toUpperCase())}</span>`;
@@ -140,7 +140,7 @@ function card(j) {
 
 function filesOf(j) {
   const files = [["spec", "spec.md"], ["build", "build.md"]];
-  (j.rounds || []).forEach((r) => ROLES.forEach((role) => files.push([`R${r.n} ${role}`, `round-${r.n}/review-${role}.md`])));
+  (j.rounds || []).forEach((r) => ROLES.forEach((role) => files.push([`R${r.n} ${role}`, `round-${encodeURIComponent(r.n)}/review-${role}.md`])));
   files.push(["decision", "decision.md"]);
   return files;
 }
@@ -207,7 +207,7 @@ function markdown(src) {
       continue;
     }
     if (!line.trim()) { i++; continue; }
-    const para = [];
+    const para = [lines[i++]];   // always consume the line, so "#tag" or "| half a table" can't stall the loop
     while (i < lines.length && lines[i].trim() && !/^(#|```|\s*\||\s*([-*]|\d+\.)\s)/.test(lines[i])) para.push(lines[i++]);
     out.push(`<p>${inline(para.join(" "))}</p>`);
   }
