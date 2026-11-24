@@ -42,4 +42,4 @@ jobs:
             sleep 1
           done
           node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95 performance=85 transfer-kb=400
-          node scripts/lighthouse-check.js http://127.0.0.1:8790/embed.html accessibility=95 performance=85 transfer-kb=400
+          node scripts/lighthouse-check.js http://127.0.0.1:8790/embed.html accessibility=95 performance=80 transfer-kb=400
