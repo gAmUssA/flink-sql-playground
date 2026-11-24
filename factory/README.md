@@ -98,3 +98,24 @@ Rex block is labelled `factory <job> <agent>` and stays open after it finishes, 
 
 Rex, `beans`, `gh`, GitHub Copilot CLI, Bob 2.x logged in, and `claude` logged in to claude.ai
 (`claude-sub` refuses to run on an API key, a gateway or Bedrock).
+
+## How agents run in Rex (measured 2026-11-24, Rex 0.1.0-preview.21)
+
+- **Direct launch.** Claude and Copilot run with `rex run --shell=none`, not through a generated zsh script.
+  `bin/run-agent` `exec`s Claude with the prompt on stdin and the answer in `.raw/<name>.out` (no `tee`), so
+  the pane's process is the agent. Claude's own stderr stays in the pane; its answer does not, so a Claude
+  pane looks quiet while it works. Bob stays a keystroke-driven TUI (`bin/bob-review`).
+- **What Rex knows.** `rex block call process` answers `last_exit: null` while the program runs, then
+  `{exit_code, error}`; `rex wait` returns that exact exit code for a `--keep-open` block (measured: `exit 3` gives 3, `false` gives 1). With the old wrapper
+  Rex tracked `zsh`, not the agent: the state was real but named the shell. `program_status` (OSC 7501) stayed
+  empty for every block, because neither `claude -p` nor `copilot -p` reports a status. So there is nothing to
+  wire up there; process state is the signal.
+- **State.** `agent <job> state` prints `running`, `exited 0`, `failed N`, `closed` (the block is gone, the text
+  is in `capture-<name>.txt`) or `lost`. A Rex restart kills every pane process, so each launch records the
+  server `instance_id`; a different one on the next look is `lost`, and a stage that sees it exits 70.
+- **Capture.** The pane's text is saved to `jobs/<job>/capture-<name>.txt` when a stage ends and again before
+  `close-blocks` closes the block.
+- **Claude stays on `claude -p` with `dontAsk`.** Nobody answers permission prompts in this factory; an interactive
+  Claude would need someone to, so switching would break that rule. Revisit only with a way to keep it.
+- Tests: `bash factory/tests/run.sh` (a stubbed `rex` plays the server; the real `claude` path was checked by
+  running `agent <job> spec` for real).

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Starts an agent so that Rex tracks the agent itself: Rex runs this with --shell=none, and it
+# `exec`s the agent, so the pane's process is the agent, not a shell.
+#
+#   run-agent <stdin-file|-> <stdout-file|-> COMMAND [ARGS...]
+#
+# stdin comes from the file (the prompt), stdout goes to the file (the answer; `extract.py` reads it),
+# stderr stays on the terminal. "-" leaves that stream alone. No shell parses the arguments.
+set -u
+in=$1 out=$2; shift 2
+[[ $in == - ]] || exec < "$in" || exit 1
+[[ $out == - ]] || exec > "$out" || exit 1
+exec "$@"
