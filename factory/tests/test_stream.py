@@ -49,6 +49,34 @@ class StreamTest(unittest.TestCase):
         self.assertIn("· Reading the spec now.", lines)
         self.assertEqual(lines[-1], "■ done, 3 turns, $0.12")
 
+    def test_view_survives_odd_shapes(self):
+        odd = "\n".join(json.dumps(e) for e in [
+            [1, 2], "text", 7, None,
+            {"type": "assistant", "message": {"content": ["text"]}},
+            {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": ["ls"]}]}},
+            {"type": "assistant", "message": "oops"},
+            {"type": "user", "message": {"content": "plain"}},
+            {"type": "result", "is_error": False, "result": "ok", "total_cost_usd": "free", "num_turns": 2},
+        ]) + "\n"
+        done = run("stream-view.py", self.write(odd))
+        self.assertEqual(done.returncode, 0)
+        self.assertIn("▸ Bash", done.stdout)
+        self.assertIn("■ done, 2 turns, $0.00", done.stdout)
+
+    def test_view_strips_terminal_control_sequences(self):
+        text = "a" + chr(27) + "]52;c;SGVsbG8=" + chr(7) + "b" + chr(0x9b) + "c"
+        evil = {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+        done = run("stream-view.py", self.write(json.dumps(evil) + "\n" + json.dumps({"type": "result", "result": "x"}) + "\n"))
+        for bad in (chr(27), chr(7), chr(0x9b)):
+            self.assertNotIn(bad, done.stdout)
+        self.assertIn("· a]52;c;SGVsbG8=bc", done.stdout)
+
+    def test_view_shows_the_reason_of_a_failed_run(self):
+        bad = json.dumps({"type": "result", "is_error": True, "result": "please run /login", "num_turns": 1}) + "\n"
+        done = run("stream-view.py", self.write(bad))
+        self.assertIn("■ failed", done.stdout)
+        self.assertIn("please run /login", done.stdout)
+
     def test_view_waits_for_a_file_that_appears_later(self):
         path = os.path.join(tempfile.mkdtemp(), "late.jsonl")
         viewer = subprocess.Popen([sys.executable, os.path.join(BIN, "stream-view.py"), path], stdout=subprocess.PIPE, text=True)

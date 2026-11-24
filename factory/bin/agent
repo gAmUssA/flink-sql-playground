@@ -56,6 +56,7 @@ launch() {
   if [[ -n ${LAUNCH_WATCH:-} ]] && py=$(command -v python3); then
     v=$(rex run --focus=false --keep-open --shell=none --split=below --ratio 35 -b "$b" --label "$label view" --json -- \
           "$py" "$F/bin/stream-view.py" "$LAUNCH_WATCH" 2>/dev/null | block_json) && echo "$v" > "$J/.run/$name.view.block" || v=""
+    [[ -n $v ]] || echo "agent: warning: could not open the live view pane for $name; the run goes on without it" >&2
   fi
   rex wait "$b" || rc=$?
   [[ -n $v ]] && rex block close "$v" >/dev/null 2>&1
@@ -74,7 +75,7 @@ claude_run() {   # claude_run <label> <system-prompt-file> <prompt-file> <raw-ou
   # The agent streams its events to <name>.jsonl through run-agent; a pane under it shows them live.
   # The answer, the result event's text, goes to <raw-out> when the run ends.
   local stream=${out%.out}.jsonl rc
-  rm -f "$stream"
+  rm -f "$stream" "$out"   # a rerun must never leave the last run's answer behind
   LAUNCH_WATCH=$stream launch "$label" "$(basename "$out" .out)" "$WT" /bin/bash "$F/bin/run-agent" "$prompt" "$stream" \
     "$F/bin/claude-sub" -p --permission-mode dontAsk --output-format stream-json --verbose \
     --append-system-prompt "$(cat "$sys")" "$@" \
@@ -82,6 +83,10 @@ claude_run() {   # claude_run <label> <system-prompt-file> <prompt-file> <raw-ou
   rc=$?
   if (( rc == 0 )); then
     python3 "$F/bin/stream-result.py" "$stream" > "$out.tmp" && mv "$out.tmp" "$out" || { rm -f "$out.tmp"; return 2; }
+  else
+    # The view pane is gone by now: say why on stderr (an expired login or a usage limit arrives as a
+    # result event with is_error, not as text in the pane).
+    python3 "$F/bin/stream-result.py" "$stream" 2>&1 >/dev/null | sed "s/^/agent: $(basename "$out" .out): /" >&2
   fi
   # Exit 0 with nothing written is not an answer: say so here, not later as a "malformed" extract.
   if (( rc == 0 )) && [[ ! -s $out ]]; then echo "agent: $(basename "$out") is empty although the agent exited 0" >&2; return 2; fi

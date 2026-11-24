@@ -149,6 +149,12 @@ check "live view: the view block is closed when the run ends" "grep -q '^block c
 check "live view: the answer file is the result text" "[[ \$(cat \"\$J/.raw/spec.out\") == 'the answer text' ]]"
 check "live view: the view block is recorded and state ignores it" "[[ -s \"\$J/.run/spec.view.block\" ]] && ! \"\$agent\" tj state | grep -q 'spec.view'"
 rm -f "$J/.raw/spec.out" "$J/.raw/spec.jsonl"
+# a rerun never keeps the last answer; a failed run says why on stderr
+echo 'old answer' > "$J/.raw/spec.out"; : > "$REX_LOG"; rm -f "$REX_STATE/whoami"
+printf '%s\n' '{"type":"result","is_error":true,"result":"please run /login"}' > "$tmp/err.jsonl"
+err=$(REX_WAIT_RC=1 REX_STREAM_SRC=$tmp/err.jsonl REX_STREAM_FILE=$J/.raw/spec.jsonl "$agent" tj spec 2>&1 >/dev/null); rc=$?
+check "live view: a failed run prints the result event's reason (rc=$rc)" "(( rc == 1 )) && [[ \$err == *'spec: stream-result: the run ended with an error: please run /login'* ]]"
+check "live view: a rerun removes the previous answer file" "[[ ! -e \"\$J/.raw/spec.out\" ]]"
 : > "$REX_LOG"; rm -f "$REX_STATE/whoami"
 "$agent" tj spec >/dev/null 2>&1; rc=$?
 check "live view: a run with no stream is exit 2, not a quiet success (rc=$rc)" "(( rc == 2 )) && [[ ! -s \"\$J/.raw/spec.out\" ]]"
