@@ -55,14 +55,21 @@ runs every CREATE in both the batch and the streaming environment, and the batch
   be live twice.
 - `SqlExecutionService` creates a `CREATE VIEW` whose batch planning fails with the unbounded-source
   refusal, or with a missing view that is itself streaming-only (a view over such a view), in the
-  streaming environment only, and records it on the `FlinkSession` by catalog, database and name
-  (missing parts filled in from the current catalog and database), so `other_db.tanks` is not `tanks`.
+  streaming environment only, and records it on the `FlinkSession` by temporary or not, catalog,
+  database and name (missing parts filled in from the current catalog and database), so
+  `other_db.tanks` is not `tanks`, and a temporary `tanks` is not a permanent one. A query names
+  neither kind, so a lookup checks both.
   A BATCH execute that misses such a view answers HTTP 400 with code `STREAMING_ONLY_VIEW`
   ("View 'tanks' reads an unbounded table, so it exists in Streaming mode only. Switch to Streaming
   to query it."), and a BATCH explain answers `NotExplainableException` with the same code, instead
   of `TABLE_NOT_FOUND` (ADR 0007), whose Build Schema and run offer would loop. Any other batch
-  error still fails the CREATE. CREATE or DROP of the same name clears the mark; a DROP of a
-  streaming-only view runs in the streaming environment only.
+  error still fails the CREATE. A CREATE or DROP of the same name clears the mark once it has run.
+  A DROP that fails leaves the view and its mark. A CREATE VIEW first drops the old view in both
+  environments (re-running Build Schema must not stop at "already exists"), so the mark goes
+  with it even if the new CREATE then fails. A CREATE TABLE over a streaming-only view's name
+  runs in the streaming environment first, where it fails before the batch environment gets a
+  table of that name. A DROP of a streaming-only view runs in the
+  streaming environment only. `USE` is not synced between the environments yet (bean 5q2j).
 
 ## Consequences
 
