@@ -34,7 +34,7 @@ case $1 in
   whoami)  n=$(cat "$REX_STATE/whoami" 2>/dev/null || echo 0); echo $((n+1)) > "$REX_STATE/whoami"
            echo "{\"instance_id\":\"inst-$([[ ${REX_RESTART:-} == 1 && $n -ge 1 ]] && echo 2 || echo 1)\"}" ;;
   run)     echo '{"block_ids":["block:run1"]}' ;;
-  wait)    exit ${REX_WAIT_RC:-0} ;;
+  wait)    [[ -n ${REX_STREAM_FILE:-} ]] && cp "$REX_STREAM_SRC" "$REX_STREAM_FILE"; exit ${REX_WAIT_RC:-0} ;;
   capture) [[ ${REX_EMPTY_CAPTURE:-} == 1 ]] || echo "pane text of $3 $4" ;;
   block)   if [[ $2 == call ]]; then
              case $5 in
@@ -137,6 +137,21 @@ check "copilot: rex run --shell=none with the absolute copilot path, no zsh" "[[
 : > "$REX_LOG"
 out=$(PATH="/usr/bin:/bin:$tmp/stub" "$agent" tj review-code 1 2>&1); rc=$?
 check "copilot: not on PATH is an error and starts nothing (rc=$rc)" "(( rc != 0 )) && [[ \$out == *'copilot is not on PATH'* ]] && ! grep -q '^run ' \"\$REX_LOG\""
+
+# --- live view: a split pane follows the stream, the answer is the result event's text
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}' '{"type":"result","is_error":false,"result":"the answer text"}' > "$tmp/stream.jsonl"
+rm -f "$J"/.run/*; : > "$REX_LOG"; rm -f "$REX_STATE/whoami"
+REX_STREAM_SRC=$tmp/stream.jsonl REX_STREAM_FILE=$J/.raw/spec.jsonl "$agent" tj spec >/dev/null 2>&1
+vl=$(tr '\n' ' ' < "$REX_LOG")
+check "live view: claude runs with stream-json and verbose into <name>.jsonl" "[[ \$vl == *'--output-format stream-json --verbose'*'.raw/spec.jsonl'* ]]"
+check "live view: a split pane below runs stream-view.py on that file" "[[ \$vl == *'--split=below'*'stream-view.py'*'.raw/spec.jsonl'* ]]"
+check "live view: the view block is closed when the run ends" "grep -q '^block close block:run1' \"\$REX_LOG\""
+check "live view: the answer file is the result text" "[[ \$(cat \"\$J/.raw/spec.out\") == 'the answer text' ]]"
+check "live view: the view block is recorded and state ignores it" "[[ -s \"\$J/.run/spec.view.block\" ]] && ! \"\$agent\" tj state | grep -q 'spec.view'"
+rm -f "$J/.raw/spec.out" "$J/.raw/spec.jsonl"
+: > "$REX_LOG"; rm -f "$REX_STATE/whoami"
+"$agent" tj spec >/dev/null 2>&1; rc=$?
+check "live view: a run with no stream is exit 2, not a quiet success (rc=$rc)" "(( rc == 2 )) && [[ ! -s \"\$J/.raw/spec.out\" ]]"
 
 # --- state: running, exited, failed, closed, lost
 rm -f "$J"/.run/*.block "$J"/.run/*.instance "$J"/capture-*.txt
