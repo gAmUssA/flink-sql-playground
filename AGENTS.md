@@ -56,6 +56,10 @@ npx playwright test   # browser tests, static server + stubbed API, no backend
   must keep it.
 - Lighthouse (CI thresholds): `node scripts/serve-static.js 8790 &` then
   `node scripts/lighthouse-check.js http://127.0.0.1:8790/ accessibility=95 performance=85 transfer-kb=400`.
+  The script runs Lighthouse 3 times per URL and scores the median; the JSON `runs` key shows each run.
+  `embed.html` is checked at `performance=80`, not 85: its score sits near 82, a few points under the
+  index page, and the median of 3 runs alone does not close that gap. Bean `flink-sql-playground-ztp3`
+  trims what embed mode loads and then raises the embed threshold back to 85.
 - `embed.html` is the compact iframe page (ADR 0008). It shares `js/app.js`, which runs in embed mode
   when `<html data-embed="1">`: no session on load, `embedPrepare()` builds the session and the schema on
   Run. Anything new in `app.js` that runs at load or touches an element must work when the topbar,
