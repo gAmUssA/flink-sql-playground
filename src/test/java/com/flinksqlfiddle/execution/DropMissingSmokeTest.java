@@ -140,12 +140,41 @@ class DropMissingSmokeTest {
         assertThrows(ObjectNotFoundException.class, () -> service.prepareStream(session, sql));
         // A DROP has no plan: explain refuses it as a bad request, never a 500.
         assertThrows(NotExplainableException.class, () -> service.explain(session, ExecutionMode.STREAMING, sql));
-        RuntimeException timeline = assertThrows(RuntimeException.class,
-                () -> new TimelineService(service).prepare(session, sql));
-        assertTrue(timeline instanceof ObjectNotFoundException || timeline instanceof NotExplainableException
-                        || timeline instanceof com.flinksqlfiddle.security.ForbiddenSqlException
-                        || timeline instanceof IllegalArgumentException,
-                "timeline: " + timeline);
+        // The timeline probe plans through explain, so it answers the same 400.
+        assertThrows(NotExplainableException.class, () -> new TimelineService(service).prepare(session, sql));
+    }
+
+    @Test
+    void aPlainDropOfATemporaryObjectSaysDropTemporary() {
+        // Flink answers a plain DROP of a temporary object with a different ValidationException:
+        // "Temporary view with identifier '…' exists. Drop it first before removing the permanent view."
+        for (ExecutionMode mode : ExecutionMode.values()) {
+            ObjectNotFoundException view = notFound(mode, "DROP VIEW tv");
+            ObjectNotFoundException table = notFound(mode, "DROP TABLE tt");
+            assertTrue(view.getMessage().endsWith("Use DROP TEMPORARY VIEW to drop a view."), view.getMessage());
+            assertTrue(table.getMessage().endsWith("Use DROP TEMPORARY TABLE to drop a table."), table.getMessage());
+        }
+    }
+
+    @Test
+    void theTemporaryKeywordOnAPermanentObjectSaysDropWithoutIt() {
+        run("CREATE TABLE pt (a INT) WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+        for (ExecutionMode mode : ExecutionMode.values()) {
+            assertTrue(notFound(mode, "DROP TEMPORARY VIEW pv").getMessage().endsWith("Use DROP VIEW to drop a view."));
+            assertTrue(notFound(mode, "DROP TEMPORARY TABLE pt").getMessage().endsWith("Use DROP TABLE to drop a table."));
+        }
+    }
+
+    @Test
+    void aPermanentTableDropsFromBothEnvironments() {
+        for (ExecutionMode mode : ExecutionMode.values()) {
+            run("CREATE TABLE pt (a INT) WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+            assertDoesNotThrow(() -> service.execute(session, mode, "DROP TABLE pt"));
+            for (ExecutionMode other : ExecutionMode.values()) {
+                assertThrows(TableNotFoundException.class,
+                        () -> service.execute(session, other, "SELECT * FROM pt"), "pt in " + other);
+            }
+        }
     }
 
     @Test

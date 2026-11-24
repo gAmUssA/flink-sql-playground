@@ -123,6 +123,8 @@ async function stubApi(page) {
       const hint = /-- stub: drop is view/.test(postSql()) ? ' Use DROP VIEW to drop a view.' : '';
       return json(400, { error: `Table with identifier 'default_catalog.default_database.${drop[1]}' does not exist.${hint}`, code: 'OBJECT_NOT_FOUND' });
     }
+    // A DROP of a built name succeeds and the name is gone: dropping it again is a 400.
+    if (drop && built.has(drop[1]) && /\/(execute|execute\/stream)$/.test(path)) built.delete(drop[1]);
 
     if (path === '/api/sessions' && route.request().method() === 'POST') return json(201, { sessionId: 'test-session' });
     if (path === '/api/build-info') return json(200, { commit: 'test', branch: 'main' });

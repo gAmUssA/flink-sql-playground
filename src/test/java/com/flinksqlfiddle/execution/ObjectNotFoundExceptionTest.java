@@ -19,6 +19,15 @@ class ObjectNotFoundExceptionTest {
     }
 
     @Test
+    void aPlainDropOfATemporaryObjectIsDetected() {
+        String view = "Temporary view with identifier '`default_catalog`.`default_database`.`tv`' exists. Drop it first before removing the permanent view.";
+        String table = "Temporary table with identifier '`a`.`b`.`tt`' exists. Drop it first before removing the permanent table.";
+        assertEquals(view, ObjectNotFoundException.detect(new ValidationException(view)).orElseThrow().getMessage());
+        assertEquals(table, ObjectNotFoundException.detect(new ValidationException(table)).orElseThrow().getMessage());
+        assertTrue(ObjectNotFoundException.detect(new ValidationException(view + " Extra.")).isEmpty());
+    }
+
+    @Test
     void aHintFollowsFlinksMessage() {
         ObjectNotFoundException e = ObjectNotFoundException
                 .detect(new ValidationException("Table with identifier 'a.b.v' does not exist."))
@@ -30,7 +39,9 @@ class ObjectNotFoundExceptionTest {
     void wrappedValidationErrorIsFound() {
         RuntimeException wrapped = new RuntimeException("outer",
                 new ValidationException("View with identifier 'x.y.z' does not exist."));
-        assertTrue(ObjectNotFoundException.detect(wrapped).isPresent());
+        // The error body carries Flink's text, not the wrapper's.
+        assertEquals("View with identifier 'x.y.z' does not exist.",
+                ObjectNotFoundException.detect(wrapped).orElseThrow().getMessage());
     }
 
     @Test

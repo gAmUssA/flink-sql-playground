@@ -267,6 +267,16 @@ test('a view dropped as TABLE shows the hint after Flink\'s message', async ({ p
     .toHaveText("Table with identifier 'default_catalog.default_database.v' does not exist. Use DROP VIEW to drop a view.");
 });
 
+test('dropping a built table twice: the first succeeds, the second says it does not exist', async ({ page }) => {
+  await open(page);
+  await run(page, 'CREATE TABLE x (id INT) WITH (\'connector\' = \'datagen\')');
+  await run(page, 'DROP TABLE x');
+  await expect(page.locator('#results-container .rv-empty.is-error')).toHaveCount(0);
+  await run(page, 'DROP TABLE x');
+  await expect(page.locator('#results-container .rv-empty-hint'))
+    .toHaveText("Table with identifier 'default_catalog.default_database.x' does not exist.");
+});
+
 test('DROP ... IF EXISTS of a missing table still succeeds', async ({ page }) => {
   await open(page);
   await run(page, 'DROP TABLE IF EXISTS orders');

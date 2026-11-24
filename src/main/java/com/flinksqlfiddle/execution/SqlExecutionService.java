@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -466,16 +467,14 @@ public class SqlExecutionService {
         String name = parts.get(n - 1);
         boolean isView = List.of(tEnv.listViews()).contains(name);
         boolean isTable = !isView && List.of(tEnv.listTables()).contains(name);
-        boolean dropsView = drop.group(2).equalsIgnoreCase("VIEW");
-        if (dropsView && isTable) {
-            return "Use DROP " + (List.of(tEnv.listTemporaryTables()).contains(name) ? "TEMPORARY " : "")
-                    + "TABLE to drop a table.";
+        if (!isView && !isTable) {
+            return null;
         }
-        if (!dropsView && isView) {
-            return "Use DROP " + (List.of(tEnv.listTemporaryViews()).contains(name) ? "TEMPORARY " : "")
-                    + "VIEW to drop a view.";
-        }
-        return null;
+        boolean temporary = List.of(isView ? tEnv.listTemporaryViews() : tEnv.listTemporaryTables()).contains(name);
+        // What the object is, and so which DROP drops it: the kind and the TEMPORARY keyword both count.
+        String right = "DROP " + (temporary ? "TEMPORARY " : "") + (isView ? "VIEW" : "TABLE");
+        String statement = "DROP " + (drop.group(1) != null ? "TEMPORARY " : "") + drop.group(2).toUpperCase(Locale.ROOT);
+        return statement.equals(right) ? null : "Use " + right + " to drop a " + (isView ? "view." : "table.");
     }
 
     private static boolean isDropIfExists(String sql) {
