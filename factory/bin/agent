@@ -51,7 +51,15 @@ launch() {
   [[ -n $inst ]] || echo "agent: warning: rex whoami gave no instance_id, so a Rex restart cannot be told from a normal exit" >&2
   b=$(rex run --focus=false --keep-open --shell=none --cwd "$cwd" --label "$label" --json -- "$@" | block_json) || return 1
   echo "$b" > "$J/.run/$name.block"; echo "$inst" > "$J/.run/$name.instance"
+  # LAUNCH_WATCH=<stream file>: a small pane under the agent follows it in readable lines.
+  local v=""
+  if [[ -n ${LAUNCH_WATCH:-} ]] && py=$(command -v python3); then
+    v=$(rex run --focus=false --keep-open --shell=none --split=below --ratio 35 -b "$b" --label "$label view" --json -- \
+          "$py" "$F/bin/stream-view.py" "$LAUNCH_WATCH" 2>/dev/null | block_json 2>/dev/null) && echo "$v" > "$J/.run/$name.view.block" || v=""
+    [[ -n $v ]] || echo "agent: warning: could not open the live view pane for $name; the run goes on without it" >&2
+  fi
   rex wait "$b" || rc=$?
+  [[ -n $v ]] && rex block close "$v" >/dev/null 2>&1
   if rex capture -b "$b" --trim > "$J/capture-$name.txt.tmp" 2>/dev/null && [[ -s $J/capture-$name.txt.tmp ]]; then mv "$J/capture-$name.txt.tmp" "$J/capture-$name.txt"; else rm -f "$J/capture-$name.txt.tmp"; fi
   now=$(instance_id)
   if [[ -n $inst && $now != "$inst" ]]; then echo "agent: Rex restarted while $name ran: lost" >&2; return 70; fi
@@ -64,11 +72,22 @@ claude_run() {   # claude_run <label> <system-prompt-file> <prompt-file> <raw-ou
   local label=$1 sys=$2 prompt=$3 out=$4 tools=$5; shift 5
   local -a allowed
   eval "allowed=($tools)"   # $tools is one of the constants below, never user input
-  # The answer goes to <raw-out> through run-agent; the pane shows the agent's stderr only.
-  launch "$label" "$(basename "$out" .out)" "$WT" /bin/bash "$F/bin/run-agent" "$prompt" "$out" \
-    "$F/bin/claude-sub" -p --permission-mode dontAsk --append-system-prompt "$(cat "$sys")" "$@" \
+  # The agent streams its events to <name>.jsonl through run-agent; a pane under it shows them live.
+  # The answer, the result event's text, goes to <raw-out> when the run ends.
+  local stream=${out%.out}.jsonl rc
+  rm -f "$stream" "$out"   # a rerun must never leave the last run's answer behind
+  LAUNCH_WATCH=$stream launch "$label" "$(basename "$out" .out)" "$WT" /bin/bash "$F/bin/run-agent" "$prompt" "$stream" \
+    "$F/bin/claude-sub" -p --permission-mode dontAsk --output-format stream-json --verbose \
+    --append-system-prompt "$(cat "$sys")" "$@" \
     --allowedTools "${allowed[@]}" --disallowedTools "${DENIED_TOOLS[@]}"
-  local rc=$?
+  rc=$?
+  if (( rc == 0 )); then
+    python3 "$F/bin/stream-result.py" "$stream" > "$out.tmp" && mv "$out.tmp" "$out" || { rm -f "$out.tmp"; return 2; }
+  else
+    # The view pane is gone by now: say why on stderr (an expired login or a usage limit arrives as a
+    # result event with is_error, not as text in the pane).
+    python3 "$F/bin/stream-result.py" "$stream" 2>&1 >/dev/null | sed "s/^/agent: $(basename "$out" .out): /" >&2
+  fi
   # Exit 0 with nothing written is not an answer: say so here, not later as a "malformed" extract.
   if (( rc == 0 )) && [[ ! -s $out ]]; then echo "agent: $(basename "$out") is empty although the agent exited 0" >&2; return 2; fi
   return $rc
@@ -185,9 +204,11 @@ case $agent in
     inst_now=$(instance_id)
     for f in "$J"/.run/*.block "$J"/.raw/*.txt.block; do
       id=$(<"$f"); n=$(basename "$f" .block); n=${n%.zsh}; n=${n%.txt}
+      [[ $n == *.view ]] && continue   # the live-view pane of a run is not an agent
       inst=$(cat "$J/.run/$n.instance" 2>/dev/null || true)
       if [[ -n $inst && -n $inst_now && $inst != "$inst_now" ]]; then echo "$n lost (Rex restarted)"; continue; fi
-      empty=0; [[ -e $J/.raw/$n.out && ! -s $J/.raw/$n.out ]] && empty=1   # a Claude run whose answer file is empty
+      # A Claude run (it has a stream or an answer file) whose answer file is missing or empty: exit 0, no answer.
+      empty=0; if [[ -e $J/.raw/$n.jsonl || -e $J/.raw/$n.out ]] && [[ ! -s $J/.raw/$n.out ]]; then empty=1; fi
       if proc=$(rex block call process -b "$id" 2>/dev/null); then
         python3 -c '
 import json, sys
