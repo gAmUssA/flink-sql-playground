@@ -10,8 +10,9 @@ context; reviews of a bare diff over-report). Prints the @-references to paste i
 import os, subprocess, sys
 
 
-def git(worktree, *args):
-    return subprocess.run(["git", "-C", worktree, *args], check=True, capture_output=True, text=True).stdout
+def git(worktree, *args, binary=False):
+    out = subprocess.run(["git", "-C", worktree, *args], check=True, capture_output=True).stdout
+    return out if binary else out.decode("utf-8", errors="replace")
 
 
 def main(argv):
@@ -23,12 +24,16 @@ def main(argv):
     with open(os.path.join(out, "change.diff"), "w") as f:
         f.write(git(worktree, "diff", f"{base}...HEAD"))
     refs = ["@change.diff"]
-    for path in git(worktree, "diff", "--name-only", "--diff-filter=d", f"{base}...HEAD").split():
+    for path in git(worktree, "diff", "--name-only", "--diff-filter=d", f"{base}...HEAD").splitlines():
         try:
-            text = git(worktree, "show", f"HEAD:{path}")
+            data = git(worktree, "show", f"HEAD:{path}", binary=True)
         except subprocess.CalledProcessError:
             continue
-        if "\0" in text or text.count("\n") > 2000:
+        if b"\0" in data or data.count(b"\n") > 2000:   # binary (images, fonts) or too long
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
             continue
         name = path.replace("/", "__")
         with open(os.path.join(out, "files", name), "w") as f:

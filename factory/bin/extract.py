@@ -9,10 +9,14 @@ block must appear exactly once on lines of its own (prompts mention the markers 
 and TUI decoration is stripped: a leading "• ", box-drawing borders and trailing padding. Exit 2 when no block is found or the
 first line does not match REGEX.
 """
-import re, sys
+import re, sys, textwrap
 
-BORDER = re.compile(r"^[\s│┃•●⏺]*")  # what Bob's and Copilot's TUIs put before a line
+BORDER = re.compile(r"^(\s*)[│┃] ?")  # a box border before a line; its indentation is kept
 TRAIL = re.compile(r"[\s│┃]*$")
+
+
+def bare(line):  # a line as compared with a marker: no indentation, no leading bullet
+    return line.strip().lstrip("•●⏺").strip()
 
 
 def main(argv):
@@ -22,16 +26,18 @@ def main(argv):
     first = argv[argv.index("--first") + 1] if "--first" in argv else None
     lines = open(raw, encoding="utf-8", errors="replace").read().splitlines()
     # Copilot's --share file is markdown and escapes "<" and ">" as "\<" and "\>".
-    clean = [TRAIL.sub("", BORDER.sub("", line)).replace("\\<", "<").replace("\\>", ">") for line in lines]
-    starts = [i for i, line in enumerate(clean) if line.strip() == f"<<<{mark}>>>"]
-    ends = [i for i, line in enumerate(clean) if line.strip() == "<<<END>>>"]
+    clean = [TRAIL.sub("", BORDER.sub(r"\1", line)).replace("\\<", "<").replace("\\>", ">") for line in lines]
+    starts = [i for i, line in enumerate(clean) if bare(line) == f"<<<{mark}>>>"]
+    ends = [i for i, line in enumerate(clean) if bare(line) == "<<<END>>>"]
     # Exactly one block, on lines of its own. A document that quotes another marker block (a
     # CHANGES review quoting a PASS one) is malformed, not "the last block wins".
     if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
         print(f"extract.py: want one <<<{mark}>>> ... <<<END>>> block in {raw}, found {len(starts)} start and {len(ends)} end lines", file=sys.stderr)
         sys.exit(2)
     start, end = starts[0] + 1, ends[0]
-    body = clean[start:end]
+    # The TUI indents the whole answer; remove only that common indentation, so nested lists and
+    # code blocks keep theirs.
+    body = textwrap.dedent("\n".join(clean[start:end])).split("\n")
     while body and not body[0].strip():
         body.pop(0)
     if first and (not body or not re.match(first, body[0].strip())):

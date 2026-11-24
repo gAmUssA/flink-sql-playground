@@ -92,8 +92,10 @@ reviewer timeout (rerun once).
 5. **Approve.** `stage=approve`, `$F/bin/agent <job> approve <n>` → `$J/decision.md`. Then
    `$F/bin/agent <job> needs-human-paths`: only exit 0 with `CLEAN` lets an APPROVE through;
    exit 10 (paths listed) or any other exit means needs-human.
-6. **PR.** Push, check `ls-remote`, `gh pr create --body-file` with the `## PR body` section of
-   `decision.md`. `board.py set <job> stage=pr pr.number=<n> pr.url=<url> pr.ci=pending`.
+6. **PR.** Push, check `ls-remote`. If `gh pr list --head factory/<job> --state open` finds a PR
+   (a reworked job), `gh pr edit <n> --body-file` it; otherwise `gh pr create --body-file`. The body
+   is the `## PR body` section of `decision.md`. `board.py set <job> stage=pr pr.number=<n>
+   pr.url=<url> pr.ci=pending`, and watch CI for the new head commit, not an earlier run.
    - ESCALATE or a rule hit: `stage=needs-human note="<why>"`, tell Vik what to look at. Stop.
    - APPROVE: `gh pr checks <n> --watch` in the background. Green: `pr.ci=green`,
      `gh pr merge <n> --squash --match-head-commit <sha>`, wait until the app's build-info reports

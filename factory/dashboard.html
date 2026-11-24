@@ -98,7 +98,7 @@ const SAMPLE = { updated: null, jobs: [
     rounds: [ { n: 1, reviewers: { security: "copilot", ux: "bob", ui: "bob", code: "copilot" }, reviews: { security: "PASS", ux: "PASS", ui: "PASS", code: "PASS" } } ] },
 ] };
 
-let board = null, isSample = false, openJob = null;
+let board = null, isSample = false, openJob = null, lastJson = "";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -106,7 +106,9 @@ async function poll() {
   try {
     const r = await fetch("board.json?ts=" + Date.now(), { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
-    board = await r.json(); isSample = false;
+    const text = await r.text();
+    if (text === lastJson && !isSample) return;   // unchanged: keep the DOM, and the focus, as is
+    board = JSON.parse(text); isSample = false; lastJson = text;
   } catch (e) {
     if (!board || isSample) { board = SAMPLE; isSample = true; }
   }
@@ -114,6 +116,8 @@ async function poll() {
 }
 
 function render() {
+  const focused = document.activeElement && document.activeElement.classList.contains("card")
+    ? document.activeElement.dataset.id : null;
   $("sample").hidden = !isSample;
   $("updated").textContent = board.updated ? "updated " + new Date(board.updated).toLocaleTimeString() : "";
   $("board").innerHTML = STAGES.map(([key, label]) => {
@@ -123,6 +127,7 @@ function render() {
       ${jobs.map(card).join("")}</section>`;
   }).join("");
   document.querySelectorAll(".card").forEach((el) => el.addEventListener("click", () => open(el.dataset.id)));
+  if (focused) [...document.querySelectorAll(".card")].find((el) => el.dataset.id === focused)?.focus();
 }
 
 function card(j) {
