@@ -157,6 +157,24 @@ class DropMissingSmokeTest {
     }
 
     @Test
+    void ifExistsOnATemporaryObjectIsNotAnInternalError() {
+        // Flink checks for a shadowing temporary object before it looks at IF EXISTS.
+        for (ExecutionMode mode : ExecutionMode.values()) {
+            assertTrue(notFound(mode, "DROP VIEW IF EXISTS tv").getMessage().endsWith("Use DROP TEMPORARY VIEW to drop a view."));
+            assertTrue(notFound(mode, "DROP TABLE IF EXISTS tt").getMessage().endsWith("Use DROP TEMPORARY TABLE to drop a table."));
+        }
+    }
+
+    @Test
+    void aTableDroppedAsAViewAndABlockCommentBeforeTheDrop() {
+        run("CREATE TABLE pt (a INT) WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+        for (ExecutionMode mode : ExecutionMode.values()) {
+            assertTrue(notFound(mode, "DROP VIEW pt").getMessage().endsWith("Use DROP TABLE to drop a table."));
+            assertTrue(notFound(mode, "/* c */ DROP TABLE nope").getMessage().contains("does not exist."));
+        }
+    }
+
+    @Test
     void theTemporaryKeywordOnAPermanentObjectSaysDropWithoutIt() {
         run("CREATE TABLE pt (a INT) WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
         for (ExecutionMode mode : ExecutionMode.values()) {

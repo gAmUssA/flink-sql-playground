@@ -432,11 +432,12 @@ public class SqlExecutionService {
                 return syncDdl(session, sql);
             } catch (RuntimeException e) {
                 // A DROP of a missing object (or of the other kind) is the user's mistake, not a fault.
-                // Planner thread: the hint reads the session's catalog.
-                if (isDrop(sql) && !isDropIfExists(sql)) {
+                // IF EXISTS does not exempt a DROP: Flink refuses a plain DROP of a temporary object
+                // before it looks at IF EXISTS. Planner thread: the hint reads the session's catalog.
+                if (isDrop(sql)) {
                     Optional<ObjectNotFoundException> missing = ObjectNotFoundException.detect(e);
                     if (missing.isPresent()) {
-                        throw missing.get().withHint(dropHint(session.getStreamEnv(), sql));
+                        throw missing.get().withHint(safeDropHint(session.getStreamEnv(), sql));
                     }
                 }
                 throw e;
@@ -477,9 +478,14 @@ public class SqlExecutionService {
         return statement.equals(right) ? null : "Use " + right + " to drop a " + (isView ? "view." : "table.");
     }
 
-    private static boolean isDropIfExists(String sql) {
-        return Pattern.compile("^\\s*DROP\\s+(TEMPORARY\\s+)?(TABLE|VIEW)\\s+IF\\s+EXISTS\\b", Pattern.CASE_INSENSITIVE)
-                .matcher(stripLeadingComments(sql)).find();
+    /** The hint is optional: a catalog failure while computing it must not turn a 400 into a 500. */
+    private static String safeDropHint(TableEnvironment tEnv, String sql) {
+        try {
+            return dropHint(tEnv, sql);
+        } catch (RuntimeException e) {
+            log.debug("No hint for {}: {}", SqlText.truncate(sql), e.toString());
+            return null;
+        }
     }
 
     private Void syncDdl(FlinkSession session, String sql) {

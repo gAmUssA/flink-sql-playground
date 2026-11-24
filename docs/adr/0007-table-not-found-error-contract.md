@@ -98,6 +98,11 @@ exist.` None matches the patterns above, so the catch-all mapped it.
   (second anchored pattern), and the hint says `Use DROP TEMPORARY VIEW`. The reverse, `DROP TEMPORARY
   …` of a permanent object, gets `Use DROP VIEW` / `Use DROP TABLE`. `error` carries the matching
   validation exception's own text, even when something wraps it.
-- Batch runs first, so a failed DROP leaves both environments as they were.
+  `IF EXISTS` does not exempt a DROP from this: Flink checks for the shadowing temporary object first,
+  so `DROP VIEW IF EXISTS tv` of a temporary `tv` is `OBJECT_NOT_FOUND` too.
+- Batch runs first, so a DROP that fails there leaves both environments as they were. A failure in
+  the second (streaming) environment can leave them apart; the one known case is a permanent view and a
+  streaming-only temporary view of the same name, dropped with a plain `DROP VIEW`. That divergence
+  predates this change. The hint is best effort: if reading the catalog fails, Flink's message stands alone.
   `DropMissingSmokeTest` runs the real shapes; run it after a Flink bump.
 - Explain and the timeline probe do not plan DDL: they already answer 400 (`NOT_EXPLAINABLE`).
