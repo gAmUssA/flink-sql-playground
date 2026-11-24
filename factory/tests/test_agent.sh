@@ -35,7 +35,7 @@ case $1 in
            echo "{\"instance_id\":\"inst-$([[ ${REX_RESTART:-} == 1 && $n -ge 1 ]] && echo 2 || echo 1)\"}" ;;
   run)     echo '{"block_ids":["block:run1"]}' ;;
   wait)    exit ${REX_WAIT_RC:-0} ;;
-  capture) echo "pane text of $3 $4" ;;
+  capture) [[ ${REX_EMPTY_CAPTURE:-} == 1 ]] || echo "pane text of $3 $4" ;;
   block)   if [[ $2 == call ]]; then
              case $5 in
                block:running) echo '{"last_exit":null,"child":{"pid":1,"name":"claude"}}' ;;
@@ -127,6 +127,17 @@ rm -f "$REX_STATE/whoami"; : > "$REX_LOG"
 REX_RESTART=1 "$agent" tj spec >/dev/null 2>&1; rc=$?
 check "launch: a Rex restart during the run is lost, exit 70 (rc=$rc)" "(( rc == 70 ))"
 
+# --- Copilot launches directly too; a missing copilot binary fails clearly
+mkdir -p "$tmp/cop" && printf '#!/bin/sh\n' > "$tmp/cop/copilot" && chmod +x "$tmp/cop/copilot"
+mkdir -p "$repo/factory/jobs/tj/round-1"; echo spec > "$J/spec.md"; echo build > "$J/build.md"
+: > "$REX_LOG"; rm -f "$REX_STATE/whoami"
+PATH="$tmp/cop:$PATH" "$agent" tj review-code 1 >/dev/null 2>&1
+cl=$(tr '\n' ' ' < "$REX_LOG")
+check "copilot: rex run --shell=none with the absolute copilot path, no zsh" "[[ \$cl == *'--shell=none'*'--cwd $wt'*\"$tmp/cop/copilot -p\"*'--share'* && \$cl != *zsh* ]]"
+: > "$REX_LOG"
+out=$(PATH="/usr/bin:/bin:$tmp/stub" "$agent" tj review-code 1 2>&1); rc=$?
+check "copilot: not on PATH is an error and starts nothing (rc=$rc)" "(( rc != 0 )) && [[ \$out == *'copilot is not on PATH'* ]] && ! grep -q '^run ' \"\$REX_LOG\""
+
 # --- state: running, exited, failed, closed, lost
 rm -f "$J"/.run/*.block "$J"/.run/*.instance "$J"/capture-*.txt
 echo block:running > "$J/.run/a.block"; echo block:ok > "$J/.run/b.block"; echo block:bad > "$J/.run/c.block"
@@ -139,6 +150,16 @@ check "state: a closed block with a capture answers offline" "grep -q '^d closed
 check "state: a block that is gone and has no capture is lost" "grep -qx 'e lost' <<<\"\$st\""
 echo inst-9 > "$J/.run/a.instance"
 check "state: another Rex instance than the launch's is lost" "\"\$agent\" tj state | grep -q '^a lost'"
+
+# state also lists Bob's blocks (.raw/*.txt.block)
+echo block:ok > "$J/.raw/review-ux-1.txt.block"
+check "state: a Bob block under .raw is listed" "\"\$agent\" tj state | grep -qx 'review-ux-1 exited 0'"
+rm -f "$J/.raw/review-ux-1.txt.block"
+
+# --- an already-gone block must not blank a saved capture
+rm -f "$J"/.run/* "$J"/capture-*.txt; echo block:gone > "$J/.run/g.block"; echo 'earlier text' > "$J/capture-g.txt"; board set tj stage=needs-human
+REX_EMPTY_CAPTURE=1 "$agent" tj close-blocks >/dev/null 2>&1
+check "close-blocks: an empty capture keeps the earlier text" "[[ \$(cat \"\$J/capture-g.txt\") == 'earlier text' ]]"
 
 # --- close-blocks keeps the pane text before it closes
 rm -f "$J"/.run/* "$J"/capture-*.txt; echo block:cap > "$J/.run/z.block"; board set tj stage=needs-human; : > "$REX_LOG"

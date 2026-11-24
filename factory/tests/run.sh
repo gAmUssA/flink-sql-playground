@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Runs the factory script tests. Not part of ./gradlew build or CI: the repo has no test layer for factory/.
+export PYTHONDONTWRITEBYTECODE=1
 set -u
 here=$(cd "$(dirname "$0")" && pwd -P)
 rc=0
