@@ -106,7 +106,7 @@ Rex, `beans`, `gh`, GitHub Copilot CLI, Bob 2.x logged in, and `claude` logged i
   the pane's process is the agent. Claude's own stderr stays in the pane; its answer does not, so a Claude
   pane looks quiet while it works. Bob stays a keystroke-driven TUI (`bin/bob-review`).
 - **What Rex knows.** `rex block call process` answers `last_exit: null` while the program runs, then
-  `{exit_code, error}`; `rex wait` returns that exit code for a `--keep-open` block. With the old wrapper
+  `{exit_code, error}`; `rex wait` returns that exact exit code for a `--keep-open` block (measured: `exit 3` gives 3, `false` gives 1). With the old wrapper
   Rex tracked `zsh`, not the agent: the state was real but named the shell. `program_status` (OSC 7501) stayed
   empty for every block, because neither `claude -p` nor `copilot -p` reports a status. So there is nothing to
   wire up there; process state is the signal.
