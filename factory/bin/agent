@@ -7,17 +7,20 @@
 #   agent <job> approve <round>        → jobs/<job>/decision.md      (Claude, read-only, fresh)
 #   agent <job> reviewers <round>      prints who reviews what: code=copilot security=copilot ux=bob ui=bob
 #   agent <job> needs-human-paths      CLEAN (exit 0) or the risky paths (exit 10)
-#   agent <job> close-blocks           closes the job's Rex blocks; refuses unless its stage is merged or needs-human
+#   agent <job> close-blocks           saves each block's text to capture-<name>.txt, then closes the job's Rex
+#                                      blocks; refuses unless its stage is merged or needs-human
+#   agent <job> state                  one line per block: running, exited, failed, lost or closed (from Rex)
 #
 # Exit 0 when the file is saved and well formed, 2 when the agent's answer is malformed, 3 when
 # Claude is not on the subscription, 4 on a reviewer timeout, 5 when Bob never accepted the prompt,
-# anything else when the runner failed.
+# 70 when Rex restarted while the agent ran (lost), anything else when the runner failed.
+# Claude and Copilot run directly in the block (rex run --shell=none; bin/run-agent execs Claude with
+# the prompt on stdin and the answer in .raw/<name>.out), so Rex tracks the agent's own process.
 # It never touches board.json: the orchestrator does.
 set -uo pipefail
 job=$1 agent=$2 round=${3:-1}
 [[ $job =~ ^[a-z0-9][a-z0-9-]{1,60}$ ]] || { echo "agent: job id must be lowercase letters, digits and dashes" >&2; exit 1; }
 [[ $round =~ ^[0-9]+$ ]] || { echo "agent: round must be a number" >&2; exit 1; }
-q() { printf '%q' "$1"; }   # quote a value for the generated zsh scripts
 F=$(cd "$(dirname "$0")/.." && pwd -P)
 # --git-common-dir is relative to the directory git runs in (".git" from the repo root), so resolve it
 # from inside $F, not from the caller's cwd.
@@ -35,23 +38,35 @@ runner_for() {   # odd rounds: Copilot reviews code + security, Bob ux + ui; eve
 
 body() { awk 'BEGIN{n=0} /^---$/{n++; next} n>=2' "$1"; }   # an agent file without its frontmatter
 
-in_block() {     # in_block <label> <script>: run the script in a visible Rex block, wait, return its status
-  local b
-  b=$(rex run --focus=false --keep-open --interactive --label "$1" --json -- zsh "$2" \
-      | python3 -c 'import json,sys; print(json.load(sys.stdin)["block_ids"][0])') || return 1
-  echo "$b" > "$2.block"
-  rex wait "$b"
+block_json() { python3 -c 'import json,sys; print(json.load(sys.stdin)["block_ids"][0])'; }
+instance_id() { rex whoami --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("instance_id",""))' 2>/dev/null; }
+
+# launch <label> <name> <cwd> COMMAND [ARGS...]: run COMMAND directly in a visible Rex block (no shell,
+# so Rex tracks the agent's own process), wait for it, keep the pane's text in $J/capture-<name>.txt,
+# and return its exit status. A Rex server that restarted meanwhile kills every pane process: that is
+# "lost", exit 70, never success. The block id and the server instance id are kept in $J/.run.
+launch() {
+  local label=$1 name=$2 cwd=$3 b rc=0 inst now; shift 3
+  inst=$(instance_id)
+  b=$(rex run --focus=false --keep-open --shell=none --cwd "$cwd" --label "$label" --json -- "$@" | block_json) || return 1
+  echo "$b" > "$J/.run/$name.block"; echo "$inst" > "$J/.run/$name.instance"
+  rex wait "$b" || rc=$?
+  rex capture -b "$b" --trim > "$J/capture-$name.txt" 2>/dev/null || true
+  now=$(instance_id)
+  if [[ -n $inst && $now != "$inst" ]]; then echo "agent: Rex restarted while $name ran: lost" >&2; return 70; fi
+  return $rc
 }
+
+DENIED_TOOLS=('Bash(git push:*)' 'Bash(gh:*)' 'Bash(railway:*)' 'Bash(git reset:*)' 'Bash(node:*)' 'Bash(npm:*)' 'Bash(curl:*)')
 
 claude_run() {   # claude_run <label> <system-prompt-file> <prompt-file> <raw-out> <tools> [extra args...]
   local label=$1 sys=$2 prompt=$3 out=$4 tools=$5; shift 5
-  local script=$J/.run/$(basename "$out" .out).zsh extra="" arg
-  for arg in "$@"; do extra+=" $(q "$arg")"; done
-  {
-    echo "setopt pipefail; cd $(q "$WT") || exit 1"
-    echo "$(q "$F/bin/claude-sub") -p --permission-mode dontAsk --append-system-prompt \"\$(cat $(q "$sys"))\"$extra --allowedTools $tools --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' 'Bash(railway:*)' 'Bash(git reset:*)' 'Bash(node:*)' 'Bash(npm:*)' 'Bash(curl:*)' < $(q "$prompt") | tee $(q "$out")"
-  } > "$script"
-  in_block "$label" "$script"
+  local -a allowed
+  eval "allowed=($tools)"   # $tools is one of the constants below, never user input
+  # The answer goes to <raw-out> through run-agent; the pane shows the agent's stderr only.
+  launch "$label" "$(basename "$out" .out)" "$WT" /bin/bash "$F/bin/run-agent" "$prompt" "$out" \
+    "$F/bin/claude-sub" -p --permission-mode dontAsk --append-system-prompt "$(cat "$sys")" "$@" \
+    --allowedTools "${allowed[@]}" --disallowedTools "${DENIED_TOOLS[@]}"
 }
 
 READ_TOOLS="Read Grep Glob 'Bash(beans show:*)' 'Bash(beans list:*)' 'Bash(git log:*)' 'Bash(git diff:*)' 'Bash(git show:*)' 'Bash(rg:*)' 'Bash(ls:*)'"
@@ -97,17 +112,13 @@ case $agent in
     if [[ $runner == copilot ]]; then
       { body "$F/agents/$agent.md"; printf '\nJob %s, review round %s. The spec is %s/spec.md and the build notes %s/build.md. The change is `git diff origin/main...HEAD` in this worktree.\n\n%s\n' \
           "$job" "$round" "$J" "$J" "$contract"; } > "$J/.run/$agent-$round.txt"
-      script=$J/.run/$agent-$round.zsh
-      cat > "$script" <<EOF
-cd $(q "$WT") || exit 1
-copilot -p "\$(cat $(q "$J/.run/$agent-$round.txt"))" --add-dir $(q "$J") \\
-  --allow-tool 'shell(git diff:*)' --allow-tool 'shell(git log:*)' --allow-tool 'shell(git show:*)' \\
-  --allow-tool 'shell(rg:*)' --deny-tool 'shell(node:*)' --deny-tool 'shell(npx:*)' --deny-tool 'shell(npm:*)' \\
-  --deny-tool 'shell(git push:*)' --deny-tool 'shell(git commit:*)' --deny-tool 'shell(git reset:*)' \\
-  --deny-tool 'shell(rm:*)' --deny-tool 'write' \\
-  --share $(q "$J/.raw/$agent-$round.md")
-EOF
-      in_block "factory $job $role r$round copilot" "$script" || exit $?
+      copilot_bin=$(command -v copilot) || { echo "agent: copilot is not on PATH" >&2; exit 1; }   # --shell=none: absolute path
+      launch "factory $job $role r$round copilot" "$agent-$round" "$WT" "$copilot_bin" -p "$(cat "$J/.run/$agent-$round.txt")" --add-dir "$J" \
+        --allow-tool 'shell(git diff:*)' --allow-tool 'shell(git log:*)' --allow-tool 'shell(git show:*)' \
+        --allow-tool 'shell(rg:*)' --deny-tool 'shell(node:*)' --deny-tool 'shell(npx:*)' --deny-tool 'shell(npm:*)' \
+        --deny-tool 'shell(git push:*)' --deny-tool 'shell(git commit:*)' --deny-tool 'shell(git reset:*)' \
+        --deny-tool 'shell(rm:*)' --deny-tool 'write' \
+        --share "$J/.raw/$agent-$round.md" || exit $?
       raw=$J/.raw/$agent-$round.md
     else
       ctx=$R/context-$role; mkdir -p "$ctx"   # one folder per reviewer: two Bob reviews run at once
@@ -148,9 +159,33 @@ EOF
       *) echo "agent: not closing blocks of $job: its stage is '${stage:-unknown}', want merged or needs-human" >&2; exit 1 ;;
     esac
     shopt -s nullglob
-    for f in "$J"/.run/*.zsh.block "$J"/.raw/*.txt.block; do
-      id=$(<"$f")
-      [[ -n $id ]] && rex block close "$id" >/dev/null 2>&1   # already gone is fine
+    for f in "$J"/.run/*.block "$J"/.raw/*.txt.block; do
+      id=$(<"$f"); [[ -n $id ]] || continue
+      n=$(basename "$f"); n=${n%.block}; n=${n%.zsh}; n=${n%.txt}
+      # Keep the pane's text first (a capture of a block already gone fails: keep what the launch saved).
+      rex capture -b "$id" --trim > "$J/capture-$n.txt.tmp" 2>/dev/null && mv "$J/capture-$n.txt.tmp" "$J/capture-$n.txt" || rm -f "$J/capture-$n.txt.tmp"
+      rex block close "$id" >/dev/null 2>&1   # already gone is fine
+    done
+    exit 0
+    ;;
+
+  state)   # one line per block of the job: <name> running|exited|failed|lost|closed [exit code]
+    shopt -s nullglob
+    inst_now=$(instance_id)
+    for f in "$J"/.run/*.block; do
+      id=$(<"$f"); n=$(basename "$f" .block); n=${n%.zsh}
+      inst=$(cat "$J/.run/$n.instance" 2>/dev/null || true)
+      if [[ -n $inst && -n $inst_now && $inst != "$inst_now" ]]; then echo "$n lost (Rex restarted)"; continue; fi
+      if proc=$(rex block call process -b "$id" 2>/dev/null); then
+        python3 -c '
+import json, sys
+n, p = sys.argv[1], json.load(sys.stdin)
+e = p.get("last_exit")
+if e is None: print(n, "running")
+elif e.get("exit_code") == 0: print(n, "exited 0")
+else: print(n, "failed", e.get("exit_code"))' "$n" <<<"$proc"
+      elif [[ -s $J/capture-$n.txt ]]; then echo "$n closed (output in capture-$n.txt)"
+      else echo "$n lost"; fi
     done
     exit 0
     ;;

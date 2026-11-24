@@ -30,10 +30,26 @@ cat > "$tmp/stub/rex" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$REX_LOG"
 if [[ $1 == block && $2 == close ]]; then [[ $3 == *-gone ]] && exit 1; fi
+case $1 in
+  whoami)  n=$(cat "$REX_STATE/whoami" 2>/dev/null || echo 0); echo $((n+1)) > "$REX_STATE/whoami"
+           echo "{\"instance_id\":\"inst-$([[ ${REX_RESTART:-} == 1 && $n -ge 1 ]] && echo 2 || echo 1)\"}" ;;
+  run)     echo '{"block_ids":["block:run1"]}' ;;
+  wait)    exit ${REX_WAIT_RC:-0} ;;
+  capture) echo "pane text of $3 $4" ;;
+  block)   if [[ $2 == call ]]; then
+             case $5 in
+               block:running) echo '{"last_exit":null,"child":{"pid":1,"name":"claude"}}' ;;
+               block:ok)      echo '{"last_exit":{"exit_code":0}}' ;;
+               block:bad)     echo '{"last_exit":{"exit_code":7,"error":"exit status 7"}}' ;;
+               *)             exit 1 ;;
+             esac
+           fi ;;
+esac
 exit 0
 EOF
 chmod +x "$tmp/stub/rex"
-export PATH="$tmp/stub:$PATH" REX_LOG="$tmp/rex.log"
+mkdir -p "$tmp/rexstate"
+export PATH="$tmp/stub:$PATH" REX_LOG="$tmp/rex.log" REX_STATE="$tmp/rexstate"
 
 # --- criterion 7: same output from everywhere, REPO is the main checkout
 outs=()
@@ -82,5 +98,51 @@ for st in merged needs-human; do
   check "  it left the other job's block alone" "! grep -q zzz \"\$REX_LOG\""
   check "  it did not touch board.json" "[[ \$(cat \"\$repo/factory/board.json\") == \"\$before\" ]]"
 done
+
+# --- run-agent: the agent itself runs, stdin and stdout come from files, no shell re-parses arguments
+printf 'prompt line\n' > "$tmp/in.txt"
+"$repo/factory/bin/run-agent" "$tmp/in.txt" "$tmp/out.txt" /bin/sh -c 'cat; printf "%s|" "$@"' x "a b" "it's" '$HOME "q"'
+printf 'prompt line\na b|it'"'"'s|$HOME "q"|' > "$tmp/expect.txt"
+check "run-agent: stdin from the file, stdout to the file, arguments intact" "cmp -s \"\$tmp/out.txt\" \"\$tmp/expect.txt\""
+"$repo/factory/bin/run-agent" - - /bin/sh -c 'exit 4'; rc=$?
+check "run-agent: the agent's exit status is the script's (4)" "(( rc == 4 ))"
+
+# --- launch: a spec run goes straight to Rex with --shell=none, no zsh, no tee
+board set tj stage=build
+J=$repo/factory/jobs/tj; rm -f "$J"/capture-*.txt "$J"/.run/*.block
+: > "$REX_LOG"; rm -f "$REX_STATE/whoami"
+"$agent" tj spec >/dev/null 2>&1
+runline=$(tr '\n' ' ' < "$REX_LOG")   # the system prompt argument spans lines
+check "launch: rex run --shell=none in the job worktree" "[[ \$runline == *'--shell=none'*'--cwd $wt'* ]]"
+check "launch: no zsh and no tee in the command" "[[ \$runline != *zsh* && \$runline != *tee* ]]"
+check "launch: claude-sub runs behind run-agent with the denied tools" "[[ \$runline == *'bin/run-agent'*'bin/claude-sub'*'--disallowedTools'*'Bash(node:*)'* ]]"
+check "launch: the pane text is kept in capture-spec.txt" "grep -q 'pane text' \"\$J/capture-spec.txt\""
+check "launch: the block id is recorded" "[[ \$(cat \"\$J/.run/spec.block\") == block:run1 ]]"
+
+: > "$REX_LOG"; rm -f "$REX_STATE/whoami"
+REX_WAIT_RC=3 "$agent" tj spec >/dev/null 2>&1; rc=$?
+check "launch: the agent's exit status 3 is the stage's (rc=$rc)" "(( rc == 3 ))"
+
+rm -f "$REX_STATE/whoami"; : > "$REX_LOG"
+REX_RESTART=1 "$agent" tj spec >/dev/null 2>&1; rc=$?
+check "launch: a Rex restart during the run is lost, exit 70 (rc=$rc)" "(( rc == 70 ))"
+
+# --- state: running, exited, failed, closed, lost
+rm -f "$J"/.run/*.block "$J"/.run/*.instance "$J"/capture-*.txt
+echo block:running > "$J/.run/a.block"; echo block:ok > "$J/.run/b.block"; echo block:bad > "$J/.run/c.block"
+echo block:gone > "$J/.run/d.block"; echo block:gone2 > "$J/.run/e.block"; echo 'saved text' > "$J/capture-d.txt"
+st=$("$agent" tj state 2>&1)
+check "state: running" "grep -qx 'a running' <<<\"\$st\""
+check "state: exited 0" "grep -qx 'b exited 0' <<<\"\$st\""
+check "state: failed with the code" "grep -qx 'c failed 7' <<<\"\$st\""
+check "state: a closed block with a capture answers offline" "grep -q '^d closed' <<<\"\$st\""
+check "state: a block that is gone and has no capture is lost" "grep -qx 'e lost' <<<\"\$st\""
+echo inst-9 > "$J/.run/a.instance"
+check "state: another Rex instance than the launch's is lost" "\"\$agent\" tj state | grep -q '^a lost'"
+
+# --- close-blocks keeps the pane text before it closes
+rm -f "$J"/.run/* "$J"/capture-*.txt; echo block:cap > "$J/.run/z.block"; board set tj stage=needs-human; : > "$REX_LOG"
+"$agent" tj close-blocks >/dev/null 2>&1
+check "close-blocks: capture-z.txt exists and the capture came before the close" "[[ -s \"\$J/capture-z.txt\" ]] && [[ \$(grep -n '^capture' \"\$REX_LOG\" | head -1 | cut -d: -f1) -lt \$(grep -n '^block close' \"\$REX_LOG\" | head -1 | cut -d: -f1) ]]"
 
 exit $fail
