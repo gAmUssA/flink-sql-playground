@@ -161,6 +161,18 @@ rm -f "$J"/.run/* "$J"/capture-*.txt; echo block:gone > "$J/.run/g.block"; echo 
 REX_EMPTY_CAPTURE=1 "$agent" tj close-blocks >/dev/null 2>&1
 check "close-blocks: an empty capture keeps the earlier text" "[[ \$(cat \"\$J/capture-g.txt\") == 'earlier text' ]]"
 
+# --- a Rex restart: the pane is a fresh shell, so close-blocks must not overwrite the saved capture
+rm -f "$J"/.run/* "$J"/capture-*.txt; echo block:r > "$J/.run/r.block"; echo inst-OLD > "$J/.run/r.instance"; echo 'agent output' > "$J/capture-r.txt"; board set tj stage=needs-human
+"$agent" tj close-blocks >/dev/null 2>&1
+check "close-blocks: after a Rex restart the saved capture stays" "[[ \$(cat \"\$J/capture-r.txt\") == 'agent output' ]] && grep -q 'block close block:r' \"\$REX_LOG\""
+
+# --- an exited-0 Claude run with an empty answer file is flagged
+rm -f "$J"/.run/* "$J"/.raw/*.out; echo block:ok > "$J/.run/spec.block"; : > "$J/.raw/spec.out"
+check "state: exited 0 with an empty answer says so" "\"\$agent\" tj state | grep -qx 'spec exited 0 (empty output)'"
+echo text > "$J/.raw/spec.out"
+check "state: exited 0 with an answer is plain" "\"\$agent\" tj state | grep -qx 'spec exited 0'"
+rm -f "$J/.raw/spec.out" "$J/.run/spec.block"
+
 # --- close-blocks keeps the pane text before it closes
 rm -f "$J"/.run/* "$J"/capture-*.txt; echo block:cap > "$J/.run/z.block"; board set tj stage=needs-human; : > "$REX_LOG"
 "$agent" tj close-blocks >/dev/null 2>&1

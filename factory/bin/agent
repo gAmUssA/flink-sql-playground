@@ -68,6 +68,10 @@ claude_run() {   # claude_run <label> <system-prompt-file> <prompt-file> <raw-ou
   launch "$label" "$(basename "$out" .out)" "$WT" /bin/bash "$F/bin/run-agent" "$prompt" "$out" \
     "$F/bin/claude-sub" -p --permission-mode dontAsk --append-system-prompt "$(cat "$sys")" "$@" \
     --allowedTools "${allowed[@]}" --disallowedTools "${DENIED_TOOLS[@]}"
+  local rc=$?
+  # Exit 0 with nothing written is not an answer: say so here, not later as a "malformed" extract.
+  if (( rc == 0 )) && [[ ! -s $out ]]; then echo "agent: $(basename "$out") is empty although the agent exited 0" >&2; return 2; fi
+  return $rc
 }
 
 READ_TOOLS="Read Grep Glob 'Bash(beans show:*)' 'Bash(beans list:*)' 'Bash(git log:*)' 'Bash(git diff:*)' 'Bash(git show:*)' 'Bash(rg:*)' 'Bash(ls:*)'"
@@ -164,8 +168,11 @@ case $agent in
       id=$(<"$f"); [[ -n $id ]] || continue
       n=$(basename "$f"); n=${n%.block}; n=${n%.zsh}; n=${n%.txt}
       # Keep the pane's text first (a capture of a block already gone fails: keep what the launch saved).
-      # Only a non-empty capture replaces the saved one (a block already gone must not blank it).
-      if rex capture -b "$id" --trim > "$J/capture-$n.txt.tmp" 2>/dev/null && [[ -s $J/capture-$n.txt.tmp ]]; then
+      # Only a non-empty capture replaces the saved one (a block already gone must not blank it), and
+      # never after a Rex restart: the pane is then a fresh login shell, not the agent.
+      inst=$(cat "$J/.run/$n.instance" 2>/dev/null || true); inst_now=$(instance_id)
+      if [[ -n $inst && -n $inst_now && $inst != "$inst_now" ]]; then :
+      elif rex capture -b "$id" --trim > "$J/capture-$n.txt.tmp" 2>/dev/null && [[ -s $J/capture-$n.txt.tmp ]]; then
         mv "$J/capture-$n.txt.tmp" "$J/capture-$n.txt"
       else rm -f "$J/capture-$n.txt.tmp"; fi
       rex block close "$id" >/dev/null 2>&1   # already gone is fine
@@ -180,14 +187,15 @@ case $agent in
       id=$(<"$f"); n=$(basename "$f" .block); n=${n%.zsh}; n=${n%.txt}
       inst=$(cat "$J/.run/$n.instance" 2>/dev/null || true)
       if [[ -n $inst && -n $inst_now && $inst != "$inst_now" ]]; then echo "$n lost (Rex restarted)"; continue; fi
+      empty=0; [[ -e $J/.raw/$n.out && ! -s $J/.raw/$n.out ]] && empty=1   # a Claude run whose answer file is empty
       if proc=$(rex block call process -b "$id" 2>/dev/null); then
         python3 -c '
 import json, sys
-n, p = sys.argv[1], json.load(sys.stdin)
+n, empty, p = sys.argv[1], sys.argv[2] == "1", json.load(sys.stdin)
 e = p.get("last_exit")
 if e is None: print(n, "running")
-elif e.get("exit_code") == 0: print(n, "exited 0")
-else: print(n, "failed", e.get("exit_code"))' "$n" <<<"$proc"
+elif e.get("exit_code") == 0: print(n, "exited 0" + (" (empty output)" if empty else ""))
+else: print(n, "failed", e.get("exit_code"))' "$n" "$empty" <<<"$proc"
       elif [[ -s $J/capture-$n.txt ]]; then echo "$n closed (output in capture-$n.txt)"
       else echo "$n lost"; fi
     done
