@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Board</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #16181d; --muted: #5b6270; --line: #dfe2e8;
+    --ok: #137a3b; --ok-bg: #e3f5ea; --changes: #8a5300; --changes-bg: #fdf0d8;
+    --pending: #5b6270; --pending-bg: #eceef2; --human: #b42318; --human-bg: #fde8e6;
+    --accent: #2f5bd3; --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1017; --panel: #161a23; --ink: #e8ebf1; --muted: #9aa3b2; --line: #272d3a;
+      --ok: #5fd38d; --ok-bg: #12301f; --changes: #f3bd5c; --changes-bg: #352712;
+      --pending: #9aa3b2; --pending-bg: #222836; --human: #ff8a80; --human-bg: #3a1714;
+      --accent: #7ea2ff; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1017; --panel: #161a23; --ink: #e8ebf1; --muted: #9aa3b2; --line: #272d3a;
+    --ok: #5fd38d; --ok-bg: #12301f; --changes: #f3bd5c; --changes-bg: #352712;
+    --pending: #9aa3b2; --pending-bg: #222836; --human: #ff8a80; --human-bg: #3a1714;
+    --accent: #7ea2ff; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 16px 20px 8px; }
+  h1 { font-size: 18px; margin: 0; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .sample { color: var(--changes); background: var(--changes-bg); border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+  main { display: grid; grid-template-columns: repeat(7, minmax(180px, 1fr)); gap: 12px; padding: 8px 20px 24px; overflow-x: auto; }
+  .col h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 4px 0 8px; display: flex; justify-content: space-between; }
+  .col.human h2 { color: var(--human); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; box-shadow: var(--shadow); cursor: pointer; width: 100%; text-align: left; color: inherit; font: inherit; }
+  .card:hover, .card:focus-visible { border-color: var(--accent); outline: none; }
+  .card.human { border: 2px solid var(--human); background: var(--human-bg); }
+  .card .id { font-weight: 600; font-size: 13px; word-break: break-word; }
+  .card .title { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+  .card .note { font-size: 12px; margin-top: 6px; color: var(--human); }
+  .card .pr { font-size: 12px; margin-top: 6px; color: var(--muted); }
+  .round { display: flex; align-items: center; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .round .n { font-size: 11px; color: var(--muted); width: 22px; }
+  .chip { font-size: 11px; border-radius: 999px; padding: 1px 7px; background: var(--pending-bg); color: var(--pending); white-space: nowrap; }
+  .chip.PASS { background: var(--ok-bg); color: var(--ok); }
+  .chip.CHANGES { background: var(--changes-bg); color: var(--changes); font-weight: 600; }
+  .chip.pending { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { .chip.pending { animation: none; } }
+  dialog { width: min(900px, 94vw); max-height: 88vh; border: 1px solid var(--line); border-radius: 12px; padding: 0; background: var(--panel); color: var(--ink); }
+  dialog::backdrop { background: rgba(0, 0, 0, .35); }
+  .dlg-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 0; }
+  .tabs button, .close { font: inherit; font-size: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .tabs button.missing { color: var(--muted); border-style: dashed; }
+  article { padding: 4px 16px 20px; overflow-wrap: anywhere; }
+  article pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; font-size: 12px; }
+  article code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  article table { border-collapse: collapse; font-size: 12px; display: block; overflow-x: auto; }
+  article th, article td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  article .verdict-PASS, article .verdict-APPROVE { color: var(--ok); font-weight: 700; }
+  article .verdict-CHANGES { color: var(--changes); font-weight: 700; }
+  article .verdict-ESCALATE { color: var(--human); font-weight: 700; }
+  @media (max-width: 720px) {
+    header { padding: 12px 16px 4px; }
+    main { grid-template-columns: 1fr; padding: 8px 16px 20px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Factory</h1>
+  <span class="meta" id="updated">loading…</span>
+  <span class="sample" id="sample" hidden>sample data: no board.json yet</span>
+</header>
+<main id="board"></main>
+<dialog id="dlg" aria-labelledby="dlg-title">
+  <div class="dlg-head"><strong id="dlg-title"></strong><button class="close" id="close">Close</button></div>
+  <div class="tabs" id="tabs" role="tablist"></div>
+  <article id="doc"></article>
+</dialog>
+<script>
+const STAGES = [
+  ["spec", "Spec"], ["build", "Build"], ["review", "Review"], ["approve", "Approve"],
+  ["pr", "PR & CI"], ["merged", "Merged"], ["needs-human", "Needs human"],
+];
+const ROLES = ["security", "ux", "ui", "code"];
+const SAMPLE = { updated: null, jobs: [
+  { id: "akvl-drop-missing-400", title: "DROP of a missing table answers 500", stage: "review", round: 2,
+    rounds: [
+      { n: 1, reviewers: { security: "copilot", ux: "bob", ui: "bob", code: "copilot" }, reviews: { security: "PASS", ux: "CHANGES", ui: "PASS", code: "PASS" } },
+      { n: 2, reviewers: { security: "bob", ux: "copilot", ui: "copilot", code: "bob" }, reviews: { security: "PASS", ux: "pending", ui: "PASS", code: "pending" } } ] },
+  { id: "5q2j-sync-use-db", title: "USE db runs in one environment only", stage: "needs-human", round: 1,
+    note: "diff touches .github/: needs a human", pr: { number: 90, ci: "green" },
+    rounds: [ { n: 1, reviewers: { security: "copilot", ux: "bob", ui: "bob", code: "copilot" }, reviews: { security: "PASS", ux: "PASS", ui: "PASS", code: "PASS" } } ] },
+] };
+
+let board = null, isSample = false, openJob = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function poll() {
+  try {
+    const r = await fetch("board.json?ts=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    board = await r.json(); isSample = false;
+  } catch (e) {
+    if (!board || isSample) { board = SAMPLE; isSample = true; }
+  }
+  render();
+}
+
+function render() {
+  $("sample").hidden = !isSample;
+  $("updated").textContent = board.updated ? "updated " + new Date(board.updated).toLocaleTimeString() : "";
+  $("board").innerHTML = STAGES.map(([key, label]) => {
+    const jobs = (board.jobs || []).filter((j) => j.stage === key);
+    return `<section class="col ${key === "needs-human" ? "human" : ""}" aria-label="${label}">
+      <h2><span>${label}</span><span>${jobs.length || ""}</span></h2>
+      ${jobs.map(card).join("")}</section>`;
+  }).join("");
+  document.querySelectorAll(".card").forEach((el) => el.addEventListener("click", () => open(el.dataset.id)));
+}
+
+function card(j) {
+  const rounds = (j.rounds || []).map((r) => `<div class="round"><span class="n">R${r.n}</span>${
+    ROLES.filter((role) => role in (r.reviews || {})).map((role) => {
+      const v = r.reviews[role], who = (r.reviewers || {})[role] || "";
+      return `<span class="chip ${esc(v)}" title="${esc(role)} by ${esc(who)}: ${esc(v)}">${esc(role)} · ${esc(who.slice(0, 1).toUpperCase())}</span>`;
+    }).join("")}</div>`).join("");
+  const pr = j.pr && j.pr.number ? `<div class="pr">PR #${esc(j.pr.number)}${j.pr.ci ? " · CI " + esc(j.pr.ci) : ""}</div>` : "";
+  const human = j.stage === "needs-human";
+  return `<button class="card ${human ? "human" : ""}" data-id="${esc(j.id)}">
+    <div class="id">${esc(j.id)}</div><div class="title">${esc(j.title)}</div>
+    ${rounds}${pr}${j.note ? `<div class="note">${esc(j.note)}</div>` : ""}</button>`;
+}
+
+function filesOf(j) {
+  const files = [["spec", "spec.md"], ["build", "build.md"]];
+  (j.rounds || []).forEach((r) => ROLES.forEach((role) => files.push([`R${r.n} ${role}`, `round-${r.n}/review-${role}.md`])));
+  files.push(["decision", "decision.md"]);
+  return files;
+}
+
+async function open(id) {
+  const j = board.jobs.find((x) => x.id === id);
+  if (!j) return;
+  openJob = id;
+  $("dlg-title").textContent = j.id;
+  const files = filesOf(j);
+  const texts = await Promise.all(files.map(async ([, path]) => {
+    if (isSample) return null;
+    try { const r = await fetch(`jobs/${encodeURIComponent(j.id)}/${path}?ts=${Date.now()}`, { cache: "no-store" }); return r.ok ? r.text() : null; }
+    catch { return null; }
+  }));
+  $("tabs").innerHTML = files.map(([label], i) =>
+    `<button role="tab" data-i="${i}" class="${texts[i] == null ? "missing" : ""}">${esc(label)}</button>`).join("");
+  const show = (i) => {
+    $("tabs").querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(+b.dataset.i === i)));
+    $("doc").innerHTML = texts[i] == null ? `<p class="meta">Not written yet.</p>` : markdown(texts[i]);
+  };
+  $("tabs").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => show(+b.dataset.i)));
+  const last = texts.map((t, i) => (t == null ? -1 : i)).filter((i) => i >= 0).pop();
+  show(last ?? 0);
+  if (!$("dlg").open) $("dlg").showModal();
+}
+
+function inline(s) {
+  return esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+
+function markdown(src) {
+  const lines = src.replace(/\r/g, "").split("\n"), out = [];
+  let i = 0;
+  const verdict = /^(VERDICT: (PASS|CHANGES)|(APPROVE|ESCALATE))\s*$/;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.startsWith("```")) {
+      const code = []; i++;
+      while (i < lines.length && !lines[i].startsWith("```")) code.push(lines[i++]);
+      out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`); i++; continue;
+    }
+    const m = line.match(verdict);
+    if (m) { const v = m[2] || m[3]; out.push(`<p class="verdict-${v}">${esc(line)}</p>`); i++; continue; }
+    const h = line.match(/^(#{1,4})\s+(.*)/);
+    if (h) { out.push(`<h${h[1].length + 1}>${inline(h[2])}</h${h[1].length + 1}>`); i++; continue; }
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(lines[i++]);
+      const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => inline(c.trim()));
+      const body = rows.filter((r) => !/^\s*\|[\s:|-]+\|\s*$/.test(r));
+      out.push(`<table><thead><tr>${cells(body[0]).map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${
+        body.slice(1).map((r) => `<tr>${cells(r).map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+      continue;
+    }
+    if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
+      const ordered = /^\s*\d+\./.test(line), items = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
+      const tag = ordered ? "ol" : "ul";
+      out.push(`<${tag}>${items.map((t) => `<li>${inline(t.replace(/^\[( |x)\]\s*/, (s, x) => (x === "x" ? "☑ " : "☐ ")))}</li>`).join("")}</${tag}>`);
+      continue;
+    }
+    if (!line.trim()) { i++; continue; }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !/^(#|```|\s*\||\s*([-*]|\d+\.)\s)/.test(lines[i])) para.push(lines[i++]);
+    out.push(`<p>${inline(para.join(" "))}</p>`);
+  }
+  return out.join("\n");
+}
+
+$("close").addEventListener("click", () => $("dlg").close());
+$("dlg").addEventListener("close", () => { openJob = null; });
+poll();
+setInterval(poll, 3000);   // the open dialog keeps its tab; reopen the card for newer files
+</script>
+</body>
+</html>

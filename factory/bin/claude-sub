@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Runs `claude` on Vik's claude.ai subscription only: every variable that would switch it to an
+# API key, a gateway, Bedrock or Vertex is removed from its environment first. All arguments
+# pass through; give the prompt on stdin (claude's variadic tool flags swallow a trailing one).
+# Exit 3 if claude still reports another auth source or no login, so the factory stops instead
+# of billing something else.
+set -o pipefail
+out=$(mktemp)
+env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL \
+    -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY \
+    -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_BEDROCK_BASE_URL -u ANTHROPIC_VERTEX_PROJECT_ID \
+    claude "$@" 2>&1 | tee "$out"
+status=$?
+if grep -qE "takes precedence over your claude.ai login|Not logged in|Invalid API key|/login" "$out"; then
+  echo "claude-sub: not running on the claude.ai subscription; stop and ask Vik (run: claude /login)" >&2
+  rm -f "$out"; exit 3
+fi
+rm -f "$out"; exit $status
