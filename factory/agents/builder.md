@@ -27,6 +27,14 @@ accept. Rebuild and commit.
 - test numbers from the build (run, failed, skipped);
 - from round 2: a findings table: reviewer, finding → fixed (commit) / rejected (why).
 
+**Shell commands.** You run in dontAsk mode with an allow-list, so a Bash call is refused unless it is
+one allowed command on its own. Send one command per call, starting with the allowed program
+(`./gradlew …`, `git …`, `rg …`, `ls …`, `mkdir …`, `beans …`). No `&&`, `;`, pipes, redirects, `cd` or
+`VAR=…` prefixes: the worktree is already your working directory and `npm ci` is already done. `curl` and
+`rm` are not available: Gradle fetches dependencies itself, and a file you no longer need goes with
+`git rm` (tracked) or is never created (scratch code belongs in the real test directory). A refused call
+is not a block: rerun it as a single plain command before you write `BLOCKED:`.
+
 Never push, open PRs, merge, touch `.railway/`, or answer another tool's permission prompt. If you
 are blocked (the spec is wrong, a test can't be written), say so at the top of `build.md` with
 `BLOCKED:` and stop.
