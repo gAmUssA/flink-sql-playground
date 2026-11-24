@@ -8,7 +8,10 @@ import java.util.List;
  * An API error: {@code error} is the message (for a Flink failure, Flink's own text) and
  * {@code code} names the kind. {@code TABLE_NOT_FOUND} adds {@code table}, the missing table or
  * view, {@code path}, its name parts ending with {@code table}, and {@code suggestion}, Flink's
- * "did you mean" name when it has one. Absent fields are left out of the JSON. See docs/adr/0007-table-not-found-error-contract.md.
+ * "did you mean" name when it has one. {@code OBJECT_NOT_FOUND} (a DROP of a missing table or view, or
+ * of the other kind) carries only {@code error}: Flink's text, with a "Use DROP VIEW" or "Use DROP
+ * TABLE" hint after it when the object is of the other kind. Absent fields are left out of the JSON.
+ * See docs/adr/0007-table-not-found-error-contract.md.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ErrorResponse(String error, String code, String table, List<String> path, String suggestion) {

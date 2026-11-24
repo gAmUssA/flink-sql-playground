@@ -103,6 +103,8 @@ function missingTable(sql, built) {
 
 const CREATE = /^\s*(?:--[^\n]*\n\s*)*CREATE\s+(?:TEMPORARY\s+)?(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([^`\s(]+)/i;
 
+const DROP = /^\s*(?:--[^\n]*\n\s*)*DROP\s+(?:TEMPORARY\s+)?(?:TABLE|VIEW)\s+(?!IF\s+EXISTS)`?([^`\s;]+)`?/i;
+
 async function stubApi(page) {
   // Every test that opens the app stubs the API first, so the fonts record starts here too.
   await page.addInitScript(recordWebFonts);
@@ -114,6 +116,13 @@ async function stubApi(page) {
     const postSql = () => { try { return JSON.parse(route.request().postData() || '{}').sql || ''; } catch { return ''; } };
     const missing = missingTable(postSql(), built);
     if (missing && /\/(execute|execute\/stream|explain|timeline\/stream)$/.test(path)) return json(400, missing);
+    // A DROP without IF EXISTS of a name the stub session has not built: 400 OBJECT_NOT_FOUND,
+    // Flink's wording ("-- stub: drop is view" adds the hint for a view dropped as TABLE).
+    const drop = DROP.exec(postSql());
+    if (drop && !built.has(drop[1]) && /\/(execute|execute\/stream)$/.test(path)) {
+      const hint = /-- stub: drop is view/.test(postSql()) ? ' Use DROP VIEW to drop a view.' : '';
+      return json(400, { error: `Table with identifier 'default_catalog.default_database.${drop[1]}' does not exist.${hint}`, code: 'OBJECT_NOT_FOUND' });
+    }
 
     if (path === '/api/sessions' && route.request().method() === 'POST') return json(201, { sessionId: 'test-session' });
     if (path === '/api/build-info') return json(200, { commit: 'test', branch: 'main' });
