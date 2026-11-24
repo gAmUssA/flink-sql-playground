@@ -20,7 +20,7 @@ REPO=$(cd "$(git -C "$F" rev-parse --git-common-dir)/.." && pwd)
 F=${FACTORY_HOME:-$REPO/factory}   # the main checkout's factory folder, even when called from a worktree
 J=$F/jobs/$job WT=$REPO/.claude/worktrees/$job
 mkdir -p "$J/.raw" "$J/.run"
-NEEDS_HUMAN='^(\.railway/|Dockerfile|\.github/|build\.gradle\.kts|gradle\.properties|settings\.gradle|gradle/|package(-lock)?\.json|src/main/resources/db/|src/main/resources/application.*\.properties|.*SqlSecurityValidator|.*EmbedFraming|\.claude/|factory/|AGENTS\.md$|CLAUDE\.md$|\.gitignore$)'
+NEEDS_HUMAN='^(\.railway/|Dockerfile|\.github/|build\.gradle\.kts|gradle\.properties|settings\.gradle|gradle/|gradlew(\.bat)?$|buildSrc/|scripts/|\.npmrc$|package(-lock)?\.json|src/main/resources/db/|src/main/resources/application.*\.properties|.*SqlSecurityValidator|.*EmbedFraming|\.claude/|factory/|AGENTS\.md$|CLAUDE\.md$|\.gitignore$)'
 
 runner_for() {   # odd rounds: Copilot reviews code + security, Bob ux + ui; even rounds swap
   local role=$1 n=$2 first=copilot second=bob
@@ -105,7 +105,7 @@ EOF
       in_block "factory $job $role r$round copilot" "$script" || exit $?
       raw=$J/.raw/$agent-$round.md
     else
-      ctx=$R/context; mkdir -p "$ctx"
+      ctx=$R/context-$role; mkdir -p "$ctx"   # one folder per reviewer: two Bob reviews run at once
       refs=$(python3 "$F/bin/context.py" "$WT" "$ctx") || exit 1
       cp "$J/spec.md" "$J/build.md" "$ctx/"
       { body "$F/agents/$agent.md"; printf '\nJob %s, review round %s. Read @spec.md (the spec), @build.md (the build notes) and the change: %s\n\n%s\n' \

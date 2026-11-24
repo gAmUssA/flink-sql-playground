@@ -16,7 +16,7 @@ agent (read its header for exit codes). Repo rules (`AGENTS.md`) win over anythi
 |---|---|
 | `/factory next` | the highest-priority `todo` bean (critical > high > normal > low, then oldest; not an epic or milestone, not blocked) |
 | `/factory <bean-id>` | that bean |
-| `/factory <feature text>` | `beans create` it (`-t feature -s todo`), then run it |
+| `/factory <feature text>` | `beans create` it (`-t feature -s todo`), move the new bean file into the job worktree in step 1, then run it |
 | `/factory approve <job>` | merge a `needs-human` job: Vik's go-ahead for that job only |
 | `/factory rework <job> <note>` | send a job back to the builder with Vik's note |
 | `/factory status` | print the board; start the dashboard if it isn't running |
@@ -56,8 +56,11 @@ subscription only; it strips API-key, gateway and Bedrock variables and stops on
   `builder-<job>`; its session id is on the board.
 - **Max 3 review rounds** (the first plus two reworks). `/factory rework` may add one more.
 - **Needs a human, whatever the approver says**: red CI (a pre-existing red check too: say so,
-  e.g. the Lighthouse embed flake, issue #87); a diff touching
-  `^(\.railway/|Dockerfile|\.github/|build\.gradle\.kts|gradle\.properties|settings\.gradle|gradle/|package(-lock)?\.json|src/main/resources/db/|src/main/resources/application.*\.properties|.*SqlSecurityValidator|.*EmbedFraming|\.claude/skills/factory/|factory/(agents|bin)/)`;
+  e.g. the Lighthouse embed flake, issue #87); a diff touching a risky path: deploy (`.railway/`,
+  Dockerfiles), CI, the build and its launcher (Gradle files, `gradlew`, `buildSrc/`, `scripts/`),
+  dependencies, migrations, app config, the SQL guard, embed framing, agent instructions
+  (`AGENTS.md`, `CLAUDE.md`, `.claude/`), `.gitignore` or the factory. The regex lives in one place,
+  `NEEDS_HUMAN` in `factory/bin/agent`; `agent <job> needs-human-paths` applies it;
   a builder that wrote `BLOCKED:`; a reviewer that can't run twice. These are guardrails, not a
   sandbox: the builder runs `./gradlew`, so code it writes can run anything. What protects `main`
   is that only this orchestrator pushes and merges, after four reviews and CI.
@@ -76,8 +79,10 @@ reviewer timeout (rerun once).
 
 1. **Start.** Clean `main`, `git fetch`. Job id `<bean suffix>-<2-4 word slug>` (`akvl-drop-missing-400`).
    `git worktree add $WT -b factory/<job> origin/main`, `npm ci` in it.
+   A bean created for this job exists only in the main checkout: `mv` its file into `$WT/.beans/`
+   now, so the spec-writer and builder see it and the builder commits it.
    `$F/bin/board.py init <job> bean=<bean-id> title="<title>" branch=factory/<job>`; set the bean
-   `in-progress` in the worktree (the builder commits it). Start the dashboard if nothing listens on
+   `in-progress` in the worktree. Start the dashboard if nothing listens on
    8799: `rex run --focus=false --label "factory dashboard" -- static-web-server -p 8799 -d $F --compression false`.
 2. **Spec.** `$F/bin/agent <job> spec` → `$J/spec.md`. `board.py set <job> stage=build`.
 3. **Build.** `$F/bin/agent <job> build 1` → commits on `factory/<job>` and `$J/build.md`.
