@@ -48,9 +48,10 @@ apply), and it never applies `.railway/railway.ts`. So order the two:
    ```
    In the dashboard, connect the GitHub repo so pushes to `main` deploy and PRs
    get preview environments.
-2. **Memory**: set the service to **at least 3 GB**. The container caps the JVM heap at
-   `-Xmx1536m`, and the image built from `Dockerfile` also maps its ~200 MB AOT cache (see
-   Memory Budget). 4 GB is comfortable.
+2. **Memory**: set the service to **at least 3.5 GB**. The container caps the JVM heap at
+   `-Xmx2048m`, and the image built from `Dockerfile` also maps its ~200 MB AOT cache (see
+   Memory Budget). 4 GB is comfortable. Session capacity is `FLINK_MAX_SESSIONS` (Railway variable);
+   a 32-session local run peaked at 1.29 GB resident.
 3. **Port**: none needed — Railway injects `$PORT` and the app binds it
    (`quarkus.http.port=${PORT:9090}`).
 4. **Scale-to-zero**: enable serverless / app-sleep in the service settings. The
@@ -110,7 +111,7 @@ See [ADR 0008](docs/adr/0008-embed-mode.md).
 
 ```bash
 fly launch --no-deploy
-fly scale memory 3072   # the Dockerfile image maps a ~200 MB AOT cache; see Memory Budget
+fly scale memory 3584   # the Dockerfile image maps a ~200 MB AOT cache; see Memory Budget
 fly deploy
 ```
 
@@ -232,23 +233,23 @@ docker run -p 9090:9090 \
 
 | Component                | Memory          |
 |--------------------------|-----------------|
-| JVM heap                 | up to 1.5 GB    |
+| JVM heap                 | up to 2 GB      |
 | JVM metaspace            | 128 MB - 384 MB |
 | Shared Flink MiniCluster | ~150 MB         |
 | AOT cache (`app.aot`, mapped) | ~200 MB    |
 | OS / overhead            | ~200 MB         |
-| **Worst case**           | **~2.4 GB**     |
+| **Worst case**           | **~2.9 GB**     |
 
 Measured: RSS about 1.1 GB after a cold start and two queries with the cache, about
 0.8 GB without it (`docs/STARTUP.md`); Railway container memory 643 MB after queries
 without the cache.
 
-The JVM is configured with `-Xmx1536m -XX:+UseG1GC
+The JVM is configured with `-Xmx2048m -XX:+UseG1GC
 -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m -XX:AOTCache=app.aot` (see `Dockerfile`; the
 AOT cache is trained during the image build, see `docs/STARTUP.md`). There is no
 `-Xms`, so the heap starts small and grows on demand. ZGC is avoided: it backs the
 heap with a shared-memory file, so the committed heap is charged to the container
 as `shmem` (about 800 MB at idle with the old `-Xms768m`). Provision the
-platform with at least 3 GB for the `Dockerfile` image (2 GB is enough for the
-`Dockerfile.runtime` image, which has no AOT cache); 4 GB gives headroom for concurrent
+platform with at least 3.5 GB for the `Dockerfile` image (2 GB is enough for the
+`Dockerfile.runtime` image, which has no AOT cache and keeps a 1.5 GB heap); 4 GB gives headroom for concurrent
 sessions.
