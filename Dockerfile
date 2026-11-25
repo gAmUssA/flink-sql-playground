@@ -68,7 +68,7 @@ RUN if [ "$AOT_CACHE" = "true" ]; then \
         QUARKUS_PROFILE=$QUARKUS_PROFILE \
         SUPABASE_DB_URL=jdbc:postgresql://127.0.0.1:1/aot-training SUPABASE_DB_USER=aot SUPABASE_DB_PASSWORD=aot \
         bash /tmp/aot-train.sh /app app.aot 9191 \
-            -Xmx1536m -XX:+UseG1GC -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m \
+            -Xmx2048m -XX:+UseG1GC -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m \
             -Dquarkus.flyway.migrate-at-start=false \
             -Dquarkus.hibernate-orm.schema-management.strategy=none; \
     fi \
@@ -78,7 +78,7 @@ EXPOSE 9090
 # committed heap is charged to the container as shmem, and -Xms768m pre-committed it at
 # boot. On memory-billed serverless hosts that was ~800 MB paid before the first request.
 ENTRYPOINT ["java", \
-    "-Xmx1536m", \
+    "-Xmx2048m", \
     "-XX:+UseG1GC", \
     "-XX:MetaspaceSize=128m", \
     "-XX:MaxMetaspaceSize=384m", \

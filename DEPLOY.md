@@ -48,9 +48,10 @@ apply), and it never applies `.railway/railway.ts`. So order the two:
    ```
    In the dashboard, connect the GitHub repo so pushes to `main` deploy and PRs
    get preview environments.
-2. **Memory**: set the service to **at least 3 GB**. The container caps the JVM heap at
-   `-Xmx1536m`, and the image built from `Dockerfile` also maps its ~200 MB AOT cache (see
-   Memory Budget). 4 GB is comfortable.
+2. **Memory**: set the service to **at least 3.5 GB**. The container caps the JVM heap at
+   `-Xmx2048m`, and the image built from `Dockerfile` also maps its ~200 MB AOT cache (see
+   Memory Budget). 4 GB is comfortable. Session capacity is `FLINK_MAX_SESSIONS` (Railway variable);
+   a 32-session local run peaked at 1.29 GB resident.
 3. **Port**: none needed — Railway injects `$PORT` and the app binds it
    (`quarkus.http.port=${PORT:9090}`).
 4. **Scale-to-zero**: enable serverless / app-sleep in the service settings. The
@@ -243,7 +244,7 @@ Measured: RSS about 1.1 GB after a cold start and two queries with the cache, ab
 0.8 GB without it (`docs/STARTUP.md`); Railway container memory 643 MB after queries
 without the cache.
 
-The JVM is configured with `-Xmx1536m -XX:+UseG1GC
+The JVM is configured with `-Xmx2048m -XX:+UseG1GC
 -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=384m -XX:AOTCache=app.aot` (see `Dockerfile`; the
 AOT cache is trained during the image build, see `docs/STARTUP.md`). There is no
 `-Xms`, so the heap starts small and grows on demand. ZGC is avoided: it backs the
