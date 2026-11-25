@@ -111,7 +111,7 @@ See [ADR 0008](docs/adr/0008-embed-mode.md).
 
 ```bash
 fly launch --no-deploy
-fly scale memory 3072   # the Dockerfile image maps a ~200 MB AOT cache; see Memory Budget
+fly scale memory 3584   # the Dockerfile image maps a ~200 MB AOT cache; see Memory Budget
 fly deploy
 ```
 
@@ -233,12 +233,12 @@ docker run -p 9090:9090 \
 
 | Component                | Memory          |
 |--------------------------|-----------------|
-| JVM heap                 | up to 1.5 GB    |
+| JVM heap                 | up to 2 GB      |
 | JVM metaspace            | 128 MB - 384 MB |
 | Shared Flink MiniCluster | ~150 MB         |
 | AOT cache (`app.aot`, mapped) | ~200 MB    |
 | OS / overhead            | ~200 MB         |
-| **Worst case**           | **~2.4 GB**     |
+| **Worst case**           | **~2.9 GB**     |
 
 Measured: RSS about 1.1 GB after a cold start and two queries with the cache, about
 0.8 GB without it (`docs/STARTUP.md`); Railway container memory 643 MB after queries
@@ -250,6 +250,6 @@ AOT cache is trained during the image build, see `docs/STARTUP.md`). There is no
 `-Xms`, so the heap starts small and grows on demand. ZGC is avoided: it backs the
 heap with a shared-memory file, so the committed heap is charged to the container
 as `shmem` (about 800 MB at idle with the old `-Xms768m`). Provision the
-platform with at least 3 GB for the `Dockerfile` image (2 GB is enough for the
-`Dockerfile.runtime` image, which has no AOT cache); 4 GB gives headroom for concurrent
+platform with at least 3.5 GB for the `Dockerfile` image (2 GB is enough for the
+`Dockerfile.runtime` image, which has no AOT cache and keeps a 1.5 GB heap); 4 GB gives headroom for concurrent
 sessions.

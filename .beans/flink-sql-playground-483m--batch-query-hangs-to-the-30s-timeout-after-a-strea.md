@@ -10,6 +10,8 @@ updated_at: 2026-11-25T08:22:46Z
 
 Found by `scripts/load-test.mjs` (2026-11-25, local prod build, 4 CPUs emulated, -Xmx1536m). With 8 to 40 concurrent users doing DDL, batch, stream three times each, 3 to 4 batch queries per run hit `408 EXECUTION_TIMEOUT` (30s). The count stays about the same from 8 to 40 users, so it is not capacity. One-round runs at 4 and 8 users are clean, and so is 1 user with 3 rounds.
 
+Re-checked after the load-test script started rejecting stream error frames and a missing end frame (PR 97 review): no stream failures, only batch timeouts (4 at 32 users with -Xmx2048m; 0 at 8 users in that run, so it is intermittent).
+
 Suspect: a batch job submitted after a streaming job on the same session waits for task slots the streaming job still holds. Not confirmed.
 
 ## Acceptance
