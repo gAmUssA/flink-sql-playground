@@ -20,6 +20,34 @@ An interactive web-based SQL editor for Apache Flink. Write and execute Flink SQ
 - **Example queries** — 15 preloaded examples covering windows, joins, pattern matching, and more
 - **Security sandbox** — blocked UDF injection, connector whitelist, execution timeouts
 
+## What's new
+
+### Job Graph: the plan Flink actually runs
+
+The **Job Graph** tab draws the optimized plan from Flink's `EXPLAIN`: every operator, how rows are
+shuffled between them, the changelog each one emits (`+I`, `-U`/`+U`), and what happens to its state
+("state freed by watermark" for a window aggregate, "state grows with keys" for a regular join).
+Details: [ADR 0004](docs/adr/0004-real-job-graph-from-explain.md).
+
+![Job Graph tab: a window aggregate frees its state, a Rank keeps the latest row per tank, the joins after it emit updates and keep state per key](docs/media/job-graph.gif)
+
+### Watermark Timeline: who misses the window
+
+The **Timeline** tab records a sample of the stream and plots each record by event time against
+arrival order, with the watermark, the windows and when each one fires. Records are on time, late but
+still counted, or dropped because their window had fired. Open the "Watermark Timeline" preset: a
+2-second watermark drops about half of the clicks, a 10-second one drops none. Drag across the chart to
+zoom into the watermark's steps. Details: [ADR 0005](docs/adr/0005-watermark-timeline-probe.md).
+
+![Timeline tab: a 2-second watermark drops late clicks, a 10-second one keeps them all](docs/media/watermark-timeline.gif)
+
+### Embed a runnable fiddle
+
+Share → **Copy embed code** copies an `<iframe>` for the fiddle on screen. Readers run it in your post;
+no session opens until they press Run. See [Embedding a fiddle](#embedding-a-fiddle).
+
+![Copy embed code, paste the iframe into a post, run the query in the page](docs/media/embed.gif)
+
 ## Prerequisites
 
 - **Java 25** — required to build and run locally ([Eclipse Temurin](https://adoptium.net/) recommended). Quarkus augmentation runs in the Gradle JVM and loads the compiled Java 25 classes, so the build itself must run on JDK 25.

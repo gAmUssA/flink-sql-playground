@@ -28,7 +28,7 @@ Measured on a MiniCluster, first 1000 result rows (ADR 0009 has the table):
 Fix:
 
 - Dimensions are now `<name>_updates` faker tables plus a view named after the dimension. The queries are unchanged, so `t.` autocomplete still works.
-- Job Graph: each join's dimension input is a `Rank` (rank 1) emitting `I,UB,UA`, where the join used to trust a declared unique key over `[I]`.
+- Job Graph: each join's dimension input is a `Rank` (rank 1) emitting `I,UB,UA,D`, where the join used to trust a declared unique key over `[I]`.
 - Views over unbounded tables used to fail Build Schema in the batch environment. They are now created for Streaming only, and BATCH answers `STREAMING_ONLY_VIEW`.
 - `DimensionPresetSmokeTest` replays both presets' changelogs. ADR 0009 and an AGENTS.md rule cover it.
 - Adversarial testing: Bob unavailable (no BOB_API_KEY); Copilot found two bugs (chained views, name collisions across databases), both fixed in #86.
